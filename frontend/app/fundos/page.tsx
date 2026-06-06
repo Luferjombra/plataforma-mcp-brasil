@@ -9,6 +9,22 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 
+// Nomes curtos para exibição
+const NOME_CURTO: Record<string, string> = {
+  "04.222.368/0001-55": "Verde PVT Multimercado",
+  "04.311.271/0001-19": "PS Verde D1",
+  "01.221.890/0001-24": "CSHG Verde FIC FIM",
+  "03.536.908/0001-02": "CSHG Verde AM Star",
+  "26.324.289/0001-98": "Kinea Infra I FIF",
+  "26.324.298/0001-89": "Kinea Infra FIC",
+  "00.947.958/0001-94": "Opportunity Market",
+  "05.775.774/0001-08": "Alaska Poland",
+}
+
+function getNome(f: Fundo): string {
+  return NOME_CURTO[f.cnpj] ?? f.nome_abreviado ?? f.nome
+}
+
 function formatBRL(v: number | null) {
   if (v == null) return '—'
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 6 }).format(v)
@@ -83,12 +99,12 @@ export default function FundosPage() {
                     onClick={() => setSelecionado(f)}
                     className={`w-full text-left px-4 py-3 text-sm transition-colors hover:bg-accent ${selecionado?.cnpj === f.cnpj ? 'bg-accent' : ''}`}
                   >
-                    <p className="font-medium leading-tight">{f.nome_abreviado ?? f.nome.slice(0, 40)}</p>
+                    <p className="font-medium leading-tight">{getNome(f)}</p>
                     <div className="flex items-center gap-2 mt-1">
                       {f.classe_anbima && (
                         <Badge variant="secondary" className="text-xs">{f.classe_anbima}</Badge>
                       )}
-                      <span className="text-xs text-muted-foreground">{f.gestor ?? '—'}</span>
+                      <span className="text-xs text-muted-foreground truncate">{f.gestor ?? '—'}</span>
                     </div>
                   </button>
                 ))}
@@ -127,7 +143,7 @@ export default function FundosPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">
-                {selecionado?.nome_abreviado ?? selecionado?.nome ?? '—'} — Evolução da cota
+                {selecionado ? getNome(selecionado) : '—'} — Evolução da cota
               </CardTitle>
             </CardHeader>
             <CardContent>

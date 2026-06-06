@@ -3,6 +3,30 @@ from db import supabase
 
 router = APIRouter()
 
+# CNPJs dos fundos monitorados pela plataforma
+CNPJS_ALVO = [
+    "04.222.368/0001-55",  # Verde PVT Multimercado
+    "04.311.271/0001-19",  # PS Verde D1
+    "01.221.890/0001-24",  # CSHG Verde FIC FIM
+    "03.536.908/0001-02",  # CSHG Verde AM Star
+    "26.324.289/0001-98",  # Kinea Infra I FIF
+    "26.324.298/0001-89",  # Kinea Infra FIC
+    "00.947.958/0001-94",  # Opportunity Market
+    "05.775.774/0001-08",  # Alaska Poland
+]
+
+# Nomes de exibição para o frontend
+NOMES_DISPLAY = {
+    "04.222.368/0001-55": "Verde PVT Multimercado",
+    "04.311.271/0001-19": "PS Verde D1",
+    "01.221.890/0001-24": "CSHG Verde FIC FIM",
+    "03.536.908/0001-02": "CSHG Verde AM Star",
+    "26.324.289/0001-98": "Kinea Infra I FIF",
+    "26.324.298/0001-89": "Kinea Infra FIC",
+    "00.947.958/0001-94": "Opportunity Market",
+    "05.775.774/0001-08": "Alaska Poland",
+}
+
 
 @router.get("/")
 def get_fundos(
@@ -10,13 +34,23 @@ def get_fundos(
     gestor: str = Query(None),
     limit: int = Query(50, ge=1, le=500),
 ):
-    """Lista fundos cadastrados."""
-    query = supabase.table("fundos_cadastro").select("*").limit(limit)
+    """Lista fundos monitorados pela plataforma."""
+    query = (
+        supabase.table("fundos_cadastro")
+        .select("*")
+        .in_("cnpj", CNPJS_ALVO)
+        .limit(limit)
+    )
     if classe:
         query = query.eq("classe_anbima", classe)
     if gestor:
         query = query.ilike("gestor", f"%{gestor}%")
     result = query.execute()
+    # Injeta nome de exibição
+    for fundo in result.data:
+        cnpj = fundo.get("cnpj", "")
+        if cnpj in NOMES_DISPLAY:
+            fundo["nome_display"] = NOMES_DISPLAY[cnpj]
     return {"data": result.data, "total": len(result.data)}
 
 
