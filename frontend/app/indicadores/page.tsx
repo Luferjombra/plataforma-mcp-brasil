@@ -141,14 +141,17 @@ export default function IndicadoresPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="data"
-                  tick={{ fontSize: 11 }}
-                  interval="preserveStartEnd"
+                  tick={{ fontSize: 10 }}
+                  interval={Math.floor(dadosGrafico.length / 6)}
                   stroke="hsl(var(--muted-foreground))"
+                  tickLine={false}
                 />
                 <YAxis
                   tick={{ fontSize: 11 }}
                   stroke="hsl(var(--muted-foreground))"
                   tickFormatter={v => `${v.toFixed(1)}%`}
+                  domain={['auto', 'auto']}
+                  width={48}
                 />
                 <Tooltip
                   formatter={(v) => [typeof v === 'number' ? `${v.toFixed(2)}%` : '—', LABELS[serieSelecionada]]}
