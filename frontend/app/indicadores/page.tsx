@@ -140,7 +140,7 @@ export default function IndicadoresPage() {
             <Skeleton className="h-64 w-full" />
           ) : (
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={dadosGrafico}>
+              <LineChart data={dadosGrafico} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="data"
@@ -148,13 +148,15 @@ export default function IndicadoresPage() {
                   interval={Math.floor(dadosGrafico.length / 6)}
                   stroke="hsl(var(--border))"
                   tickLine={false}
+                  height={32}
                 />
                 <YAxis
-                  tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                  tick={{ fontSize: 10, fill: tickColor }}
                   stroke="hsl(var(--border))"
                   tickFormatter={v => `${v.toFixed(1)}%`}
                   domain={['auto', 'auto']}
-                  width={48}
+                  width={56}
+                  tickLine={false}
                 />
                 <Tooltip
                   formatter={(v) => [typeof v === 'number' ? `${v.toFixed(2)}%` : '—', LABELS[serieSelecionada]]}

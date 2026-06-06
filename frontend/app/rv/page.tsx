@@ -118,11 +118,11 @@ export default function RVPage() {
               <Skeleton className="h-64 w-full" />
             ) : (
               <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={dadosGrafico}>
+                <LineChart data={dadosGrafico} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="data" tick={{ fontSize: 10, fill: tickColor }} interval={30} stroke="hsl(var(--border))" />
+                  <XAxis dataKey="data" tick={{ fontSize: 10, fill: tickColor }} interval={30} stroke="hsl(var(--border))" tickLine={false} height={32} />
                   <YAxis tick={{ fontSize: 10, fill: tickColor }} stroke="hsl(var(--border))"
-                    tickFormatter={v => `R$${v.toFixed(0)}`} domain={['auto', 'auto']} />
+                    tickFormatter={v => `R$${v.toFixed(0)}`} domain={['auto', 'auto']} width={56} tickLine={false} />
                   <Tooltip
                     formatter={(v) => [typeof v === 'number' ? formatBRL(v) : '—', 'Fechamento']}
                     contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }}
