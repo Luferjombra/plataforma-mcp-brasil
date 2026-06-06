@@ -2,6 +2,16 @@
 .DS_Store
 __pycache__/
 *.pyc
+*.pyo
 .env
 node_modules/
 .next/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Arquivos CVM — grandes demais para o repositório
+etl/data/cvm/*.csv
+etl/data/cvm/*.zip
