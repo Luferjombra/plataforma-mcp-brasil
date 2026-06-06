@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -37,6 +38,8 @@ function formatMilhoes(v: number | null) {
 }
 
 export default function FundosPage() {
+  const { theme } = useTheme()
+  const tickColor = theme === 'dark' ? '#9ca3af' : '#6b7280'
   const [fundos, setFundos] = useState<Fundo[]>([])
   const [selecionado, setSelecionado] = useState<Fundo | null>(null)
   const [historico, setHistorico] = useState<HistoricoFundo[]>([])
@@ -157,8 +160,8 @@ export default function FundosPage() {
                 <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={dadosGrafico}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="data" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval="preserveStartEnd" stroke="hsl(var(--border))" />
-                    <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))"
+                    <XAxis dataKey="data" tick={{ fontSize: 10, fill: tickColor }} interval="preserveStartEnd" stroke="hsl(var(--border))" />
+                    <YAxis tick={{ fontSize: 10, fill: tickColor }} stroke="hsl(var(--border))"
                       tickFormatter={v => v.toFixed(2)} domain={['auto', 'auto']} />
                     <Tooltip
                       formatter={(v) => [typeof v === 'number' ? v.toFixed(6) : '—', 'Cota']}

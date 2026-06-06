@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -79,6 +80,8 @@ function MetricCard({ serie, data }: { serie: Serie; data: Indicador[] }) {
 }
 
 export default function IndicadoresPage() {
+  const { theme } = useTheme()
+  const tickColor = theme === 'dark' ? '#9ca3af' : '#6b7280'
   const [dados, setDados] = useState<Record<Serie, Indicador[]>>({ ipca: [], selic: [], cdi: [], pib: [] })
   const [serieSelecionada, setSerieSelecionada] = useState<Serie>('ipca')
   const [loading, setLoading] = useState(true)
@@ -141,7 +144,7 @@ export default function IndicadoresPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="data"
-                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                  tick={{ fontSize: 10, fill: tickColor }}
                   interval={Math.floor(dadosGrafico.length / 6)}
                   stroke="hsl(var(--border))"
                   tickLine={false}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -20,6 +21,8 @@ function formatBilhoes(v: number | null) {
 }
 
 export default function RVPage() {
+  const { theme } = useTheme()
+  const tickColor = theme === 'dark' ? '#9ca3af' : '#6b7280'
   const [ativos, setAtivos] = useState<Ativo[]>([])
   const [selecionado, setSelecionado] = useState<string | null>(null)
   const [historico, setHistorico] = useState<Historico[]>([])
@@ -117,8 +120,8 @@ export default function RVPage() {
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={dadosGrafico}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="data" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={30} stroke="hsl(var(--border))" />
-                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))"
+                  <XAxis dataKey="data" tick={{ fontSize: 10, fill: tickColor }} interval={30} stroke="hsl(var(--border))" />
+                  <YAxis tick={{ fontSize: 10, fill: tickColor }} stroke="hsl(var(--border))"
                     tickFormatter={v => `R$${v.toFixed(0)}`} domain={['auto', 'auto']} />
                   <Tooltip
                     formatter={(v) => [typeof v === 'number' ? formatBRL(v) : '—', 'Fechamento']}
