@@ -1,6 +1,6 @@
 # Erros & Soluções — Plataforma MCP Brasil
 
-Registro de todos os erros encontrados durante o desenvolvimento (Semanas 1–4) e como foram resolvidos.
+Registro de todos os erros encontrados durante o desenvolvimento (Semanas 1–5) e como foram resolvidos.
 
 ---
 
@@ -266,6 +266,159 @@ data_inicio = f"{yyyymm[:4]}-{yyyymm[4:6]}-01"
 
 ---
 
+---
+
+## Frontend — Deploy e Build
+
+### Vercel — TypeScript error: Recharts Tooltip formatter
+
+**Erro:**
+```
+Type error: Type '(v: number) => [string, string]' is not assignable to type
+'Formatter<ValueType, NameType>'
+Types of parameters 'v' and 'value' are incompatible.
+Type 'ValueType | undefined' is not assignable to type 'number'.
+```
+
+**Causa:** O tipo do parâmetro `v` no `formatter` do Recharts `<Tooltip>` é `ValueType | undefined`, não `number`. O TypeScript rejeita quando o parâmetro é tipado como `number` diretamente.
+
+**Solução:** Usar guard de tipo antes de chamar métodos de número:
+```tsx
+formatter={(v) => [typeof v === 'number' ? `${v.toFixed(2)}%` : '—', 'Label']}
+```
+
+---
+
+### Vercel — build usa commit antigo após push
+
+**Sintoma:** Vercel continua falhando com o erro antigo mesmo após aplicar o fix localmente.
+
+**Causa:** O fix foi editado nos arquivos locais mas não foi commitado/enviado antes do push anterior. O Vercel está buildando o commit antigo.
+
+**Diagnóstico:** Rodar `git status` — se mostrar "nothing to commit, working tree clean" E o Vercel ainda falha, significa que o Vercel está buildando um deploy enfileirado antes do push.
+
+**Solução:** Forçar novo build com commit vazio:
+```powershell
+git commit --allow-empty -m "chore: trigger vercel redeploy"
+git push
+```
+
+---
+
+### Render — Python 3.14 no deploy (pydantic-core sem build)
+
+**Erro:**
+```
+error: Microsoft Visual C++ 14.0 or greater is required
+Building wheel for pydantic-core (pyproject.toml) ... error
+```
+
+**Causa:** `runtime.txt` com `python-3.12.0` não é suficiente no Render — ele ignora o arquivo e usa Python 3.14 por padrão.
+
+**Solução:** Adicionar variável de ambiente no painel do Render:
+```
+PYTHON_VERSION = 3.12.0
+```
+
+---
+
+### Render — Root Directory vazio e typo no Start Command
+
+**Erro:** Deploy falha sem logs claros.
+
+**Causas identificadas:**
+1. Campo "Root Directory" estava vazio (deve ser `backend`)
+2. Start Command com typo: `vicorn` em vez de `uvicorn`
+
+**Solução:** No painel Render → Settings → verificar:
+- Root Directory: `backend`
+- Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+
+---
+
+## Frontend — Fundos
+
+### Fundos — lista mostra todos os fundos do banco, não só os 8 alvos
+
+**Causa:** A rota `GET /fundos/` sem filtro retorna todos os registros de `fundos_cadastro`, que inclui fundos extras inseridos por engano ou testes.
+
+**Solução:** Filtrar no backend pelos 8 CNPJs alvo:
+```python
+query = supabase.table("fundos_cadastro").select("*").in_("cnpj", CNPJS_ALVO)
+```
+
+---
+
+### Fundos — nomes CVM ilegíveis (ex: "HEDGING-GRIFFO VERDE LI FUNDO DE APLICAC")
+
+**Causa:** O campo `nome_abreviado` da CVM vem vazio para a maioria dos fundos. O fallback `f.nome.slice(0, 40)` corta o nome oficial em posição aleatória.
+
+**Solução:** Mapa de nomes de exibição hardcoded no frontend indexado por CNPJ:
+```typescript
+const NOME_CURTO: Record<string, string> = {
+  "04.222.368/0001-55": "Verde PVT Multimercado",
+  // ...
+}
+```
+
+---
+
+### Fundos — "Sem dados históricos" para todos os fundos
+
+**Causa raiz:** O CNPJ contém `/` (ex: `04.222.368/0001-55`). A URL gerada era `/fundos/historico/04.222.368/0001-55` — o FastAPI interpretava `0001-55` como segmento separado de rota e não encontrava o endpoint, retornando 404.
+
+**Solução em dois arquivos:**
+
+Backend — aceitar `/` no path parameter:
+```python
+@router.get("/historico/{cnpj:path}")
+```
+
+Frontend — URL-encode o CNPJ:
+```typescript
+fetch(`/fundos/historico/${encodeURIComponent(cnpj)}`)
+```
+
+---
+
+## Frontend — Gráficos Recharts
+
+### Recharts — labels dos eixos invisíveis no dark mode
+
+**Causa:** Recharts renderiza os ticks como atributos SVG (`fill="..."`). Atributos SVG **não resolvem CSS custom properties** (`hsl(var(--muted-foreground))`). Apenas propriedades CSS aplicadas via stylesheet resolvem variáveis CSS. Por isso, `tick={{ fill: 'hsl(var(--muted-foreground))' }}` não funciona dentro de SVG no Recharts.
+
+**Solução:** Usar `useTheme` do `next-themes` e passar cor literal baseada no tema atual:
+```tsx
+const { theme } = useTheme()
+const tickColor = theme === 'dark' ? '#9ca3af' : '#6b7280'
+
+<XAxis tick={{ fontSize: 10, fill: tickColor }} />
+<YAxis tick={{ fontSize: 10, fill: tickColor }} />
+```
+
+---
+
+### Recharts — eixo X e Y sobrepostos (labels espremidos)
+
+**Causa:** Sem margem explícita no `<LineChart>`, sem `height` no `<XAxis>` e sem `width` no `<YAxis>`, o Recharts comprime o espaço e os labels ficam sobrepostos.
+
+**Solução:**
+```tsx
+<LineChart margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+  <XAxis height={32} tickLine={false} />
+  <YAxis width={56} tickLine={false} />
+```
+
+---
+
+### Recharts — YAxis começando em 0 com muito espaço vazio
+
+**Causa:** O domínio padrão do YAxis é `[0, 'auto']`, iniciando sempre do zero. Para séries como SELIC (14.5%), o gráfico fica com 90% de espaço vazio abaixo da linha.
+
+**Solução:** `domain={['auto', 'auto']}` no YAxis para que o eixo se ajuste ao range real dos dados.
+
+---
+
 ## Referências rápidas
 
 | Problema | Arquivo afetado | Solução |
@@ -279,3 +432,8 @@ data_inicio = f"{yyyymm[:4]}-{yyyymm[4:6]}-01"
 | CNPJ_FUNDO renomeado | etl/fundos.py | Detectar e renomear coluna |
 | Duplicatas no upsert | etl/fundos.py | `drop_duplicates()` antes do upsert |
 | venv no git | .gitignore | Adicionar `venv/` antes do primeiro commit |
+| Vercel TS error formatter | frontend/app/*/page.tsx | `typeof v === 'number'` guard |
+| CNPJ com / quebra rota | backend/routes/fundos.py | `{cnpj:path}` + `encodeURIComponent` |
+| Recharts ticks invisíveis | frontend/app/*/page.tsx | `useTheme` + cor literal |
+| Labels eixos sobrepostos | frontend/app/*/page.tsx | `height`, `width`, `margin` no LineChart |
+| YAxis começa em 0 | frontend/app/*/page.tsx | `domain={['auto', 'auto']}` |

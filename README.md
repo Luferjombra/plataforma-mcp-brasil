@@ -15,11 +15,21 @@ Permitir que usuários consultem dados financeiros consolidados, realizem análi
 - Feed de notícias financeiras classificadas
 - Chat Finance (LLM + RAG sobre dados internos)
 
+## URLs de produção
+
+| Serviço | URL |
+|---|---|
+| Frontend | https://plataforma-mcp-brasil.vercel.app |
+| Backend API | https://plataforma-mcp-brasil-api.onrender.com |
+
 ## Stack
 
 | Camada | Tecnologia | Versão |
 |---|---|---|
-| Frontend | Next.js + Vercel | — |
+| Frontend | Next.js + Vercel | 15 (App Router) |
+| UI | shadcn/ui + Tailwind CSS | Nova preset |
+| Gráficos | Recharts | 2.x |
+| Tema | next-themes | dark por padrão + toggle |
 | Backend | FastAPI + Render | 0.111.0 |
 | Banco | Supabase (PostgreSQL) | supabase-py 2.4.6 |
 | Python | Python 3.12 (não 3.14) | 3.12.x |
@@ -37,16 +47,18 @@ plataforma-mcp-brasil/
 ├── README.md
 ├── architecture.md
 ├── .gitignore
+├── render.yaml              ← configuração de deploy Render
 ├── backend/
 │   ├── main.py              ← FastAPI app (CORS + 5 routers)
 │   ├── db.py                ← Supabase client (SERVICE_KEY)
 │   ├── requirements.txt
+│   ├── runtime.txt          ← python-3.12.0 (Render)
 │   ├── .env                 ← nunca comitar (SUPABASE_URL, KEYS, ANTHROPIC_API_KEY)
 │   ├── .env.example
 │   ├── routes/
 │   │   ├── indicadores.py
 │   │   ├── rv.py
-│   │   ├── fundos.py
+│   │   ├── fundos.py        ← filtro CNPJS_ALVO + {cnpj:path}
 │   │   ├── noticias.py
 │   │   └── copilot.py
 │   └── copilot/
@@ -61,10 +73,23 @@ plataforma-mcp-brasil/
 │   └── data/
 │       └── cvm/             ← arquivos .csv/.zip baixados manualmente
 │           └── .gitkeep     ← pasta versionada, arquivos ignorados
+├── frontend/
+│   ├── app/
+│   │   ├── layout.tsx       ← ThemeProvider (dark padrão) + Sidebar
+│   │   ├── indicadores/     ← IPCA, SELIC, CDI, PIB + gráfico histórico
+│   │   ├── rv/              ← lista B3 + gráfico de preço
+│   │   ├── fundos/          ← 8 fundos CVM + evolução de cota
+│   │   └── copilot/         ← Chat Finance (Claude Sonnet)
+│   ├── components/
+│   │   ├── Sidebar.tsx      ← navegação + toggle dark/light
+│   │   └── ThemeProvider.tsx
+│   ├── lib/
+│   │   └── api.ts           ← funções fetchAPI tipadas
+│   └── .env.local           ← NEXT_PUBLIC_API_URL
 ├── database/
 │   └── schema.sql           ← 13 tabelas + triggers
 └── docs/
-    └── erros_e_solucoes.md  ← troubleshooting do projeto
+    └── erros_e_solucoes.md  ← troubleshooting Semanas 1–5
 ```
 
 ## Dados no Supabase (status atual)
@@ -123,10 +148,19 @@ O portal CVM (`dados.cvm.gov.br`) usa Cloudflare WAF que bloqueia requisições 
 | 2 | Supabase configurado + schema aplicado | ✅ Concluída |
 | 3 | Backend FastAPI (5 rotas + Copilot) | ✅ Concluída |
 | 4 | ETL completo (Indicadores + RV + Fundos) | ✅ Concluída |
-| 5 | Frontend Next.js | 🔄 Em andamento |
+| 5 | Frontend Next.js + deploy Vercel | ✅ Concluída |
 | 6 | Chat Finance MVP | ⏳ Pendente |
 | 7 | Feed de notícias + polimentos | ⏳ Pendente |
 | 8 | Estabilização + documentação | ⏳ Pendente |
+
+### Semana 5 — o que foi entregue
+
+- Frontend Next.js 15 com App Router, shadcn/ui (Nova preset), Tailwind CSS
+- 4 páginas funcionais com dados reais: Indicadores, Renda Variável, Fundos, Chat Finance
+- Dark mode por padrão com toggle light/dark na sidebar
+- Deploy automatizado: backend no Render, frontend no Vercel
+- Gráficos Recharts com domínio automático e cores adaptadas ao tema
+- 10 bugs documentados e resolvidos (ver `docs/erros_e_solucoes.md`)
 
 ## Custo estimado (MVP)
 
