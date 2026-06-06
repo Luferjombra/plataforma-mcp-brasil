@@ -11,7 +11,7 @@ def get_fundos(
     limit: int = Query(50, ge=1, le=500),
 ):
     """Lista fundos cadastrados."""
-    query = supabase.table("fundos_cadastro").select("*").eq("ativo", True).limit(limit)
+    query = supabase.table("fundos_cadastro").select("*").limit(limit)
     if classe:
         query = query.eq("classe_anbima", classe)
     if gestor:
