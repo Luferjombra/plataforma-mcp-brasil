@@ -71,11 +71,14 @@ def gerar_codigo(nome_titulo: str, data_vencimento: date) -> str:
 
 
 def safe_float(val) -> float | None:
-    """Converte valor brasileiro (vírgula como decimal) para float, ou None."""
+    """Converte valor para float, ou None se inválido/zero.
+    Nota: pandas já converte a vírgula decimal com decimal=',' no read_csv.
+    Não fazer replace de '.' para não corromper casas decimais já parseadas.
+    """
     try:
         if pd.isna(val):
             return None
-        v = float(str(val).replace(".", "").replace(",", "."))
+        v = float(val)
         return round(v, 6) if v != 0 else None
     except Exception:
         return None
