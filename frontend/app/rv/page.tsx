@@ -117,8 +117,8 @@ export default function RVPage() {
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={dadosGrafico}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="data" tick={{ fontSize: 10 }} interval={30} stroke="hsl(var(--muted-foreground))" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))"
+                  <XAxis dataKey="data" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={30} stroke="hsl(var(--border))" />
+                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))"
                     tickFormatter={v => `R$${v.toFixed(0)}`} domain={['auto', 'auto']} />
                   <Tooltip
                     formatter={(v) => [typeof v === 'number' ? formatBRL(v) : '—', 'Fechamento']}

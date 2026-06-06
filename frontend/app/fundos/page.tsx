@@ -157,8 +157,8 @@ export default function FundosPage() {
                 <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={dadosGrafico}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="data" tick={{ fontSize: 10 }} interval="preserveStartEnd" stroke="hsl(var(--muted-foreground))" />
-                    <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))"
+                    <XAxis dataKey="data" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval="preserveStartEnd" stroke="hsl(var(--border))" />
+                    <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))"
                       tickFormatter={v => v.toFixed(2)} domain={['auto', 'auto']} />
                     <Tooltip
                       formatter={(v) => [typeof v === 'number' ? v.toFixed(6) : '—', 'Cota']}

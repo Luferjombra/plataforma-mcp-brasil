@@ -141,14 +141,14 @@ export default function IndicadoresPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="data"
-                  tick={{ fontSize: 10 }}
+                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
                   interval={Math.floor(dadosGrafico.length / 6)}
-                  stroke="hsl(var(--muted-foreground))"
+                  stroke="hsl(var(--border))"
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fontSize: 11 }}
-                  stroke="hsl(var(--muted-foreground))"
+                  tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                  stroke="hsl(var(--border))"
                   tickFormatter={v => `${v.toFixed(1)}%`}
                   domain={['auto', 'auto']}
                   width={48}
