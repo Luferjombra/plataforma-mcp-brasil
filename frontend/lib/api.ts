@@ -83,7 +83,7 @@ export function getFundos() {
 }
 
 export function getHistoricoFundo(cnpj: string, limit = 252) {
-  return fetchAPI<{ cnpj: string; data: HistoricoFundo[] }>(`/fundos/historico/${cnpj}?limit=${limit}`)
+  return fetchAPI<{ cnpj: string; data: HistoricoFundo[] }>(`/fundos/historico/${encodeURIComponent(cnpj)}?limit=${limit}`)
 }
 
 // ── Copilot ──────────────────────────────────────────────────

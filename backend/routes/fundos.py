@@ -70,7 +70,7 @@ def get_analytics(cnpj: str):
     return result.data[0]
 
 
-@router.get("/historico/{cnpj}")
+@router.get("/historico/{cnpj:path}")
 def get_historico_fundo(cnpj: str, limit: int = Query(252, ge=1, le=2000)):
     """Retorna histórico de cotas de um fundo."""
     result = (
