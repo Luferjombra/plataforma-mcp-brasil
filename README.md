@@ -10,33 +10,25 @@ Permitir que usuários consultem dados financeiros consolidados, realizem análi
 
 - Dashboard de indicadores econômicos (IPCA, SELIC, CDI, PIB)
 - Dashboard de Renda Variável (B3)
-- Análise por classe de ativo: RF · RV · ETF · BDR · Fundos
+- Análise por classe de ativo: RF · RV · Fundos
 - Camada analítica: Sharpe, Drawdown, Volatilidade
 - Feed de notícias financeiras classificadas
 - Chat Finance (LLM + RAG sobre dados internos)
 
-## Arquitetura
-
-```
-MCP Brasil → ETL (Python) → Supabase (PostgreSQL) → FastAPI → Next.js → Chat Finance
-```
-
-Princípios:
-- MCP usado apenas em ingestão, nunca em tempo real
-- Base histórica como fonte única da verdade
-- LLM apenas para explicação — cálculos são feitos na camada analítica
-- Custo previsível e governança de dados
-
 ## Stack
 
-| Camada | Tecnologia |
-|---|---|
-| Frontend | Next.js + Vercel |
-| Backend | FastAPI (Python) + Render |
-| Banco | Supabase (PostgreSQL) |
-| ETL | Python scripts |
-| Copilot | API Anthropic (Claude Sonnet) |
-| Versionamento | GitHub |
+| Camada | Tecnologia | Versão |
+|---|---|---|
+| Frontend | Next.js + Vercel | — |
+| Backend | FastAPI + Render | 0.111.0 |
+| Banco | Supabase (PostgreSQL) | supabase-py 2.4.6 |
+| Python | Python 3.12 (não 3.14) | 3.12.x |
+| Copilot | Claude Sonnet (Anthropic) | anthropic 0.25.0 |
+| Versionamento | GitHub | — |
+
+> **Atenção:** usar Python 3.12 — `pydantic-core` e outras dependências não têm wheels pré-compilados para Python 3.14 no Windows.
+
+> **Atenção:** `supabase-py 2.4.6` não suporta o novo formato de chave `sb_publishable_`/`sb_secret_`. Usar as chaves JWT legadas (Settings → API → "Legacy API keys").
 
 ## Estrutura do repositório
 
@@ -44,40 +36,102 @@ Princípios:
 plataforma-mcp-brasil/
 ├── README.md
 ├── architecture.md
-├── PRD.md
-├── /frontend          ← Next.js
-├── /backend           ← FastAPI
-│   ├── main.py
+├── .gitignore
+├── backend/
+│   ├── main.py              ← FastAPI app (CORS + 5 routers)
+│   ├── db.py                ← Supabase client (SERVICE_KEY)
+│   ├── requirements.txt
+│   ├── .env                 ← nunca comitar (SUPABASE_URL, KEYS, ANTHROPIC_API_KEY)
+│   ├── .env.example
 │   ├── routes/
+│   │   ├── indicadores.py
+│   │   ├── rv.py
+│   │   ├── fundos.py
+│   │   ├── noticias.py
+│   │   └── copilot.py
 │   └── copilot/
-├── /etl
-│   ├── indicadores.py
-│   ├── rv_historico.py
-│   ├── fundos.py
-│   └── analytics/
-├── /database
-│   └── schema.sql
-└── /docs
-    └── user_stories.md
+│       ├── orchestrator.py  ← SHA256 cache + Claude Sonnet
+│       └── context_builder.py
+├── etl/
+│   ├── config.py            ← Supabase client compartilhado
+│   ├── requirements.txt
+│   ├── indicadores.py       ← BCB SGS API (IPCA, SELIC, CDI, PIB)
+│   ├── rv_historico.py      ← yfinance (.SA) — 16 tickers B3
+│   ├── fundos.py            ← CVM arquivos locais (anti-WAF)
+│   └── data/
+│       └── cvm/             ← arquivos .csv/.zip baixados manualmente
+│           └── .gitkeep     ← pasta versionada, arquivos ignorados
+├── database/
+│   └── schema.sql           ← 13 tabelas + triggers
+└── docs/
+    └── erros_e_solucoes.md  ← troubleshooting do projeto
 ```
+
+## Dados no Supabase (status atual)
+
+| Tabela | Registros | Fonte | Período |
+|---|---|---|---|
+| indicadores_economicos | ~4.035 | BCB SGS API | 2020–hoje |
+| rv_ativos | 16 | yfinance | — |
+| rv_historico | ~22.000 | yfinance (.SA) | 2020–hoje |
+| fundos_cadastro | 8 | CVM cad_fi.csv | — |
+| fundos_historico | ~4.852 | CVM inf_diario_fi_*.zip | 2024–2026 |
+
+## Setup local
+
+### Pré-requisitos
+
+- Python **3.12** (não 3.14)
+- Conta Supabase com schema aplicado (`database/schema.sql`)
+- Chaves JWT legadas do Supabase (não as `sb_publishable_`)
+- API Key da Anthropic (`sk-ant-api03-...`)
+
+### Backend
+
+```powershell
+cd backend
+py -3.12 -m venv venv
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+# Criar .env com base no .env.example
+uvicorn main:app --reload
+```
+
+### ETL
+
+```powershell
+cd etl
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python indicadores.py
+python rv_historico.py
+# Para fundos: baixar arquivos em https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/
+# Salvar em etl/data/cvm/ e executar:
+python fundos.py
+```
+
+### ETL de Fundos — por que arquivos locais?
+
+O portal CVM (`dados.cvm.gov.br`) usa Cloudflare WAF que bloqueia requisições HTTP automatizadas com 403. A solução é baixar os arquivos manualmente no navegador e colocá-los em `etl/data/cvm/`. O script aceita `.csv` e `.zip`.
 
 ## Roadmap MVP (8 semanas)
 
-| Semana | Entregável |
-|---|---|
-| 1 | Repositório + schemas SQL |
-| 2 | ETL indicadores + dados reais no Supabase |
-| 3 | APIs FastAPI funcionais |
-| 4 | Frontend conectado + deploy público |
-| 5 | Camada analítica de Fundos |
-| 6 | Chat Finance MVP |
-| 7 | Feed de notícias + polimentos |
-| 8 | Estabilização + documentação |
+| Semana | Entregável | Status |
+|---|---|---|
+| 1 | Repositório + schemas SQL | ✅ Concluída |
+| 2 | Supabase configurado + schema aplicado | ✅ Concluída |
+| 3 | Backend FastAPI (5 rotas + Copilot) | ✅ Concluída |
+| 4 | ETL completo (Indicadores + RV + Fundos) | ✅ Concluída |
+| 5 | Frontend Next.js | 🔄 Em andamento |
+| 6 | Chat Finance MVP | ⏳ Pendente |
+| 7 | Feed de notícias + polimentos | ⏳ Pendente |
+| 8 | Estabilização + documentação | ⏳ Pendente |
 
 ## Custo estimado (MVP)
 
-~R$ 25/mês (apenas API Anthropic — demais serviços no free tier)
+~R$ 25/mês (apenas API Anthropic — Supabase, Render e Vercel no free tier)
 
-## Status
+## Troubleshooting
 
-🟡 Em desenvolvimento — Semana 1
+Ver [`docs/erros_e_solucoes.md`](docs/erros_e_solucoes.md) para todos os erros encontrados e suas soluções.
