@@ -121,7 +121,7 @@ export default function RVPage() {
                   <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))"
                     tickFormatter={v => `R$${v.toFixed(0)}`} domain={['auto', 'auto']} />
                   <Tooltip
-                    formatter={(v: number) => [formatBRL(v), 'Fechamento']}
+                    formatter={(v) => [typeof v === 'number' ? formatBRL(v) : '—', 'Fechamento']}
                     contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }}
                   />
                   <Line type="monotone" dataKey="fechamento" stroke="#3b82f6" strokeWidth={2} dot={false} />

@@ -151,7 +151,7 @@ export default function IndicadoresPage() {
                   tickFormatter={v => `${v.toFixed(1)}%`}
                 />
                 <Tooltip
-                  formatter={(v: number) => [`${v.toFixed(2)}%`, LABELS[serieSelecionada]]}
+                  formatter={(v) => [typeof v === 'number' ? `${v.toFixed(2)}%` : '—', LABELS[serieSelecionada]]}
                   contentStyle={{
                     background: 'hsl(var(--card))',
                     border: '1px solid hsl(var(--border))',

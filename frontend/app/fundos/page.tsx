@@ -145,7 +145,7 @@ export default function FundosPage() {
                     <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))"
                       tickFormatter={v => v.toFixed(2)} domain={['auto', 'auto']} />
                     <Tooltip
-                      formatter={(v: number) => [v.toFixed(6), 'Cota']}
+                      formatter={(v) => [typeof v === 'number' ? v.toFixed(6) : '—', 'Cota']}
                       contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }}
                     />
                     <Line type="monotone" dataKey="cota" stroke="#8b5cf6" strokeWidth={2} dot={false} />
