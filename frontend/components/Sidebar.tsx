@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useTheme } from 'next-themes'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
   TrendingUp,
@@ -9,6 +11,8 @@ import {
   Briefcase,
   MessageSquare,
   Activity,
+  Sun,
+  Moon,
 } from 'lucide-react'
 
 const links = [
@@ -20,6 +24,10 @@ const links = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-56 border-r border-border bg-background flex flex-col">
@@ -49,10 +57,20 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-5 py-4 border-t border-border">
-        <p className="text-xs text-muted-foreground">
-          Dados: BCB · B3 · CVM
-        </p>
+      <div className="px-4 py-4 border-t border-border space-y-3">
+        {mounted && (
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            {theme === 'dark' ? (
+              <><Sun className="h-4 w-4" /><span>Modo claro</span></>
+            ) : (
+              <><Moon className="h-4 w-4" /><span>Modo escuro</span></>
+            )}
+          </button>
+        )}
+        <p className="text-xs text-muted-foreground px-3">Dados: BCB · B3 · CVM</p>
       </div>
     </aside>
   )
