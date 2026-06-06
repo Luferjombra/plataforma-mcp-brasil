@@ -86,6 +86,38 @@ export function getHistoricoFundo(cnpj: string, limit = 252) {
   return fetchAPI<{ cnpj: string; data: HistoricoFundo[] }>(`/fundos/historico/${encodeURIComponent(cnpj)}?limit=${limit}`)
 }
 
+// ── Renda Fixa ───────────────────────────────────────────────
+export interface TituloRF {
+  codigo: string
+  nome: string
+  nome_display: string
+  indexador: string
+  tipo_curto: string
+  cor: string
+  data_vencimento: string | null
+  ativo: boolean
+  taxa_atual: number | null
+  pu_atual: number | null
+  data_taxa: string | null
+}
+
+export interface HistoricoRF {
+  codigo: string
+  data: string
+  taxa_mercado: number | null
+  pu_mercado: number | null
+  taxa_compra: number | null
+  pu_compra: number | null
+}
+
+export function getTitulosRF() {
+  return fetchAPI<{ data: TituloRF[]; total: number; data_referencia: string | null }>('/rf/titulos')
+}
+
+export function getHistoricoRF(codigo: string, limit = 252) {
+  return fetchAPI<{ codigo: string; data: HistoricoRF[] }>(`/rf/historico/${encodeURIComponent(codigo)}?limit=${limit}`)
+}
+
 // ── Copilot ──────────────────────────────────────────────────
 export interface RespostaCopilot {
   resposta: string

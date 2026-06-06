@@ -13,13 +13,15 @@ import {
   Activity,
   Sun,
   Moon,
+  Landmark,
 } from 'lucide-react'
 
 const links = [
-  { href: '/indicadores', label: 'Indicadores', icon: Activity },
-  { href: '/rv', label: 'Renda Variável', icon: TrendingUp },
-  { href: '/fundos', label: 'Fundos', icon: Briefcase },
-  { href: '/copilot', label: 'Chat Finance', icon: MessageSquare },
+  { href: '/indicadores', label: 'Indicadores',    icon: Activity   },
+  { href: '/rv',          label: 'Renda Variável', icon: TrendingUp },
+  { href: '/rf',          label: 'Renda Fixa',     icon: Landmark   },
+  { href: '/fundos',      label: 'Fundos',          icon: Briefcase  },
+  { href: '/copilot',     label: 'Chat Finance',    icon: MessageSquare },
 ]
 
 export function Sidebar() {
@@ -70,7 +72,7 @@ export function Sidebar() {
             )}
           </button>
         )}
-        <p className="text-xs text-muted-foreground px-3">Dados: BCB · B3 · CVM</p>
+        <p className="text-xs text-muted-foreground px-3">Dados: BCB · B3 · CVM · Tesouro</p>
       </div>
     </aside>
   )

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import indicadores, rv, fundos, noticias, copilot
+from routes import indicadores, rv, fundos, noticias, copilot, rf
 
 app = FastAPI(
     title="Plataforma MCP Brasil API",
@@ -21,6 +21,7 @@ app.include_router(rv.router, prefix="/rv", tags=["Renda Variável"])
 app.include_router(fundos.router, prefix="/fundos", tags=["Fundos"])
 app.include_router(noticias.router, prefix="/noticias", tags=["Notícias"])
 app.include_router(copilot.router, prefix="/copilot", tags=["Copilot"])
+app.include_router(rf.router, prefix="/rf", tags=["Renda Fixa"])
 
 
 @app.get("/")
