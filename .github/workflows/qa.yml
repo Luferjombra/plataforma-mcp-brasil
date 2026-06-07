@@ -1,0 +1,118 @@
+name: QA — Plataforma MCP Brasil
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:   # permite rodar manualmente pela UI do GitHub
+
+jobs:
+  qa:
+    name: QA contra produção
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install httpx
+
+      - name: Aguardar Render acordar (cold start)
+        run: |
+          echo "Verificando se o backend está respondendo..."
+          for i in {1..6}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://plataforma-mcp-brasil-api.onrender.com/ --max-time 15)
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Backend respondeu (tentativa $i)"
+              break
+            fi
+            echo "⏳ Tentativa $i — status=$STATUS — aguardando 10s..."
+            sleep 10
+          done
+
+      - name: Rodar QA
+        id: qa
+        run: |
+          python qa_run.py 2>&1 | tee qa_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Ler resultado
+        id: resultado
+        run: |
+          SCORE=$(grep -oP 'Score: \K\d+' qa_output.txt || echo "0")
+          PASSOU=$(grep -oP '✅ Passou:\s+\K\d+' qa_output.txt || echo "0")
+          FALHOU=$(grep -oP '❌ Falhou:\s+\K\d+' qa_output.txt || echo "0")
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "passou=$PASSOU" >> $GITHUB_OUTPUT
+          echo "falhou=$FALHOU" >> $GITHUB_OUTPUT
+
+      - name: Comentar no PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const score = '${{ steps.resultado.outputs.score }}';
+            const passou = '${{ steps.resultado.outputs.passou }}';
+            const falhou = '${{ steps.resultado.outputs.falhou }}';
+            const exitCode = '${{ steps.qa.outputs.exit_code }}';
+
+            const emoji = exitCode === '0' ? '✅' : '❌';
+            const status = exitCode === '0' ? 'APROVADO' : 'REPROVADO';
+
+            const output = require('fs').readFileSync('qa_output.txt', 'utf8');
+            const linhas = output.split('\n').slice(-40).join('\n');  // últimas 40 linhas
+
+            const body = `## ${emoji} QA — ${status}
+
+            **Score:** ${score}% &nbsp;|&nbsp; ✅ ${passou} passou &nbsp;|&nbsp; ❌ ${falhou} falhou
+
+            <details>
+            <summary>Ver saída completa do QA</summary>
+
+            \`\`\`
+            ${linhas}
+            \`\`\`
+            </details>
+
+            > Rodado contra produção: https://plataforma-mcp-brasil-api.onrender.com`;
+
+            // Procurar comentário anterior do bot para atualizar em vez de criar novo
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('QA — Plataforma MCP Brasil')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Falhar se score < 90%
+        if: steps.qa.outputs.exit_code != '0'
+        run: |
+          echo "❌ Score abaixo de 90% — PR bloqueado."
+          exit 1

@@ -275,7 +275,10 @@ print(f"\nScore: {pct:.0f}%")
 
 if pct == 100:
     print("\n🎉 Tudo passou!")
-elif pct >= 80:
+elif pct >= 90:
     print("\n🟡 Maioria passou. Revisar falhas acima.")
 else:
-    print("\n🔴 Muitas falhas. Verificar backend.")
+    print("\n🔴 Score abaixo de 90% — PR bloqueado.")
+
+# Exit code 1 se score < 90% (GitHub Actions usa isso para falhar o check)
+sys.exit(0 if pct >= 90 else 1)
