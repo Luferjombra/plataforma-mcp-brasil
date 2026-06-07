@@ -218,8 +218,10 @@ if r and r.status_code == 200:
     selic_titulos = [t for t in titulos if t.get("indexador") == "SELIC"]
     if selic_titulos:
         taxa_selic = selic_titulos[0].get("taxa_atual", 0)
-        check("Tesouro Selic taxa em range (8–18%)",
-              8.0 <= taxa_selic <= 18.0, f"taxa={taxa_selic}")
+        # LFT (Tesouro Selic) é cotado como spread sobre a SELIC, tipicamente 0.00%–0.15%
+        # NÃO é a taxa SELIC total — não usar range 8-18%
+        check("Tesouro Selic spread em range razoável (0–0.20%)",
+              0.0 <= taxa_selic <= 0.20, f"spread={taxa_selic}% (sobre SELIC)")
 
     ipca_titulos = [t for t in titulos if t.get("indexador") == "IPCA"]
     if ipca_titulos:
