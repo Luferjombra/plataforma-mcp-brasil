@@ -19,8 +19,8 @@ from log_etl import ETLRun, log_partial, retry_request
 BRAPI_BASE = "https://brapi.dev/api"
 BRAPI_TOKEN = os.getenv("BRAPI_TOKEN", "")  # opcional
 
-# Histórico desde 2020 (brapi suporta ranges: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
-BRAPI_RANGE = "5y"
+# Histórico desde ~2016 (brapi suporta ranges: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
+BRAPI_RANGE = "10y"
 
 # Principais ações do Ibovespa
 ATIVOS = [
