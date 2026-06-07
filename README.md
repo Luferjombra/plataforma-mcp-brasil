@@ -101,6 +101,8 @@ plataforma-mcp-brasil/
 | rv_historico | ~22.000 | yfinance (.SA) | 2020–hoje |
 | fundos_cadastro | 8 | CVM cad_fi.csv | — |
 | fundos_historico | ~4.852 | CVM inf_diario_fi_*.zip | 2024–2026 |
+| rf_titulos | 78 | Tesouro Transparente CSV | — |
+| rf_historico | ~65.927 | Tesouro Transparente CSV | 2020–hoje |
 
 ## Setup local
 
@@ -131,6 +133,7 @@ cd etl
 pip install -r requirements.txt
 python indicadores.py
 python rv_historico.py
+python rf_tesouro.py
 # Para fundos: baixar arquivos em https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/
 # Salvar em etl/data/cvm/ e executar:
 python fundos.py
@@ -149,9 +152,9 @@ O portal CVM (`dados.cvm.gov.br`) usa Cloudflare WAF que bloqueia requisições 
 | 3 | Backend FastAPI (5 rotas + Copilot) | ✅ Concluída |
 | 4 | ETL completo (Indicadores + RV + Fundos) | ✅ Concluída |
 | 5 | Frontend Next.js + deploy Vercel | ✅ Concluída |
-| 6 | Chat Finance MVP | ⏳ Pendente |
-| 7 | Feed de notícias + polimentos | ⏳ Pendente |
-| 8 | Estabilização + documentação | ⏳ Pendente |
+| 6 | Renda Fixa (Tesouro Direto) | ✅ Concluída |
+| 7 | Chat Finance MVP + Feed de notícias | ⏳ Pendente |
+| 8 | Estabilização + QA + documentação | ⏳ Pendente |
 
 ### Semana 5 — o que foi entregue
 
@@ -161,6 +164,15 @@ O portal CVM (`dados.cvm.gov.br`) usa Cloudflare WAF que bloqueia requisições 
 - Deploy automatizado: backend no Render, frontend no Vercel
 - Gráficos Recharts com domínio automático e cores adaptadas ao tema
 - 10 bugs documentados e resolvidos (ver `docs/erros_e_solucoes.md`)
+
+### Semana 6 — o que foi entregue
+
+- Página Renda Fixa com 78 títulos do Tesouro Direto (Selic, IPCA+, Prefixado)
+- ETL `rf_tesouro.py` via Tesouro Transparente (CSV público, sem Cloudflare WAF)
+- 65.927 registros históricos de taxas e preços (2020–hoje)
+- Títulos agrupados por indexador com taxa atual e gráfico histórico
+- Sidebar atualizada com link "Renda Fixa"
+- 2 bugs documentados e resolvidos (URL 404 do CSV, safe_float corrompendo decimais)
 
 ## Custo estimado (MVP)
 

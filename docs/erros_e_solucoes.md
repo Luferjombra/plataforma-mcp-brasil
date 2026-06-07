@@ -419,6 +419,41 @@ const tickColor = theme === 'dark' ? '#9ca3af' : '#6b7280'
 
 ---
 
+## ETL — Renda Fixa (Tesouro Direto)
+
+### CSV do Tesouro Transparente — URL com 404
+
+**Erro:**
+```
+HTTP 404 — arquivo não encontrado
+```
+
+**Causa:** O resource ID do CKAN mudou. A URL antiga usava `796d2059-14e9-44e3-80a7` (desatualizado).
+
+**Solução:** Verificar URL atual em `tesourotransparente.gov.br/ckan/dataset/taxas-dos-titulos-ofertados-pelo-tesouro-direto`. URL correta (junho/2026):
+```
+https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-.../resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv
+```
+
+---
+
+### ETL Tesouro Direto — taxas com valores absurdos (749%, 1072%)
+
+**Sintoma:** Frontend exibe taxas impossíveis (ex: 749% a.a. para Tesouro IPCA+).
+
+**Causa:** A função `safe_float()` fazia `.replace(".", "")` sobre valores já convertidos pelo pandas. O valor `7.49` (float) virava string `"7.49"`, o ponto decimal era removido → `"749"` → `float("749")` = 749.0.
+
+**Solução:** Remover manipulação de string — pandas com `decimal=","` já entrega float correto:
+```python
+# ERRADO
+v = float(str(val).replace(".", "").replace(",", "."))
+
+# CORRETO
+v = float(val)
+```
+
+---
+
 ## Referências rápidas
 
 | Problema | Arquivo afetado | Solução |
@@ -437,3 +472,5 @@ const tickColor = theme === 'dark' ? '#9ca3af' : '#6b7280'
 | Recharts ticks invisíveis | frontend/app/*/page.tsx | `useTheme` + cor literal |
 | Labels eixos sobrepostos | frontend/app/*/page.tsx | `height`, `width`, `margin` no LineChart |
 | YAxis começa em 0 | frontend/app/*/page.tsx | `domain={['auto', 'auto']}` |
+| Tesouro CSV URL 404 | etl/rf_tesouro.py | Atualizar resource ID no CKAN |
+| Taxas RF absurdas | etl/rf_tesouro.py | Remover `.replace(".")` — pandas já parseou decimal |
