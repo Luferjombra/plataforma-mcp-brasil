@@ -14,14 +14,16 @@ import {
   Sun,
   Moon,
   Landmark,
+  ServerCog,
 } from 'lucide-react'
 
 const links = [
-  { href: '/indicadores', label: 'Indicadores',    icon: Activity   },
-  { href: '/rv',          label: 'Renda Variável', icon: TrendingUp },
-  { href: '/rf',          label: 'Renda Fixa',     icon: Landmark   },
-  { href: '/fundos',      label: 'Fundos',          icon: Briefcase  },
-  { href: '/copilot',     label: 'Chat Finance',    icon: MessageSquare },
+  { href: '/indicadores', label: 'Indicadores',    icon: Activity    },
+  { href: '/rv',          label: 'Renda Variável', icon: TrendingUp  },
+  { href: '/rf',          label: 'Renda Fixa',     icon: Landmark    },
+  { href: '/fundos',      label: 'Fundos',         icon: Briefcase   },
+  { href: '/copilot',     label: 'Chat Finance',   icon: MessageSquare },
+  { href: '/status',      label: 'Status ETL',     icon: ServerCog   },
 ]
 
 export function Sidebar() {

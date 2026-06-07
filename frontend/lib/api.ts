@@ -131,3 +131,36 @@ export async function perguntarCopilot(pergunta: string): Promise<RespostaCopilo
     body: JSON.stringify({ pergunta }),
   })
 }
+
+// ── ETL Health ───────────────────────────────────────────────
+export type EtlStatus = 'ok' | 'stale' | 'error' | 'running' | 'unknown'
+
+export interface EtlJob {
+  job: string
+  status_raw: string | null
+  status: EtlStatus
+  started_at: string | null
+  finished_at: string | null
+  duration_seconds: number | null
+  rows_upserted: number | null
+  error_msg: string | null
+}
+
+export interface EtlSummary {
+  total: number
+  ok: number
+  stale: number
+  error: number
+  running: number
+  unknown: number
+  checked_at: string
+}
+
+export interface EtlHealth {
+  jobs: EtlJob[]
+  summary: EtlSummary
+}
+
+export function getEtlHealth() {
+  return fetchAPI<EtlHealth>('/health/etl')
+}
