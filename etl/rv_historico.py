@@ -1,52 +1,109 @@
 """
 ETL — Renda Variável (B3)
-Fonte: Yahoo Finance via yfinance
+Fonte: brapi.dev (API oficial brasileira, mais estável que yfinance)
 Popula: rv_ativos + rv_historico
+
+Variáveis de ambiente (opcionais):
+    BRAPI_TOKEN  — token gratuito em https://brapi.dev (aumenta rate limit)
+
+Sem token: funciona com limite menor (~15 req/min).
 """
 
 import math
-import yfinance as yf
 import datetime
+import httpx
+import os
 from config import supabase
+from log_etl import ETLRun, log_partial, retry_request
 
+BRAPI_BASE = "https://brapi.dev/api"
+BRAPI_TOKEN = os.getenv("BRAPI_TOKEN", "")  # opcional
+
+# Histórico desde 2020 (brapi suporta ranges: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
+BRAPI_RANGE = "5y"
+
+# Principais ações do Ibovespa
+ATIVOS = [
+    {"ticker": "PETR4", "nome": "Petróleo Brasileiro S.A. - Petrobras PN",          "setor": "Petróleo e Gás",    "tipo": "PN"},
+    {"ticker": "VALE3", "nome": "Vale S.A. ON",                                      "setor": "Mineração",         "tipo": "ON"},
+    {"ticker": "ITUB4", "nome": "Itaú Unibanco Holding S.A. PN",                    "setor": "Financeiro",        "tipo": "PN"},
+    {"ticker": "BBDC4", "nome": "Banco Bradesco S.A. PN",                           "setor": "Financeiro",        "tipo": "PN"},
+    {"ticker": "BBAS3", "nome": "Banco do Brasil S.A. ON",                          "setor": "Financeiro",        "tipo": "ON"},
+    {"ticker": "WEGE3", "nome": "WEG S.A. ON",                                      "setor": "Indústria",         "tipo": "ON"},
+    {"ticker": "RENT3", "nome": "Localiza Rent a Car S.A. ON",                      "setor": "Serviços",          "tipo": "ON"},
+    {"ticker": "LREN3", "nome": "Lojas Renner S.A. ON",                             "setor": "Varejo",            "tipo": "ON"},
+    {"ticker": "MGLU3", "nome": "Magazine Luiza S.A. ON",                           "setor": "Varejo",            "tipo": "ON"},
+    {"ticker": "ABEV3", "nome": "Ambev S.A. ON",                                    "setor": "Consumo",           "tipo": "ON"},
+    {"ticker": "SUZB3", "nome": "Suzano S.A. ON",                                   "setor": "Papel e Celulose",  "tipo": "ON"},
+    {"ticker": "RDOR3", "nome": "Rede D'Or São Luiz S.A. ON",                      "setor": "Saúde",             "tipo": "ON"},
+    {"ticker": "HAPV3", "nome": "Hapvida Participações e Investimentos S.A. ON",    "setor": "Saúde",             "tipo": "ON"},
+    {"ticker": "CSAN3", "nome": "Cosan S.A. ON",                                    "setor": "Energia",           "tipo": "ON"},
+    {"ticker": "ELET3", "nome": "Centrais Elétricas Brasileiras S.A. ON",          "setor": "Energia",           "tipo": "ON"},
+    {"ticker": "VIVT3", "nome": "Telefônica Brasil S.A. ON",                        "setor": "Telecomunicações",  "tipo": "ON"},
+]
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def safe_float(value) -> float | None:
-    """Converte valor para float, retornando None se NaN/None/inválido."""
     try:
         f = float(value)
         return None if math.isnan(f) or math.isinf(f) else round(f, 4)
     except (TypeError, ValueError):
         return None
 
-# Tickers iniciais — principais ações do Ibovespa
-# yfinance exige sufixo .SA para ativos B3
-ATIVOS = [
-    {"ticker": "PETR4", "nome": "Petróleo Brasileiro S.A. - Petrobras PN", "setor": "Petróleo e Gás", "tipo": "PN"},
-    {"ticker": "VALE3", "nome": "Vale S.A. ON", "setor": "Mineração", "tipo": "ON"},
-    {"ticker": "ITUB4", "nome": "Itaú Unibanco Holding S.A. PN", "setor": "Financeiro", "tipo": "PN"},
-    {"ticker": "BBDC4", "nome": "Banco Bradesco S.A. PN", "setor": "Financeiro", "tipo": "PN"},
-    {"ticker": "BBAS3", "nome": "Banco do Brasil S.A. ON", "setor": "Financeiro", "tipo": "ON"},
-    {"ticker": "WEGE3", "nome": "WEG S.A. ON", "setor": "Indústria", "tipo": "ON"},
-    {"ticker": "RENT3", "nome": "Localiza Rent a Car S.A. ON", "setor": "Serviços", "tipo": "ON"},
-    {"ticker": "LREN3", "nome": "Lojas Renner S.A. ON", "setor": "Varejo", "tipo": "ON"},
-    {"ticker": "MGLU3", "nome": "Magazine Luiza S.A. ON", "setor": "Varejo", "tipo": "ON"},
-    {"ticker": "ABEV3", "nome": "Ambev S.A. ON", "setor": "Consumo", "tipo": "ON"},
-    {"ticker": "SUZB3", "nome": "Suzano S.A. ON", "setor": "Papel e Celulose", "tipo": "ON"},
-    {"ticker": "RDOR3", "nome": "Rede D'Or São Luiz S.A. ON", "setor": "Saúde", "tipo": "ON"},
-    {"ticker": "HAPV3", "nome": "Hapvida Participações e Investimentos S.A. ON", "setor": "Saúde", "tipo": "ON"},
-    {"ticker": "CSAN3", "nome": "Cosan S.A. ON", "setor": "Energia", "tipo": "ON"},
-    {"ticker": "ELET3", "nome": "Centrais Elétricas Brasileiras S.A. ON", "setor": "Energia", "tipo": "ON"},
-    {"ticker": "VIVT3", "nome": "Telefônica Brasil S.A. ON", "setor": "Telecomunicações", "tipo": "ON"},
-]
 
-DATA_INICIO = "2020-01-01"
+def brapi_headers() -> dict:
+    headers = {"User-Agent": "plataforma-mcp-brasil/1.0 (github.com/lufer-jom)"}
+    if BRAPI_TOKEN:
+        headers["Authorization"] = f"Bearer {BRAPI_TOKEN}"
+    return headers
 
+
+def buscar_historico(ticker: str, client: httpx.Client) -> list[dict]:
+    """
+    Busca série histórica do ticker via brapi.dev.
+    Retorna lista de dicts com keys: date(unix ts), open, high, low, close, volume, adjustedClose.
+    """
+    params = {
+        "range": BRAPI_RANGE,
+        "interval": "1d",
+        "fundamental": "false",
+        "dividends": "false",
+    }
+    if BRAPI_TOKEN:
+        params["token"] = BRAPI_TOKEN
+
+    url = f"{BRAPI_BASE}/quote/{ticker}"
+    resp = retry_request(client, url, params=params, timeout=30)
+    data = resp.json()
+
+    results = data.get("results", [])
+    if not results:
+        return []
+
+    return results[0].get("historicalDataPrice", [])
+
+
+def buscar_info(ticker: str, client: httpx.Client) -> dict:
+    """Busca metadados do ativo (nome, setor, market cap)."""
+    try:
+        params = {"fundamental": "true"}
+        if BRAPI_TOKEN:
+            params["token"] = BRAPI_TOKEN
+        resp = retry_request(client, f"{BRAPI_BASE}/quote/{ticker}", params=params, timeout=20)
+        results = resp.json().get("results", [])
+        return results[0] if results else {}
+    except Exception:
+        return {}
+
+
+# ── Supabase ──────────────────────────────────────────────────────────────────
 
 def upsert_ativo(ativo: dict, info: dict, status: str = "ativo") -> None:
-    """Insere/atualiza cadastro do ativo."""
     record = {
         "ticker": ativo["ticker"],
-        "nome": ativo["nome"],
+        "nome": info.get("longName") or ativo["nome"],
         "setor": ativo["setor"],
         "tipo": ativo["tipo"],
         "market_cap": info.get("marketCap"),
@@ -57,23 +114,30 @@ def upsert_ativo(ativo: dict, info: dict, status: str = "ativo") -> None:
     supabase.table("rv_ativos").upsert(record, on_conflict="ticker").execute()
 
 
-def upsert_historico(ticker: str, df) -> int:
-    """Converte DataFrame do yfinance e faz upsert no Supabase."""
+def upsert_historico(ticker: str, candles: list[dict]) -> int:
+    """Converte candles brapi.dev e faz upsert no Supabase."""
     registros = []
-    for data, row in df.iterrows():
+    for c in candles:
         try:
-            fechamento = safe_float(row["Close"])
+            # brapi retorna timestamp Unix em segundos
+            ts = c.get("date")
+            if not ts:
+                continue
+            data_iso = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).date().isoformat()
+
+            fechamento = safe_float(c.get("close"))
             if fechamento is None:
-                continue  # linha sem fechamento é inválida
+                continue
+
             registros.append({
                 "ticker": ticker,
-                "data": data.date().isoformat(),
-                "abertura": safe_float(row["Open"]),
-                "maxima": safe_float(row["High"]),
-                "minima": safe_float(row["Low"]),
+                "data": data_iso,
+                "abertura": safe_float(c.get("open")),
+                "maxima": safe_float(c.get("high")),
+                "minima": safe_float(c.get("low")),
                 "fechamento": fechamento,
-                "fechamento_adj": safe_float(row.get("Adj Close", row["Close"])),
-                "volume": safe_float(row["Volume"]),
+                "fechamento_adj": safe_float(c.get("adjustedClose") or c.get("close")),
+                "volume": safe_float(c.get("volume")),
             })
         except Exception:
             continue
@@ -89,68 +153,63 @@ def upsert_historico(ticker: str, df) -> int:
     return len(result.data)
 
 
-def registrar_log(ticker: str, status: str, novos: int, total: int, erro: str = None):
-    supabase.table("etl_log").insert({
-        "job_nome": f"rv_{ticker}",
-        "status": status,
-        "registros_novos": novos,
-        "registros_total": total,
-        "erro_msg": erro,
-        "data_inicio_carga": DATA_INICIO,
-        "data_fim_carga": datetime.date.today().isoformat(),
-    }).execute()
-
+# ── Runner ────────────────────────────────────────────────────────────────────
 
 def run():
-    print("=== ETL Renda Variável (B3) ===\n")
+    print("=== ETL Renda Variável (B3 via brapi.dev) ===\n")
+    if BRAPI_TOKEN:
+        print(f"  Token: {BRAPI_TOKEN[:8]}...\n")
+    else:
+        print("  ⚠ Sem BRAPI_TOKEN — usando tier gratuito (limite reduzido)\n")
 
-    for ativo in ATIVOS:
-        ticker = ativo["ticker"]
-        ticker_yf = f"{ticker}.SA"
-        print(f"→ Baixando {ticker}...")
+    erros = []
 
-        try:
-            yf_ticker = yf.Ticker(ticker_yf)
-            info = {}
-            try:
-                info = yf_ticker.info or {}
-            except Exception:
-                pass
+    with ETLRun("rv_historico_batch") as batch_run:
+        total_rows = 0
 
-            # Tenta buscar histórico — inclui período mais amplo para pegar último pregão
-            df = yf_ticker.history(start=DATA_INICIO, auto_adjust=False)
+        with httpx.Client(headers=brapi_headers()) as client:
+            for ativo in ATIVOS:
+                ticker = ativo["ticker"]
+                print(f"→ {ticker}...")
 
-            if df.empty:
-                # Tenta período mais amplo para capturar último pregão antes do delisting
-                df = yf_ticker.history(period="max", auto_adjust=False)
+                try:
+                    with ETLRun(f"rv_{ticker}") as run:
+                        candles = buscar_historico(ticker, client)
 
-            if df.empty:
-                print(f"  ⚠ Delisted sem dados históricos — registrando como delisted\n")
-                upsert_ativo(ativo, info, status="delisted")
-                registrar_log(ticker, "partial", 0, 0, "delisted - sem dados históricos")
-                continue
+                        if not candles:
+                            print(f"  ⚠ Sem dados históricos — marcando como delisted\n")
+                            upsert_ativo(ativo, {}, status="delisted")
+                            run.set_rows(0)
+                            continue
 
-            # Remove timezone do índice
-            df.index = df.index.tz_localize(None)
+                        # Determina status pelo candle mais recente
+                        ultimo_ts = candles[-1].get("date", 0)
+                        ultimo_dia = datetime.datetime.fromtimestamp(ultimo_ts, tz=datetime.timezone.utc).date()
+                        dias_atraso = (datetime.date.today() - ultimo_dia).days
+                        status = "delisted" if dias_atraso > 30 else "ativo"
 
-            # Determina status: se último pregão > 30 dias atrás, provável delisted
-            ultimo_pregao = df.index[-1].date()
-            dias_sem_dados = (datetime.date.today() - ultimo_pregao).days
-            status = "delisted" if dias_sem_dados > 30 else "ativo"
+                        info = buscar_info(ticker, client)
+                        upsert_ativo(ativo, info, status=status)
+                        salvos = upsert_historico(ticker, candles)
+                        run.set_rows(salvos)
+                        total_rows += salvos
 
-            if status == "delisted":
-                print(f"  ⚠ Último pregão: {ultimo_pregao} ({dias_sem_dados} dias atrás) → marcado como delisted")
+                        flag = "⚠ delisted" if status == "delisted" else "✓"
+                        print(f"  {flag} {salvos} registros | último pregão: {ultimo_dia}\n")
 
-            upsert_ativo(ativo, info, status=status)
-            salvos = upsert_historico(ticker, df)
-            registrar_log(ticker, "success", salvos, len(df))
-            print(f"  ✓ {salvos} registros salvos | status: {status}\n")
+                except Exception as e:
+                    erros.append(f"{ticker}: {e}")
+                    print(f"  ✗ Erro: {e}\n")
 
-        except Exception as e:
-            registrar_log(ticker, "error", 0, 0, str(e))
-            print(f"  ✗ Erro: {e}\n")
+        batch_run.set_rows(total_rows)
 
-    print("=== Concluído ===")
+    if erros:
+        log_partial("rv_historico_batch", total_rows, "; ".join(erros))
+        print(f"\n⚠ {len(erros)} erro(s):")
+        for e in erros:
+            print(f"  - {e}")
+
+    print("\n=== Concluído ===")
 
 
 if __name__ == "__main__":

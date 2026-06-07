@@ -1,12 +1,13 @@
 """
 ETL — Indicadores Econômicos
-Fonte: Banco Central do Brasil (BCB-SGS)
+Fonte: Banco Central do Brasil (BCB-SGS) — API oficial
 Séries: IPCA (433), SELIC meta (432), CDI diário (12), PIB var% trimestral (7326)
 """
 
 import httpx
 import datetime
 from config import supabase
+from log_etl import ETLRun, retry_request
 
 # Mapeamento: nome interno → código BCB
 SERIES = {
@@ -17,6 +18,7 @@ SERIES = {
 }
 
 BCB_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados"
+HEADERS = {"User-Agent": "plataforma-mcp-brasil/1.0 (github.com/lufer-jom)"}
 
 
 def buscar_serie(codigo: int, data_inicio: str = "01/01/2020") -> list[dict]:
@@ -25,9 +27,8 @@ def buscar_serie(codigo: int, data_inicio: str = "01/01/2020") -> list[dict]:
     url = BCB_URL.format(codigo=codigo)
     params = {"formato": "json", "dataInicial": data_inicio, "dataFinal": hoje}
 
-    with httpx.Client(timeout=30) as client:
-        response = client.get(url, params=params)
-        response.raise_for_status()
+    with httpx.Client(headers=HEADERS) as client:
+        response = retry_request(client, url, params=params, timeout=30)
         return response.json()
 
 
@@ -51,42 +52,30 @@ def normalizar(dados: list[dict], serie: str, unidade: str) -> list[dict]:
     return registros
 
 
-def salvar_no_supabase(registros: list[dict], serie: str) -> dict:
-    """Upsert dos registros no Supabase (ignora duplicatas)."""
+def salvar_no_supabase(registros: list[dict]) -> int:
+    """Upsert dos registros no Supabase. Retorna número de rows processadas."""
     if not registros:
-        return {"inseridos": 0, "total": 0}
-
+        return 0
     result = (
         supabase.table("indicadores_economicos")
         .upsert(registros, on_conflict="serie,data")
         .execute()
     )
-    return {"inseridos": len(result.data), "total": len(registros)}
-
-
-def registrar_log(job: str, status: str, novos: int, total: int, erro: str = None):
-    supabase.table("etl_log").insert({
-        "job_nome": job,
-        "status": status,
-        "registros_novos": novos,
-        "registros_total": total,
-        "erro_msg": erro,
-    }).execute()
+    return len(result.data)
 
 
 def run():
-    print("=== ETL Indicadores Econômicos ===\n")
+    print("=== ETL Indicadores Econômicos (BCB-SGS) ===\n")
+
     for serie, cfg in SERIES.items():
-        print(f"→ Buscando {serie.upper()} (código BCB: {cfg['codigo']})...")
-        try:
+        print(f"→ {serie.upper()} (código {cfg['codigo']})...")
+
+        with ETLRun(f"indicadores_{serie}") as run:
             dados_brutos = buscar_serie(cfg["codigo"])
             registros = normalizar(dados_brutos, serie, cfg["unidade"])
-            resultado = salvar_no_supabase(registros, serie)
-            registrar_log(f"indicadores_{serie}", "success", resultado["inseridos"], resultado["total"])
-            print(f"  ✓ {resultado['inseridos']} registros salvos de {resultado['total']} buscados\n")
-        except Exception as e:
-            registrar_log(f"indicadores_{serie}", "error", 0, 0, str(e))
-            print(f"  ✗ Erro: {e}\n")
+            salvos = salvar_no_supabase(registros)
+            run.set_rows(salvos)
+            print(f"  ✓ {salvos} registros salvos de {len(registros)} buscados\n")
 
     print("=== Concluído ===")
 

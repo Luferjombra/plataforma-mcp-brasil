@@ -1,0 +1,178 @@
+name: ETL Pipeline — Plataforma MCP Brasil
+
+on:
+  schedule:
+    # Horários em UTC (Brasil = UTC-3)
+    - cron: '0 21 * * 1-5'   # 18h BRT seg-sex — RV (após fechamento B3 ~17h)
+    - cron: '0 22 * * 1-5'   # 19h BRT seg-sex — Indicadores BCB
+    - cron: '0 23 * * 1-5'   # 20h BRT seg-sex — Fundos CVM
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Qual ETL rodar? (all | rv | indicadores | fundos | rf)'
+        required: false
+        default: 'all'
+
+# Evita runs simultâneas do mesmo job
+concurrency:
+  group: etl-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Renda Variável ──────────────────────────────────────────────────────────
+  etl-rv:
+    name: ETL — Renda Variável (B3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: |
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.job == 'all' || github.event.inputs.job == 'rv')) ||
+      (github.event_name == 'schedule' && contains(github.event.schedule, '0 21'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+
+      - name: Rodar ETL RV
+        id: etl
+        working-directory: etl
+        run: python rv_historico.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
+
+      - name: Notificar falha no Discord
+        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            ❌ **ETL RV falhou** — ${{ github.repository }}
+            Workflow: ${{ github.run_id }}
+            Link: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  # ── Indicadores Econômicos ──────────────────────────────────────────────────
+  etl-indicadores:
+    name: ETL — Indicadores (BCB-SGS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.job == 'all' || github.event.inputs.job == 'indicadores')) ||
+      (github.event_name == 'schedule' && contains(github.event.schedule, '0 22'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+
+      - name: Rodar ETL Indicadores
+        working-directory: etl
+        run: python indicadores.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Notificar falha no Discord
+        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            ❌ **ETL Indicadores falhou** — ${{ github.repository }}
+            Link: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  # ── Fundos CVM ──────────────────────────────────────────────────────────────
+  etl-fundos:
+    name: ETL — Fundos (CVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.job == 'all' || github.event.inputs.job == 'fundos')) ||
+      (github.event_name == 'schedule' && contains(github.event.schedule, '0 23'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+
+      - name: Rodar ETL Fundos
+        working-directory: etl
+        run: python fundos.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Notificar falha no Discord
+        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            ❌ **ETL Fundos falhou** — ${{ github.repository }}
+            Link: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  # ── Renda Fixa ──────────────────────────────────────────────────────────────
+  etl-rf:
+    name: ETL — Renda Fixa (Tesouro Direto)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.job == 'all' || github.event.inputs.job == 'rf')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+
+      - name: Rodar ETL Renda Fixa
+        working-directory: etl
+        run: python rf_tesouro.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Notificar falha no Discord
+        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            ❌ **ETL Renda Fixa falhou** — ${{ github.repository }}
+            Link: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
