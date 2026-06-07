@@ -51,7 +51,8 @@ jobs:
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
 
       - name: Notificar falha no Discord
-        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        if: failure()
+        continue-on-error: true
         uses: Ilshidur/action-discord@master
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -91,7 +92,8 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
       - name: Notificar falha no Discord
-        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        if: failure()
+        continue-on-error: true
         uses: Ilshidur/action-discord@master
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -130,7 +132,8 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
       - name: Notificar falha no Discord
-        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        if: failure()
+        continue-on-error: true
         uses: Ilshidur/action-discord@master
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -168,7 +171,8 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
       - name: Notificar falha no Discord
-        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        if: failure()
+        continue-on-error: true
         uses: Ilshidur/action-discord@master
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
