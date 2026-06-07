@@ -251,6 +251,44 @@ if r and r.status_code == 200:
             diff = (date.today() - date.fromisoformat(data_str)).days
             check("PETR4 dados recentes (≤30 dias)", diff <= 30, f"data={data_str}")
 
+# ── Seção 4 — Monitoramento ETL ───────────────────────────────────────────────
+print("\n▶ SEÇÃO 4 — Monitoramento ETL\n")
+
+print("[4.1] ETL Health endpoint")
+r, elapsed = get("/health/etl")
+if r and r.status_code == 200:
+    body = r.json()
+    jobs = body.get("jobs", [])
+    summary = body.get("summary", {})
+
+    check("GET /health/etl acessível", True, f"{len(jobs)} jobs rastreados em {elapsed:.1f}s")
+    check("Campo 'summary' presente", "total" in summary, str(summary))
+
+    jobs_conhecidos = {"rv_historico_batch", "indicadores_selic", "indicadores_ipca",
+                       "indicadores_cdi", "indicadores_pib"}
+
+    jobs_com_erro = [j["job"] for j in jobs if j.get("status") == "error"]
+    check("Nenhum job ETL em status error",
+          len(jobs_com_erro) == 0,
+          f"erros={jobs_com_erro}" if jobs_com_erro else "todos OK")
+
+    jobs_stale = [j["job"] for j in jobs if j.get("status") in ("stale", "unknown")]
+    check("ETLs atualizados (nenhum stale/unknown)",
+          len(jobs_stale) == 0,
+          f"stale/unknown={jobs_stale}" if jobs_stale else "todos recentes")
+
+    # Verifica se RV rodou com dados
+    rv_batch = next((j for j in jobs if j.get("job") == "rv_historico_batch"), None)
+    if rv_batch:
+        rows = rv_batch.get("rows_upserted") or 0
+        check("ETL RV registrou linhas (> 0)", rows > 0, f"rows_upserted={rows}")
+    else:
+        check("ETL RV presente na tabela etl_runs", False,
+              "rv_historico_batch não encontrado — SQL 003_etl_runs.sql aplicado?")
+else:
+    check("GET /health/etl acessível", False,
+          f"status={r.status_code if r else 'timeout'} — rota implementada?")
+
 # ── Resumo ────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
 print("RESUMO")

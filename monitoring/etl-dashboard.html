@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ETL Monitor — Plataforma MCP Brasil</title>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3e;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --ok:        #22c55e;
+      --ok-bg:     #052e16;
+      --warn:      #f59e0b;
+      --warn-bg:   #1c1400;
+      --error:     #ef4444;
+      --error-bg:  #1a0000;
+      --info:      #3b82f6;
+      --info-bg:   #0c1a40;
+      --unknown:   #6b7280;
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      max-width: 900px;
+      margin: 0 auto 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+    header p  { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+
+    .header-actions { display: flex; gap: 0.75rem; align-items: center; }
+
+    .api-input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      color: var(--text);
+      font-size: 0.8rem;
+      width: 340px;
+    }
+    .api-input:focus { outline: 2px solid var(--info); }
+
+    button {
+      background: var(--info);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.4rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+
+    .summary {
+      max-width: 900px;
+      margin: 0 auto 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .kpi .val { font-size: 2rem; font-weight: 700; }
+    .kpi .lbl { font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .kpi.ok    { border-color: var(--ok);    background: var(--ok-bg); }
+    .kpi.warn  { border-color: var(--warn);  background: var(--warn-bg); }
+    .kpi.error { border-color: var(--error); background: var(--error-bg); }
+
+    .jobs {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .job-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.1rem 1.4rem;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0.5rem 1.2rem;
+      align-items: center;
+    }
+    .job-card.ok     { border-left: 4px solid var(--ok); }
+    .job-card.stale  { border-left: 4px solid var(--warn); }
+    .job-card.error  { border-left: 4px solid var(--error); }
+    .job-card.running{ border-left: 4px solid var(--info); }
+    .job-card.unknown{ border-left: 4px solid var(--unknown); }
+
+    .dot {
+      width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot.ok      { background: var(--ok); }
+    .dot.stale   { background: var(--warn); }
+    .dot.error   { background: var(--error); }
+    .dot.running { background: var(--info); animation: pulse 1.5s infinite; }
+    .dot.unknown { background: var(--unknown); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .job-name   { font-weight: 600; font-size: 0.95rem; }
+    .job-meta   { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; }
+
+    .job-stats {
+      text-align: right;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .job-stats strong { color: var(--text); font-size: 0.9rem; }
+
+    .job-error {
+      grid-column: 1 / -1;
+      background: var(--error-bg);
+      border: 1px solid var(--error);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.78rem;
+      color: #fca5a5;
+      font-family: monospace;
+      word-break: break-word;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+    .status-badge.ok      { background: var(--ok-bg);    color: var(--ok); }
+    .status-badge.stale   { background: var(--warn-bg);  color: var(--warn); }
+    .status-badge.error   { background: var(--error-bg); color: var(--error); }
+    .status-badge.running { background: var(--info-bg);  color: var(--info); }
+    .status-badge.unknown { background: #111;            color: var(--muted); }
+
+    .timestamp { font-size: 0.72rem; color: var(--muted); margin-top: 0.1rem; }
+
+    .empty {
+      max-width: 900px;
+      margin: 3rem auto;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty h2 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+    .empty p  { font-size: 0.85rem; line-height: 1.6; }
+    .empty code {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.15rem 0.4rem;
+      font-size: 0.8rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--info);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      max-width: 900px;
+      margin: 2rem auto 0;
+      font-size: 0.72rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    #refresh-countdown { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🔍 ETL Monitor</h1>
+    <p>Plataforma MCP Brasil — status dos pipelines de dados</p>
+  </div>
+  <div class="header-actions">
+    <input class="api-input" id="api-url"
+      type="text"
+      value="https://plataforma-mcp-brasil-api.onrender.com"
+      placeholder="https://sua-api.onrender.com" />
+    <button id="btn-refresh" onclick="fetchStatus()">↺ Atualizar</button>
+  </div>
+</header>
+
+<div class="summary" id="summary"></div>
+<div class="jobs"    id="jobs"></div>
+<div class="empty"   id="empty" style="display:none">
+  <h2>Sem dados de ETL</h2>
+  <p>
+    Certifique-se de que a migration <code>003_etl_runs.sql</code> foi aplicada no Supabase
+    e que pelo menos um ETL já rodou.<br/>
+    Verifique também se a URL da API está correta.
+  </p>
+</div>
+
+<footer>
+  <span id="last-checked">–</span>
+  <span>Auto-refresh em <span id="refresh-countdown">60</span>s</span>
+</footer>
+
+<script>
+  const LABELS = {
+    ok:      '✓ OK',
+    stale:   '⚠ Desatualizado',
+    error:   '✗ Erro',
+    running: '⟳ Rodando',
+    unknown: '? Sem dados',
+  };
+
+  let countdown = 60;
+  let timer;
+
+  function apiBase() {
+    return document.getElementById('api-url').value.replace(/\/$/, '');
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '–';
+    const d = new Date(iso);
+    return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit' }) + ' BRT';
+  }
+
+  function fmtDuration(secs) {
+    if (secs == null) return '–';
+    if (secs < 60) return `${secs}s`;
+    return `${Math.floor(secs/60)}m ${secs % 60}s`;
+  }
+
+  function fmtRows(n) {
+    if (n == null) return '–';
+    return n.toLocaleString('pt-BR');
+  }
+
+  function renderSummary(s) {
+    const el = document.getElementById('summary');
+    el.innerHTML = [
+      { cls: '',      val: s.total,   lbl: 'Total jobs' },
+      { cls: 'ok',    val: s.ok,      lbl: '✓ OK' },
+      { cls: 'warn',  val: s.stale,   lbl: '⚠ Stale' },
+      { cls: 'error', val: s.error + (s.running || 0), lbl: '✗ Erro / running' },
+      { cls: '',      val: s.unknown, lbl: '? Sem dados' },
+    ].map(k => `
+      <div class="kpi ${k.cls}">
+        <div class="val">${k.val}</div>
+        <div class="lbl">${k.lbl}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderJobs(jobs) {
+    const el = document.getElementById('jobs');
+    if (!jobs.length) { el.innerHTML = ''; return; }
+
+    el.innerHTML = jobs.map(j => {
+      const st = j.status || 'unknown';
+      const errorBlock = j.error_msg
+        ? `<div class="job-error">⚠ ${escHtml(j.error_msg)}</div>`
+        : '';
+      return `
+        <div class="job-card ${st}">
+          <div class="dot ${st}"></div>
+          <div>
+            <div class="job-name">${escHtml(j.job)}</div>
+            <div class="job-meta">
+              <span class="status-badge ${st}">${LABELS[st] || st}</span>
+              &nbsp;·&nbsp; Início: ${fmtDate(j.started_at)}
+            </div>
+          </div>
+          <div class="job-stats">
+            <strong>${fmtRows(j.rows_upserted)}</strong> linhas<br/>
+            ${fmtDuration(j.duration_seconds)}
+          </div>
+          ${errorBlock}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async function fetchStatus() {
+    const btn = document.getElementById('btn-refresh');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Carregando…';
+
+    clearInterval(timer);
+    countdown = 60;
+    document.getElementById('refresh-countdown').textContent = '60';
+
+    try {
+      const url = `${apiBase()}/health/etl`;
+      const res = await fetch(url, { cache: 'no-store' });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const jobs = data.jobs || [];
+      const summary = data.summary || {};
+
+      renderSummary({
+        total: summary.total || jobs.length,
+        ok:      summary.ok      || 0,
+        stale:   summary.stale   || 0,
+        error:   summary.error   || 0,
+        running: summary.running || 0,
+        unknown: summary.unknown || 0,
+      });
+      renderJobs(jobs);
+
+      document.getElementById('empty').style.display = jobs.length ? 'none' : 'block';
+      document.getElementById('last-checked').textContent =
+        'Atualizado: ' + new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' BRT';
+
+    } catch (err) {
+      document.getElementById('jobs').innerHTML = '';
+      document.getElementById('summary').innerHTML = `
+        <div class="kpi error" style="grid-column:1/-1">
+          <div class="val" style="font-size:1.2rem">Erro ao conectar</div>
+          <div class="lbl">${escHtml(err.message)} — verifique a URL da API</div>
+        </div>`;
+      document.getElementById('empty').style.display = 'none';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '↺ Atualizar';
+      startCountdown();
+    }
+  }
+
+  function startCountdown() {
+    timer = setInterval(() => {
+      countdown--;
+      document.getElementById('refresh-countdown').textContent = countdown;
+      if (countdown <= 0) { clearInterval(timer); fetchStatus(); }
+    }, 1000);
+  }
+
+  // Auto-start
+  fetchStatus();
+</script>
+</body>
+</html>

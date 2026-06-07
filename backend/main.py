@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from routes import indicadores, rv, fundos, noticias, copilot, rf
+from routes import indicadores, rv, fundos, noticias, copilot, rf, health
 
 app = FastAPI(
     title="Plataforma MCP Brasil API",
@@ -40,6 +40,7 @@ app.include_router(fundos.router, prefix="/fundos", tags=["Fundos"])
 app.include_router(noticias.router, prefix="/noticias", tags=["Notícias"])
 app.include_router(copilot.router, prefix="/copilot", tags=["Copilot"])
 app.include_router(rf.router, prefix="/rf", tags=["Renda Fixa"])
+app.include_router(health.router, prefix="/health/etl", tags=["Monitoramento ETL"])
 
 
 @app.get("/")
