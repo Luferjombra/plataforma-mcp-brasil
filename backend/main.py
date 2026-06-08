@@ -32,7 +32,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://plataforma-mcp-brasil.vercel.app",
-        "http://localhost:3000",  # dev local
+        "http://localhost:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -54,16 +54,12 @@ def health_check():
 
 
 # ── MCP Server ────────────────────────────────────────────────────────────────
-# Expõe as rotas financeiras como ferramentas MCP para IAs (Claude, Cursor, etc.)
-# Endpoint: GET /mcp  — compatível com MCP 2024-11-05 (SSE)
-# Exclui rotas internas (copilot, noticias, health) — expõe apenas dados analíticos
 mcp = FastApiMCP(
     app,
     name="Plataforma MCP Brasil",
     description=(
         "Dados financeiros históricos do Brasil: ações B3, Tesouro Direto, "
-        "fundos de investimento e indicadores econômicos (Selic, IPCA, CDI). "
-        "Todos os dados são processados e armazenados localmente — sem rate limits externos."
+        "fundos de investimento e indicadores econômicos (Selic, IPCA, CDI)."
     ),
     exclude_tags=["Notícias", "Copilot", "Monitoramento ETL"],
 )
