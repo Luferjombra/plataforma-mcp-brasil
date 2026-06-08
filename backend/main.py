@@ -28,6 +28,7 @@ app.add_middleware(
         "https://plataforma-mcp-brasil.vercel.app",
         "http://localhost:3000",
     ],
+    allow_origin_regex=r"https://plataforma-mcp-brasil.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
