@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+﻿from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -8,14 +8,13 @@ from routes import indicadores, rv, fundos, noticias, copilot, rf, health
 app = FastAPI(
     title="Plataforma MCP Brasil API",
     description=(
-        "API financeira analítica com dados históricos do Brasil. "
-        "Cobre Renda Variável (B3), Renda Fixa (Tesouro Direto), "
-        "Fundos de Investimento (CVM) e Indicadores Econômicos (BCB)."
+        "API financeira analitica com dados historicos do Brasil. "
+        "Cobre Renda Variavel (B3), Renda Fixa (Tesouro Direto), "
+        "Fundos de Investimento (CVM) e Indicadores Economicos (BCB)."
     ),
     version="0.1.0",
 )
 
-# ── Security headers ──────────────────────────────────────────────────────────
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -27,7 +26,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -40,9 +38,9 @@ app.add_middleware(
 )
 
 app.include_router(indicadores.router, prefix="/indicadores", tags=["Indicadores"])
-app.include_router(rv.router, prefix="/rv", tags=["Renda Variável"])
+app.include_router(rv.router, prefix="/rv", tags=["Renda Variavel"])
 app.include_router(fundos.router, prefix="/fundos", tags=["Fundos"])
-app.include_router(noticias.router, prefix="/noticias", tags=["Notícias"])
+app.include_router(noticias.router, prefix="/noticias", tags=["Noticias"])
 app.include_router(copilot.router, prefix="/copilot", tags=["Copilot"])
 app.include_router(rf.router, prefix="/rf", tags=["Renda Fixa"])
 app.include_router(health.router, prefix="/health/etl", tags=["Monitoramento ETL"])
@@ -53,14 +51,10 @@ def health_check():
     return {"status": "ok", "version": "0.1.0"}
 
 
-# ── MCP Server ────────────────────────────────────────────────────────────────
 mcp = FastApiMCP(
     app,
     name="Plataforma MCP Brasil",
-    description=(
-        "Dados financeiros históricos do Brasil: ações B3, Tesouro Direto, "
-        "fundos de investimento e indicadores econômicos (Selic, IPCA, CDI)."
-    ),
-    exclude_tags=["Notícias", "Copilot", "Monitoramento ETL"],
+    description="Dados financeiros historicos do Brasil.",
+    exclude_tags=["Noticias", "Copilot", "Monitoramento ETL"],
 )
 mcp.mount()
