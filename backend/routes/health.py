@@ -11,7 +11,7 @@ GET /health/etl/{job}
 
 from fastapi import APIRouter
 from datetime import datetime, timezone, timedelta
-from config import supabase
+from db import supabase
 
 router = APIRouter()
 
