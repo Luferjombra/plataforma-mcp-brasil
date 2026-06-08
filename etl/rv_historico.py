@@ -178,4 +178,122 @@ def upsert_historico(ticker: str, candles: list[dict]) -> int:
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def run():
-    print("=== ETL Renda Variável (B3 via brapi.de
+    print("=== ETL Renda Variável (B3 via brapi.dev) ===\n")
+    if BRAPI_TOKEN:
+        print(f"  Token: {BRAPI_TOKEN[:8]}...\n")
+    else:
+        print("  ⚠ Sem BRAPI_TOKEN — usando tier gratuito (limite reduzido)\n")
+
+    erros = []
+
+    with ETLRun("rv_historico_batch") as batch_run:
+        total_rows = 0
+
+        with httpx.Client(headers=brapi_headers()) as client:
+            for ativo in ATIVOS:
+                ticker = ativo["ticker"]
+                print(f"→ {ticker}...")
+
+                try:
+                    with ETLRun(f"rv_{ticker}") as run:
+                        candles = buscar_historico(ticker, client)
+
+                        if not candles:
+                            print(f"  ⚠ Sem dados históricos — marcando como delisted\n")
+                            upsert_ativo(ativo, {}, status="delisted")
+                            run.set_rows(0)
+                            continue
+
+                        # Determina status pelo candle mais recente
+                        ultimo_ts = candles[-1].get("date", 0)
+                        ultimo_dia = datetime.datetime.fromtimestamp(ultimo_ts, tz=datetime.timezone.utc).date()
+                        dias_atraso = (datetime.date.today() - ultimo_dia).days
+                        status = "delisted" if dias_atraso > 30 else "ativo"
+
+                        info = buscar_info(ticker, client)
+                        upsert_ativo(ativo, info, status=status)
+                        salvos = upsert_historico(ticker, candles)
+                        run.set_rows(salvos)
+                        total_rows += salvos
+
+                        flag = "⚠ delisted" if status == "delisted" else "✓"
+                        print(f"  {flag} {salvos} registros | último pregão: {ultimo_dia}\n")
+
+                except Exception as e:
+                    erros.append(f"{ticker}: {e}")
+                    print(f"  ✗ Erro: {e}\n")
+
+                # Delay para respeitar rate limit do plano free (~15 req/min)
+                time.sleep(4)
+
+        batch_run.set_rows(total_rows)
+
+    if erros:
+        log_partial("rv_historico_batch", total_rows, "; ".join(erros))
+        print(f"
+⚠ {len(erros)} erro(s):")
+        for e in erros:
+            print(f"  - {e}")
+
+    print("
+=== Concluído ===")
+
+
+if __name__ == "__main__":
+    run()
+  ⚠ Sem BRAPI_TOKEN — usando tier gratuito (limite reduzido)\n")
+
+    erros = []
+
+    with ETLRun("rv_historico_batch") as batch_run:
+        total_rows = 0
+
+        with httpx.Client(headers=brapi_headers()) as client:
+            for ativo in ATIVOS:
+                ticker = ativo["ticker"]
+                print(f"→ {ticker}...")
+
+                try:
+                    with ETLRun(f"rv_{ticker}") as run:
+                        candles = buscar_historico(ticker, client)
+
+                        if not candles:
+                            print(f"  ⚠ Sem dados históricos — marcando como delisted\n")
+                            upsert_ativo(ativo, {}, status="delisted")
+                            run.set_rows(0)
+                            continue
+
+                        ultimo_ts = candles[-1].get("date", 0)
+                        ultimo_dia = datetime.datetime.fromtimestamp(ultimo_ts, tz=datetime.timezone.utc).date()
+                        dias_atraso = (datetime.date.today() - ultimo_dia).days
+                        status = "delisted" if dias_atraso > 30 else "ativo"
+
+                        info = buscar_info(ticker, client)
+                        upsert_ativo(ativo, info, status=status)
+                        salvos = upsert_historico(ticker, candles)
+                        run.set_rows(salvos)
+                        total_rows += salvos
+
+                        flag = "⚠ delisted" if status == "delisted" else "✓"
+                        print(f"  {flag} {salvos} registros | último pregão: {ultimo_dia}\n")
+
+                except Exception as e:
+                    erros.append(f"{ticker}: {e}")
+                    print(f"  ✗ Erro: {e}\n")
+
+                # Delay para respeitar rate limit do plano free (~15 req/min)
+                time.sleep(4)
+
+        batch_run.set_rows(total_rows)
+
+    if erros:
+        log_partial("rv_historico_batch", total_rows, "; ".join(erros))
+        print(f"\n⚠ {len(erros)} erro(s):")
+        for e in erros:
+            print(f"  - {e}")
+
+    print("\n=== Concluído ===")
+
+
+if __name__ == "__main__":
+    run()
