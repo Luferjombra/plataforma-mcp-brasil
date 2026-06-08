@@ -68,10 +68,3 @@ mcp = FastApiMCP(
     exclude_tags=["Notícias", "Copilot", "Monitoramento ETL"],
 )
 mcp.mount()
-# ── MCP Server ────────────────────────────────────────────────────────────────
-mcp = FastApiMCP(
-    app,
-    name="Plataforma MCP Brasil",
-    exclude_tags=["Notícias", "Copilot", "Monitoramento ETL"],
-)
-mcp.mount()
