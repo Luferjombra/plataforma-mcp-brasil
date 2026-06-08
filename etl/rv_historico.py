@@ -11,6 +11,7 @@ Sem token: funciona com limite menor (~15 req/min).
 
 import math
 import datetime
+import time
 import httpx
 import os
 from config import supabase
@@ -40,6 +41,23 @@ ATIVOS = [
     {"ticker": "CSAN3", "nome": "Cosan S.A. ON",                                    "setor": "Energia",           "tipo": "ON"},
     {"ticker": "ELET3", "nome": "Centrais Elétricas Brasileiras S.A. ON",          "setor": "Energia",           "tipo": "ON"},
     {"ticker": "VIVT3", "nome": "Telefônica Brasil S.A. ON",                        "setor": "Telecomunicações",  "tipo": "ON"},
+    # FIIs — Fundos Imobiliários
+    {"ticker": "BTLG11", "nome": "BTG Pactual Logística FII",                       "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "HGLG11", "nome": "CSHG Logística FII",                              "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "XPLG11", "nome": "XP Log FII",                                      "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "KNRI11", "nome": "Kinea Renda Imobiliária FII",                     "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "MXRF11", "nome": "Maxi Renda FII",                                  "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "BCFF11", "nome": "BTG Pactual Fundo de Fundos FII",                 "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "HGRE11", "nome": "CSHG Real Estate FII",                            "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "VISC11", "nome": "Vinci Shopping Centers FII",                      "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "XPML11", "nome": "XP Malls FII",                                    "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "GGRC11", "nome": "GGR Covepi Renda FII",                            "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "KFOF11", "nome": "Kinea Fundo de Fundos FII",                       "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "CPTS11", "nome": "Capitânia Securities II FII",                     "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "PVBI11", "nome": "VBI Prime Properties FII",                        "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "RBRF11", "nome": "RBR Alpha Multiestratégia FII",                   "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "TRXF11", "nome": "TRX Real Estate FII",                             "setor": "Fundos Imobiliários", "tipo": "FII"},
+    {"ticker": "BRCR11", "nome": "BC Fund FII",                                     "setor": "Fundos Imobiliários", "tipo": "FII"},
 ]
 
 
@@ -160,61 +178,4 @@ def upsert_historico(ticker: str, candles: list[dict]) -> int:
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def run():
-    print("=== ETL Renda Variável (B3 via brapi.dev) ===\n")
-    if BRAPI_TOKEN:
-        print(f"  Token: {BRAPI_TOKEN[:8]}...\n")
-    else:
-        print("  ⚠ Sem BRAPI_TOKEN — usando tier gratuito (limite reduzido)\n")
-
-    erros = []
-
-    with ETLRun("rv_historico_batch") as batch_run:
-        total_rows = 0
-
-        with httpx.Client(headers=brapi_headers()) as client:
-            for ativo in ATIVOS:
-                ticker = ativo["ticker"]
-                print(f"→ {ticker}...")
-
-                try:
-                    with ETLRun(f"rv_{ticker}") as run:
-                        candles = buscar_historico(ticker, client)
-
-                        if not candles:
-                            print(f"  ⚠ Sem dados históricos — marcando como delisted\n")
-                            upsert_ativo(ativo, {}, status="delisted")
-                            run.set_rows(0)
-                            continue
-
-                        # Determina status pelo candle mais recente
-                        ultimo_ts = candles[-1].get("date", 0)
-                        ultimo_dia = datetime.datetime.fromtimestamp(ultimo_ts, tz=datetime.timezone.utc).date()
-                        dias_atraso = (datetime.date.today() - ultimo_dia).days
-                        status = "delisted" if dias_atraso > 30 else "ativo"
-
-                        info = buscar_info(ticker, client)
-                        upsert_ativo(ativo, info, status=status)
-                        salvos = upsert_historico(ticker, candles)
-                        run.set_rows(salvos)
-                        total_rows += salvos
-
-                        flag = "⚠ delisted" if status == "delisted" else "✓"
-                        print(f"  {flag} {salvos} registros | último pregão: {ultimo_dia}\n")
-
-                except Exception as e:
-                    erros.append(f"{ticker}: {e}")
-                    print(f"  ✗ Erro: {e}\n")
-
-        batch_run.set_rows(total_rows)
-
-    if erros:
-        log_partial("rv_historico_batch", total_rows, "; ".join(erros))
-        print(f"\n⚠ {len(erros)} erro(s):")
-        for e in erros:
-            print(f"  - {e}")
-
-    print("\n=== Concluído ===")
-
-
-if __name__ == "__main__":
-    run()
+    print("=== ETL Renda Variável (B3 via brapi.de
