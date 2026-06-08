@@ -19,8 +19,8 @@ from log_etl import ETLRun, log_partial, retry_request
 BRAPI_BASE = "https://brapi.dev/api"
 BRAPI_TOKEN = os.getenv("BRAPI_TOKEN", "")  # opcional
 
-# Histórico desde ~2016 (brapi suporta ranges: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
-BRAPI_RANGE = "10y"
+# Histórico: últimos 5 anos usando startDate/endDate (mais robusto que range= no plano free)
+BRAPI_START_YEARS = 5
 
 # Principais ações do Ibovespa
 ATIVOS = [
@@ -65,8 +65,12 @@ def buscar_historico(ticker: str, client: httpx.Client) -> list[dict]:
     Busca série histórica do ticker via brapi.dev.
     Retorna lista de dicts com keys: date(unix ts), open, high, low, close, volume, adjustedClose.
     """
+    today = datetime.date.today()
+    start = (today - datetime.timedelta(days=BRAPI_START_YEARS * 365)).strftime("%Y-%m-%d")
+    end = today.strftime("%Y-%m-%d")
     params = {
-        "range": BRAPI_RANGE,
+        "startDate": start,
+        "endDate": end,
         "interval": "1d",
         "fundamental": "false",
         "dividends": "false",

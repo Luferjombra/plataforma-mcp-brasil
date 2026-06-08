@@ -1,0 +1,37 @@
+{
+  "_comment": "Configuração MCP para Claude Desktop / Cursor / VS Code",
+  "_docs": "Adicione o bloco 'mcpServers' ao seu claude_desktop_config.json",
+
+  "mcpServers": {
+    "plataforma-mcp-brasil": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://plataforma-mcp-brasil-api.onrender.com/mcp"
+      ]
+    }
+  },
+
+  "_local_dev": {
+    "mcpServers": {
+      "plataforma-mcp-brasil-local": {
+        "command": "npx",
+        "args": [
+          "mcp-remote",
+          "http://localhost:8000/mcp"
+        ]
+      }
+    }
+  },
+
+  "_ferramentas_expostas": [
+    "GET /indicadores/          → histórico de indicadores (Selic, IPCA, CDI...)",
+    "GET /indicadores/series    → lista de séries disponíveis",
+    "GET /rv/ativos             → lista de ações B3 com setor e market cap",
+    "GET /rv/historico/{ticker} → histórico de pregão (OHLCV)",
+    "GET /rf/titulos            → Tesouro Direto com taxa atual por indexador",
+    "GET /rf/historico/{cod}    → histórico de taxa/PU de um título",
+    "GET /fundos/               → lista de fundos com cota e PL",
+    "GET /fundos/{cnpj}/historico → histórico diário de cotas"
+  ]
+}
