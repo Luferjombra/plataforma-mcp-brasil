@@ -6,62 +6,86 @@ import { useTheme } from 'next-themes'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
-  TrendingUp,
-  BarChart2,
-  Briefcase,
-  MessageSquare,
-  Activity,
-  Sun,
-  Moon,
-  Landmark,
-  ServerCog,
+  TrendingUp, BarChart2, Briefcase, MessageSquare,
+  Activity, Sun, Moon, Landmark, ServerCog,
 } from 'lucide-react'
 
 const links = [
-  { href: '/indicadores', label: 'Indicadores',    icon: Activity    },
-  { href: '/rv',          label: 'Renda Variável', icon: TrendingUp  },
-  { href: '/rf',          label: 'Renda Fixa',     icon: Landmark    },
-  { href: '/fundos',      label: 'Fundos',         icon: Briefcase   },
-  { href: '/copilot',     label: 'Chat Finance',   icon: MessageSquare },
-  { href: '/status',      label: 'Status ETL',     icon: ServerCog   },
+  { href: '/indicadores', label: 'Indicadores',    icon: Activity,      tag: 'MACRO' },
+  { href: '/rv',          label: 'Renda Variável', icon: TrendingUp,    tag: 'B3'   },
+  { href: '/rf',          label: 'Renda Fixa',     icon: Landmark,      tag: 'TD'   },
+  { href: '/fundos',      label: 'Fundos',         icon: Briefcase,     tag: 'CVM'  },
+  { href: '/copilot',     label: 'Chat Finance',   icon: MessageSquare, tag: null   },
+  { href: '/status',      label: 'Status ETL',     icon: ServerCog,     tag: null   },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-
   useEffect(() => { setMounted(true) }, [])
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-56 border-r border-border bg-background flex flex-col">
+      {/* Logo */}
       <div className="px-5 py-5 border-b border-border">
-        <div className="flex items-center gap-2">
-          <BarChart2 className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-sm">MCP Brasil</span>
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
+            <BarChart2 className="h-4 w-4 text-primary-foreground" />
+          </div>
+          <div>
+            <p className="font-bold text-sm leading-tight">MCP Brasil</p>
+            <p className="text-[10px] text-muted-foreground leading-tight">Plataforma Financeira</p>
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">Plataforma Financeira</p>
+        <div className="flex items-center gap-1.5 mt-3">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+          </span>
+          <span className="text-[10px] text-muted-foreground">Dados atualizados</span>
+        </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {links.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className={cn(
-              'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
-              pathname === href
-                ? 'bg-accent text-accent-foreground font-medium'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-            )}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </Link>
-        ))}
+      {/* Nav */}
+      <nav className="flex-1 px-3 py-4 space-y-0.5">
+        <p className="px-3 pb-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+          Mercados
+        </p>
+        {links.map(({ href, label, icon: Icon, tag }) => {
+          const active = pathname === href
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                'group flex items-center justify-between px-3 py-2 rounded-md text-sm transition-all',
+                active
+                  ? 'bg-primary text-primary-foreground font-medium shadow-sm'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <Icon className={cn('h-4 w-4', active ? 'text-primary-foreground' : '')} />
+                <span>{label}</span>
+              </div>
+              {tag && (
+                <span className={cn(
+                  'text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider',
+                  active
+                    ? 'bg-white/20 text-primary-foreground'
+                    : 'bg-muted text-muted-foreground'
+                )}>
+                  {tag}
+                </span>
+              )}
+            </Link>
+          )
+        })}
       </nav>
 
-      <div className="px-4 py-4 border-t border-border space-y-3">
+      {/* Footer */}
+      <div className="px-4 py-4 border-t border-border space-y-2">
         {mounted && (
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -74,7 +98,16 @@ export function Sidebar() {
             )}
           </button>
         )}
-        <p className="text-xs text-muted-foreground px-3">Dados: BCB · B3 · CVM · Tesouro</p>
+        <div className="px-3 pt-1">
+          <p className="text-[10px] text-muted-foreground/60">Fontes públicas</p>
+          <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
+            {['BCB', 'B3', 'CVM', 'Tesouro'].map(s => (
+              <span key={s} className="text-[9px] font-medium text-muted-foreground border border-border rounded px-1 py-0.5">
+                {s}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </aside>
   )
