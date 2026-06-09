@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useTheme } from 'next-themes'
 import { useSearchParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -54,7 +54,7 @@ const SETOR_COLORS: Record<string, string> = {
   'Fundos Imobiliários': '#14b8a6',
 }
 
-export default function RVPage() {
+function RVPageInner() {
   const { theme } = useTheme()
   const tickColor = theme === 'dark' ? '#6b7280' : '#9ca3af'
   const searchParams = useSearchParams()
@@ -317,5 +317,13 @@ export default function RVPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function RVPage() {
+  return (
+    <Suspense>
+      <RVPageInner />
+    </Suspense>
   )
 }

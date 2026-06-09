@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useTheme } from 'next-themes'
 import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -38,7 +38,7 @@ function formatMilhoes(v: number | null) {
   return `R$ ${(v / 1e6).toFixed(1)}M`
 }
 
-export default function FundosPage() {
+function FundosPageInner() {
   const { theme } = useTheme()
   const tickColor = theme === 'dark' ? '#6b7280' : '#9ca3af'
   const searchParams = useSearchParams()
@@ -254,5 +254,13 @@ export default function FundosPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function FundosPage() {
+  return (
+    <Suspense>
+      <FundosPageInner />
+    </Suspense>
   )
 }

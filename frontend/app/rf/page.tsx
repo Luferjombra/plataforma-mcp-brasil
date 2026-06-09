@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useTheme } from 'next-themes'
 import { useSearchParams } from 'next/navigation'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -42,7 +42,7 @@ function TaxaBadge({ indexador, taxa }: { indexador: string; taxa: number | null
   )
 }
 
-export default function RFPage() {
+function RFPageInner() {
   const { theme } = useTheme()
   const tickColor = theme === 'dark' ? '#6b7280' : '#9ca3af'
   const searchParams = useSearchParams()
@@ -330,5 +330,13 @@ export default function RFPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function RFPage() {
+  return (
+    <Suspense>
+      <RFPageInner />
+    </Suspense>
   )
 }

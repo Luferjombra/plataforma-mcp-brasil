@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useTheme } from 'next-themes'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -107,7 +107,7 @@ function HeroCard({
   )
 }
 
-export default function IndicadoresPage() {
+function IndicadoresPageInner() {
   const { theme } = useTheme()
   const tickColor = theme === 'dark' ? '#6b7280' : '#9ca3af'
   const [dados, setDados] = useState<Record<Serie, Indicador[]>>({
@@ -302,5 +302,13 @@ export default function IndicadoresPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function IndicadoresPage() {
+  return (
+    <Suspense>
+      <IndicadoresPageInner />
+    </Suspense>
   )
 }
