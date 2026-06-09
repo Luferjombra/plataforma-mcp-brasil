@@ -8,11 +8,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const isLanding = pathname === '/'
 
   if (isLanding) {
-    return <>{children}</>
+    return <div className="min-h-screen">{children}</div>
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">{children}</main>
     </div>

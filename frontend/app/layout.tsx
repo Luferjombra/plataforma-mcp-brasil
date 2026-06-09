@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className={geist.className} suppressHydrationWarning>
-      <body className="h-screen overflow-hidden bg-background text-foreground antialiased">
+      <body className="bg-background text-foreground antialiased">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           <ClientLayout>{children}</ClientLayout>
         </ThemeProvider>
