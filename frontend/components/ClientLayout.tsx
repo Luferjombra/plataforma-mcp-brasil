@@ -12,9 +12,9 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <>
+    <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <main className="ml-56 min-h-screen p-8">{children}</main>
-    </>
+      <main className="flex-1 overflow-y-auto p-8">{children}</main>
+    </div>
   )
 }
