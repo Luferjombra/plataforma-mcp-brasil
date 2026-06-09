@@ -9,7 +9,7 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
-// ── Indicadores ──────────────────────────────────────────────
+// Indicadores
 export interface Indicador {
   id: number
   serie: string
@@ -25,7 +25,7 @@ export function getIndicadores(serie?: string, limit = 252) {
   return fetchAPI<{ data: Indicador[]; total: number }>(`/indicadores?${params}`)
 }
 
-// ── Renda Variável ───────────────────────────────────────────
+// Renda Variavel
 export interface Ativo {
   ticker: string
   nome: string
@@ -34,6 +34,9 @@ export interface Ativo {
   market_cap: number | null
   ativo: boolean
   status: string
+  preco_atual: number | null
+  var_dia_pct: number | null
+  data_preco: string | null
 }
 
 export interface Historico {
@@ -55,7 +58,7 @@ export function getHistoricoRV(ticker: string, limit = 252) {
   return fetchAPI<{ ticker: string; data: Historico[] }>(`/rv/historico/${ticker}?limit=${limit}`)
 }
 
-// ── Fundos ───────────────────────────────────────────────────
+// Fundos
 export interface Fundo {
   cnpj: string
   nome: string
@@ -86,7 +89,7 @@ export function getHistoricoFundo(cnpj: string, limit = 252) {
   return fetchAPI<{ cnpj: string; data: HistoricoFundo[] }>(`/fundos/historico/${encodeURIComponent(cnpj)}?limit=${limit}`)
 }
 
-// ── Renda Fixa ───────────────────────────────────────────────
+// Renda Fixa
 export interface TituloRF {
   codigo: string
   nome: string
@@ -118,7 +121,7 @@ export function getHistoricoRF(codigo: string, limit = 252) {
   return fetchAPI<{ codigo: string; data: HistoricoRF[] }>(`/rf/historico/${encodeURIComponent(codigo)}?limit=${limit}`)
 }
 
-// ── Copilot ──────────────────────────────────────────────────
+// Copilot
 export interface RespostaCopilot {
   resposta: string
   fonte: string
@@ -132,7 +135,7 @@ export async function perguntarCopilot(pergunta: string): Promise<RespostaCopilo
   })
 }
 
-// ── ETL Health ───────────────────────────────────────────────
+// ETL Health
 export type EtlStatus = 'ok' | 'stale' | 'error' | 'running' | 'unknown'
 
 export interface EtlJob {
@@ -165,7 +168,7 @@ export function getEtlHealth() {
   return fetchAPI<EtlHealth>('/health/etl')
 }
 
-// ── Busca global ─────────────────────────────────────────────
+// Busca global
 export interface SearchResult {
   q: string
   rv: Array<{ ticker: string; nome: string; setor: string; tipo: string }>
