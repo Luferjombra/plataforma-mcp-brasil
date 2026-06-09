@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useTheme } from 'next-themes'
+import { useSearchParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SearchBar } from '@/components/SearchBar'
 import { getAtivos, getHistoricoRV, type Ativo, type Historico } from '@/lib/api'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -55,6 +57,8 @@ const SETOR_COLORS: Record<string, string> = {
 export default function RVPage() {
   const { theme } = useTheme()
   const tickColor = theme === 'dark' ? '#6b7280' : '#9ca3af'
+  const searchParams = useSearchParams()
+  const tickerParam = searchParams.get('ticker')
 
   const [ativos, setAtivos] = useState<Ativo[]>([])
   const [selecionado, setSelecionado] = useState<string | null>(null)
@@ -67,10 +71,13 @@ export default function RVPage() {
     getAtivos()
       .then(r => {
         setAtivos(r.data)
-        if (r.data.length > 0) setSelecionado(r.data[0].ticker)
+        const initial = tickerParam
+          ? r.data.find(a => a.ticker === tickerParam.toUpperCase())?.ticker ?? r.data[0]?.ticker
+          : r.data[0]?.ticker
+        if (initial) setSelecionado(initial)
       })
       .finally(() => setLoadingAtivos(false))
-  }, [])
+  }, [tickerParam])
 
   useEffect(() => {
     if (!selecionado) return
@@ -108,15 +115,19 @@ export default function RVPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between">
+      {/* Header com busca */}
+      <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Renda Variável</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             B3 via brapi.dev · últimos 252 pregões
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>{totalAcoes} ações · {totalFIIs} FIIs</span>
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <SearchBar placeholder="Buscar ticker ou fundo..." />
+          <span className="text-sm text-muted-foreground whitespace-nowrap">
+            {totalAcoes} ações · {totalFIIs} FIIs
+          </span>
         </div>
       </div>
 

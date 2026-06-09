@@ -164,3 +164,16 @@ export interface EtlHealth {
 export function getEtlHealth() {
   return fetchAPI<EtlHealth>('/health/etl')
 }
+
+// ── Busca global ─────────────────────────────────────────────
+export interface SearchResult {
+  q: string
+  rv: Array<{ ticker: string; nome: string; setor: string; tipo: string }>
+  rf: Array<{ codigo: string; nome_display: string; indexador: string; taxa_atual: number | null; data_vencimento: string | null }>
+  fundos: Array<{ cnpj: string; nome_fundo: string; gestor: string; tipo_fundo: string }>
+  total: number
+}
+
+export function searchAtivos(q: string) {
+  return fetchAPI<SearchResult>(`/search?q=${encodeURIComponent(q)}&limit=5`)
+}

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useTheme } from 'next-themes'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SearchBar } from '@/components/SearchBar'
 import { getIndicadores, type Indicador } from '@/lib/api'
 import {
   AreaChart, Area, LineChart, Line,
@@ -144,19 +145,22 @@ export default function IndicadoresPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between">
+      <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Indicadores Macro</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             Banco Central do Brasil · BCB-SGS
           </p>
         </div>
-        {dataRef && (
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">Última atualização</p>
-            <p className="text-sm font-medium">{dataRef}</p>
-          </div>
-        )}
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <SearchBar placeholder="Buscar ativo, título ou fundo..." />
+          {dataRef && (
+            <div className="text-right whitespace-nowrap">
+              <p className="text-xs text-muted-foreground">Atualizado</p>
+              <p className="text-sm font-medium">{dataRef}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {loading ? (
