@@ -4,11 +4,18 @@ import json
 from datetime import datetime, timezone
 
 import anthropic
+import httpx
 from db import supabase
 from copilot.context_builder import build_context
 
+# Provedor LLM: "gemini" (free tier) ou "anthropic"
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
+
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
 SYSTEM_PROMPT = """Você é o Chat Finance, assistente financeiro da Plataforma MCP Brasil.
 Você recebe dados reais do banco de dados e explica de forma clara e objetiva.
@@ -17,6 +24,42 @@ Regras:
 - Seja direto e didático.
 - Use R$ e % com formatação brasileira.
 - Não faça recomendações de investimento."""
+
+
+def _chamar_anthropic(user_content: str) -> str:
+    response = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_content}],
+    )
+    return response.content[0].text
+
+
+async def _chamar_gemini(user_content: str) -> str:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY não configurada.")
+
+    async with httpx.AsyncClient(timeout=60) as http:
+        resp = await http.post(
+            GEMINI_URL.format(model=GEMINI_MODEL),
+            headers={"x-goog-api-key": api_key},
+            json={
+                "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                "contents": [{"role": "user", "parts": [{"text": user_content}]}],
+                "generationConfig": {"maxOutputTokens": 1024},
+            },
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    return body["candidates"][0]["content"]["parts"][0]["text"]
+
+
+async def _gerar_resposta(user_content: str) -> str:
+    if LLM_PROVIDER == "anthropic":
+        return _chamar_anthropic(user_content)
+    return await _chamar_gemini(user_content)
 
 
 async def processar_pergunta(pergunta: str, contexto_extra: str | None = None) -> dict:
@@ -48,14 +91,8 @@ async def processar_pergunta(pergunta: str, contexto_extra: str | None = None) -
     if contexto_extra:
         user_content += f"\n\nContexto adicional: {contexto_extra}"
 
-    # Chama Claude
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_content}],
-    )
-    resposta_txt = response.content[0].text
+    # Chama o LLM configurado (LLM_PROVIDER)
+    resposta_txt = await _gerar_resposta(user_content)
 
     # Salva no cache
     supabase.table("copilot_cache").insert({

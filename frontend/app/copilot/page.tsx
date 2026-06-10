@@ -60,7 +60,7 @@ export default function CopilotPage() {
       <div>
         <h1 className="text-2xl font-semibold">Chat Finance</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Copilot financeiro com dados reais do Supabase · Powered by Claude Sonnet
+          Copilot financeiro com dados reais do Supabase · Powered by IA
         </p>
       </div>
 
