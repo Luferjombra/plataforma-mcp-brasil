@@ -1,11 +1,21 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+export class APIError extends Error {
+  constructor(public status: number, public detail: string | null, path: string) {
+    super(detail ?? `API error ${status}: ${path}`)
+  }
+}
+
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
-  if (!res.ok) throw new Error(`API error ${res.status}: ${path}`)
+  if (!res.ok) {
+    let detail: string | null = null
+    try { detail = (await res.json())?.detail ?? null } catch { /* corpo não-JSON */ }
+    throw new APIError(res.status, detail, path)
+  }
   return res.json()
 }
 

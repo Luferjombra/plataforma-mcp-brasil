@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { perguntarCopilot } from '@/lib/api'
+import { perguntarCopilot, APIError } from '@/lib/api'
 import { Send, Bot, User, Loader2 } from 'lucide-react'
 
 interface Mensagem {
@@ -45,10 +45,11 @@ export default function CopilotPage() {
         content: res.resposta,
         cached: res.cached,
       }])
-    } catch {
+    } catch (e) {
+      const detail = e instanceof APIError && e.detail ? e.detail : null
       setMensagens(prev => [...prev, {
         role: 'assistant',
-        content: 'Ocorreu um erro ao processar sua pergunta. Tente novamente.',
+        content: detail ?? 'Ocorreu um erro ao processar sua pergunta. Tente novamente.',
       }])
     } finally {
       setCarregando(false)

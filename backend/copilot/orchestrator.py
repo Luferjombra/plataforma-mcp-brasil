@@ -1,4 +1,5 @@
 import os
+import asyncio
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -42,16 +43,22 @@ async def _chamar_gemini(user_content: str) -> str:
         raise RuntimeError("GEMINI_API_KEY não configurada.")
 
     async with httpx.AsyncClient(timeout=60) as http:
-        resp = await http.post(
-            GEMINI_URL.format(model=GEMINI_MODEL),
-            headers={"x-goog-api-key": api_key},
-            json={
-                "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                "contents": [{"role": "user", "parts": [{"text": user_content}]}],
-                "generationConfig": {"maxOutputTokens": 1024},
-            },
-        )
-        resp.raise_for_status()
+        # Free tier tem limite por minuto — em 429, espera e tenta mais 1 vez
+        for tentativa in range(2):
+            resp = await http.post(
+                GEMINI_URL.format(model=GEMINI_MODEL),
+                headers={"x-goog-api-key": api_key},
+                json={
+                    "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                    "contents": [{"role": "user", "parts": [{"text": user_content}]}],
+                    "generationConfig": {"maxOutputTokens": 1024},
+                },
+            )
+            if resp.status_code == 429 and tentativa == 0:
+                await asyncio.sleep(15)
+                continue
+            resp.raise_for_status()
+            break
         body = resp.json()
     return body["candidates"][0]["content"]["parts"][0]["text"]
 
