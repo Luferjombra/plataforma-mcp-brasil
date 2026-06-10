@@ -1,6 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Query, HTTPException
 from db import supabase
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -13,35 +16,17 @@ def get_ativos(setor: str = Query(None), ativo: bool = Query(True)):
     ativos_result = query.execute()
     data = list(ativos_result.data)
 
-    # Busca os ultimos 2 pregoes para calcular variacao diaria
+    # Variacao diaria calculada no banco via LAG() (migration 004)
     try:
-        recent = (
-            supabase.table("rv_historico")
-            .select("data, ticker, fechamento")
-            .order("data", desc=True)
-            .limit(600)
-            .execute()
-        )
-        rows = recent.data or []
-        all_dates = sorted(set(r["data"] for r in rows), reverse=True)
-
-        if all_dates:
-            d1 = all_dates[0]
-            d2 = all_dates[1] if len(all_dates) > 1 else None
-            d1_prices = {r["ticker"]: r["fechamento"] for r in rows if r["data"] == d1}
-            d2_prices = {r["ticker"]: r["fechamento"] for r in rows if r["data"] == d2} if d2 else {}
-
-            for a in data:
-                ticker = a["ticker"]
-                preco = d1_prices.get(ticker)
-                ant   = d2_prices.get(ticker)
-                a["preco_atual"]  = preco
-                a["data_preco"]   = d1 if preco is not None else None
-                if preco is not None and ant and ant > 0:
-                    a["var_dia_pct"] = round((preco - ant) / ant * 100, 2)
-                else:
-                    a["var_dia_pct"] = None
-    except Exception:
+        variacao = supabase.rpc("rv_variacao_diaria").execute()
+        por_ticker = {r["ticker"]: r for r in (variacao.data or [])}
+        for a in data:
+            v = por_ticker.get(a["ticker"], {})
+            a["preco_atual"] = v.get("preco_atual")
+            a["data_preco"]  = v.get("data_preco")
+            a["var_dia_pct"] = v.get("var_dia_pct")
+    except Exception as e:
+        logger.warning(f"rv_variacao_diaria indisponivel ({e}); retornando ativos sem variacao.")
         for a in data:
             a.setdefault("preco_atual", None)
             a.setdefault("var_dia_pct", None)

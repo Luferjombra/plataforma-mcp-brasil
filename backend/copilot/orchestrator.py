@@ -1,11 +1,14 @@
 import os
 import hashlib
 import json
+from datetime import datetime, timezone
+
 import anthropic
 from db import supabase
 from copilot.context_builder import build_context
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
 SYSTEM_PROMPT = """Você é o Chat Finance, assistente financeiro da Plataforma MCP Brasil.
 Você recebe dados reais do banco de dados e explica de forma clara e objetiva.
@@ -23,9 +26,19 @@ async def processar_pergunta(pergunta: str, contexto_extra: str | None = None) -
 
     if cache.data:
         entry = cache.data[0]
-        # Incrementa hits
-        supabase.table("copilot_cache").update({"hits": entry["hits"] + 1}).eq("id", entry["id"]).execute()
-        return {"resposta": entry["resposta_txt"], "dados": entry["dados_json"], "cache": True}
+        expira_em = entry.get("expira_em")
+        expirado = False
+        if expira_em:
+            try:
+                expirado = datetime.fromisoformat(expira_em.replace("Z", "+00:00")) < datetime.now(timezone.utc)
+            except ValueError:
+                expirado = True
+        if expirado:
+            supabase.table("copilot_cache").delete().eq("id", entry["id"]).execute()
+        else:
+            # Incrementa hits
+            supabase.table("copilot_cache").update({"hits": entry["hits"] + 1}).eq("id", entry["id"]).execute()
+            return {"resposta": entry["resposta_txt"], "dados": entry["dados_json"], "cache": True}
 
     # Busca contexto no banco
     contexto = await build_context(pergunta)
@@ -37,7 +50,7 @@ async def processar_pergunta(pergunta: str, contexto_extra: str | None = None) -
 
     # Chama Claude
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=MODEL,
         max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
