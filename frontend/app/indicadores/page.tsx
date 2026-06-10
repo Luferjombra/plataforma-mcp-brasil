@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useTheme } from 'next-themes'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -131,12 +131,15 @@ function IndicadoresPageInner() {
   }, [])
 
   const m = META[serie]
-  const chartData = [...(dados[serie] || [])].reverse().map(d => ({
-    data: new Date(d.data + 'T00:00:00').toLocaleDateString('pt-BR', {
-      month: 'short', year: '2-digit',
-    }),
-    valor: d.valor,
-  }))
+  const chartData = useMemo(
+    () => [...(dados[serie] || [])].reverse().map(d => ({
+      data: new Date(d.data + 'T00:00:00').toLocaleDateString('pt-BR', {
+        month: 'short', year: '2-digit',
+      }),
+      valor: d.valor,
+    })),
+    [dados, serie],
+  )
 
   const ultimoValor = dados[serie][0]?.valor
   const dataRef = dados[serie][0]?.data

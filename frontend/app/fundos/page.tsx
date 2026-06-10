@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SearchBar } from '@/components/SearchBar'
 import { getFundos, getHistoricoFundo, type Fundo, type HistoricoFundo } from '@/lib/api'
+import { formatCota, formatMilhoes } from '@/lib/format'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -27,16 +28,6 @@ function getNome(f: Fundo): string {
   return NOME_CURTO[f.cnpj] ?? f.nome_abreviado ?? f.nome
 }
 
-function formatBRL(v: number | null) {
-  if (v == null) return '—'
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 6 }).format(v)
-}
-
-function formatMilhoes(v: number | null) {
-  if (v == null) return '—'
-  if (v >= 1e9) return `R$ ${(v / 1e9).toFixed(2)}B`
-  return `R$ ${(v / 1e6).toFixed(1)}M`
-}
 
 function FundosPageInner() {
   const { theme } = useTheme()
@@ -155,7 +146,7 @@ function FundosPageInner() {
               <div className="rounded-xl border border-border bg-card p-4">
                 <p className="text-xs text-muted-foreground mb-1">Valor da Cota</p>
                 <p className="text-lg font-bold tabular-nums">
-                  {formatBRL(ultimaCota?.valor_cota ?? null)}
+                  {formatCota(ultimaCota?.valor_cota ?? null)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">última disponível</p>
               </div>

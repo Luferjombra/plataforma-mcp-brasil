@@ -10,18 +10,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import { TrendingUp, TrendingDown, Building2, Landmark, Minus } from 'lucide-react'
-
-/* ── helpers ─────────────────────────────────────────────── */
-function brl(v: number | null) {
-  if (v == null) return '—'
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
-}
-function cap(v: number | null) {
-  if (v == null) return null
-  if (v >= 1e9) return `R$ ${(v / 1e9).toFixed(1)}B`
-  if (v >= 1e6) return `R$ ${(v / 1e6).toFixed(0)}M`
-  return null
-}
+import { formatBRL as brl, formatCap as cap } from '@/lib/format'
 
 const SETOR_COLORS: Record<string, string> = {
   'Petróleo e Gás': '#f97316',

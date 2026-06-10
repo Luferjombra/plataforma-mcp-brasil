@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { SearchBar } from '@/components/SearchBar'
 import { getTitulosRF, getHistoricoRF, type TituloRF, type HistoricoRF } from '@/lib/api'
+import { formatBRL, formatPct } from '@/lib/format'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine,
@@ -20,15 +21,6 @@ const GRUPOS: Record<string, { cor: string; label: string }> = {
   USD:   { cor: '#ec4899', label: 'Dólar+' },
 }
 
-function formatPct(v: number | null) {
-  if (v == null) return '—'
-  return `${v.toFixed(2)}% a.a.`
-}
-
-function formatBRL(v: number | null) {
-  if (v == null) return '—'
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
-}
 
 function TaxaBadge({ indexador, taxa }: { indexador: string; taxa: number | null }) {
   const g = GRUPOS[indexador] ?? { cor: '#6b7280', label: indexador }
