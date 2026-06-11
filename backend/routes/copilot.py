@@ -24,4 +24,9 @@ async def fazer_pergunta(body: Pergunta):
                 status_code=429,
                 detail="Limite de uso da IA atingido no momento. Aguarde alguns minutos e tente novamente.",
             )
+        if e.response.status_code == 503:
+            raise HTTPException(
+                status_code=503,
+                detail="A IA está temporariamente sobrecarregada. Tente novamente em instantes.",
+            )
         raise HTTPException(status_code=502, detail=f"Erro no provedor de IA (HTTP {e.response.status_code}).")

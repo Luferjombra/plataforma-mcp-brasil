@@ -14,6 +14,7 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
 
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -42,25 +43,30 @@ async def _chamar_gemini(user_content: str) -> str:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY não configurada.")
 
+    payload = {
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": user_content}]}],
+        "generationConfig": {"maxOutputTokens": 1024},
+    }
+    headers = {"x-goog-api-key": api_key}
+
+    # 429 = rate limit do free tier; 503 = modelo sobrecarregado no Google.
+    # Tenta o modelo principal 2x e, se seguir indisponivel, cai para o fallback.
+    modelos = [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]
     async with httpx.AsyncClient(timeout=60) as http:
-        # Free tier tem limite por minuto — em 429, espera e tenta mais 1 vez
-        for tentativa in range(2):
-            resp = await http.post(
-                GEMINI_URL.format(model=GEMINI_MODEL),
-                headers={"x-goog-api-key": api_key},
-                json={
-                    "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                    "contents": [{"role": "user", "parts": [{"text": user_content}]}],
-                    "generationConfig": {"maxOutputTokens": 1024},
-                },
-            )
-            if resp.status_code == 429 and tentativa == 0:
-                await asyncio.sleep(15)
-                continue
-            resp.raise_for_status()
-            break
-        body = resp.json()
-    return body["candidates"][0]["content"]["parts"][0]["text"]
+        for i, modelo in enumerate(modelos):
+            for tentativa in range(2):
+                resp = await http.post(GEMINI_URL.format(model=modelo), headers=headers, json=payload)
+                if resp.status_code in (429, 503):
+                    ultima_tentativa = i == len(modelos) - 1 and tentativa == 1
+                    if ultima_tentativa:
+                        resp.raise_for_status()
+                    await asyncio.sleep(10)
+                    continue
+                resp.raise_for_status()
+                body = resp.json()
+                return body["candidates"][0]["content"]["parts"][0]["text"]
+    raise RuntimeError("Gemini indisponível.")  # inalcançável; satisfaz o type checker
 
 
 async def _gerar_resposta(user_content: str) -> str:
