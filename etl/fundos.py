@@ -15,11 +15,13 @@ Como usar:
 import os
 import glob
 import math
+import time
 import zipfile
 import io
 import datetime
 import pandas as pd
 from config import supabase
+from log_etl import ETLRun, log_partial
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "cvm")
 
@@ -168,7 +170,7 @@ def processar_arquivo(caminho: str, cnpjs: list[str]) -> pd.DataFrame | None:
 
 
 def upsert_historico(df: pd.DataFrame) -> int:
-    """Insere histórico de cotas no Supabase."""
+    """Insere histórico de cotas no Supabase. Com retry de 3 tentativas."""
     # Remove duplicatas cnpj+data dentro do mesmo arquivo
     df = df.drop_duplicates(subset=["CNPJ_FUNDO", "DT_COMPTC"], keep="first")
     registros = []
@@ -201,12 +203,23 @@ def upsert_historico(df: pd.DataFrame) -> int:
     if not registros:
         return 0
 
-    result = (
-        supabase.table("fundos_historico")
-        .upsert(registros, on_conflict="cnpj,data")
-        .execute()
-    )
-    return len(result.data)
+    last_exc = None
+    for attempt in range(1, 4):
+        try:
+            result = (
+                supabase.table("fundos_historico")
+                .upsert(registros, on_conflict="cnpj,data")
+                .execute()
+            )
+            return len(result.data)
+        except Exception as e:
+            last_exc = e
+            if attempt < 3:
+                wait = 2 ** (attempt - 1)
+                print(f"    ⚠ Upsert tentativa {attempt}/3 — aguardando {wait}s... ({e})")
+                time.sleep(wait)
+
+    raise last_exc
 
 
 # ---------------------------------------------------------------------------
@@ -218,50 +231,55 @@ def run():
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # 1. Cadastro (opcional — depende do cad_fi.csv estar baixado)
-    df_cad = carregar_cadastro()
-    if df_cad is not None:
-        upsert_cadastro(df_cad)
-
-    # 2. Histórico
-    cnpjs = [c.strip() for c in CNPJS_ALVO]
-    arquivos = listar_arquivos_historico()
-
-    if not arquivos:
-        print("⚠ Nenhum arquivo inf_diario_fi_*.csv encontrado em etl/data/cvm/")
-        print("  Baixe os arquivos mensais em:")
-        print("  https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/")
-        print("  e salve nessa pasta.\n")
-        return
-
-    print(f"→ {len(arquivos)} arquivo(s) encontrado(s) em etl/data/cvm/\n")
-
+    erros = []
     total = 0
-    datas = []
 
-    for arq in arquivos:
-        nome = os.path.basename(arq)
-        print(f"→ Processando {nome}...", end=" ")
-        df_mes = processar_arquivo(arq, cnpjs)
+    with ETLRun("fundos_historico") as batch_run:
+        # 1. Cadastro (opcional — depende do cad_fi.csv estar baixado)
+        df_cad = carregar_cadastro()
+        if df_cad is not None:
+            upsert_cadastro(df_cad)
 
-        if df_mes is None:
-            print("sem dados para os fundos alvo")
-            continue
+        # 2. Histórico
+        cnpjs = [c.strip() for c in CNPJS_ALVO]
+        arquivos = listar_arquivos_historico()
 
-        salvos = upsert_historico(df_mes)
-        total += salvos
-        print(f"{salvos} registros salvos")
-        datas.append(nome)
+        if not arquivos:
+            print("⚠ Nenhum arquivo inf_diario_fi_*.csv encontrado em etl/data/cvm/")
+            print("  Baixe os arquivos mensais em:")
+            print("  https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/")
+            print("  e salve nessa pasta.\n")
+            batch_run.set_rows(0)
+            return
 
-    if datas:
-        supabase.table("etl_log").insert({
-            "job_nome": "fundos_historico",
-            "status": "success",
-            "registros_novos": total,
-            "registros_total": total,
-            "data_inicio_carga": (lambda s: f"{s[:4]}-{s[4:6]}-01")(datas[0].replace("inf_diario_fi_", "").replace(".csv", "").replace(".zip", "")),
-            "data_fim_carga": datetime.date.today().isoformat(),
-        }).execute()
+        print(f"→ {len(arquivos)} arquivo(s) encontrado(s) em etl/data/cvm/\n")
+
+        for arq in arquivos:
+            nome = os.path.basename(arq)
+            print(f"→ Processando {nome}...", end=" ")
+
+            try:
+                df_mes = processar_arquivo(arq, cnpjs)
+
+                if df_mes is None:
+                    print("sem dados para os fundos alvo")
+                    continue
+
+                salvos = upsert_historico(df_mes)
+                total += salvos
+                print(f"{salvos} registros salvos")
+
+            except Exception as e:
+                erros.append(f"{nome}: {e}")
+                print(f"ERRO: {e}")
+
+        batch_run.set_rows(total)
+
+    if erros and total > 0:
+        log_partial("fundos_historico", total, "; ".join(erros))
+        print(f"\n⚠ {len(erros)} arquivo(s) com erro:")
+        for e in erros:
+            print(f"  - {e}")
 
     print(f"\n=== Concluído — {total} registros históricos salvos ===")
 

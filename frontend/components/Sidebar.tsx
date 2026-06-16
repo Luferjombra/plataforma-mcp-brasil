@@ -7,16 +7,17 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
   TrendingUp, BarChart2, Briefcase, MessageSquare,
-  Activity, Sun, Moon, Landmark, ServerCog,
+  Activity, Sun, Moon, Landmark, ServerCog, LayoutDashboard,
 } from 'lucide-react'
 
 const links = [
-  { href: '/indicadores', label: 'Indicadores',    icon: Activity,      tag: 'MACRO' },
-  { href: '/rv',          label: 'Renda Variável', icon: TrendingUp,    tag: 'B3'   },
-  { href: '/rf',          label: 'Renda Fixa',     icon: Landmark,      tag: 'TD'   },
-  { href: '/fundos',      label: 'Fundos',         icon: Briefcase,     tag: 'CVM'  },
-  { href: '/copilot',     label: 'Chat Finance',   icon: MessageSquare, tag: null   },
-  { href: '/status',      label: 'Status ETL',     icon: ServerCog,     tag: null   },
+  { href: '/indicadores', label: 'Indicadores',    icon: Activity,          tag: 'MACRO' },
+  { href: '/rv',          label: 'Renda Variável', icon: TrendingUp,        tag: 'B3'    },
+  { href: '/rf',          label: 'Renda Fixa',     icon: Landmark,          tag: 'TD'    },
+  { href: '/fundos',      label: 'Fundos',         icon: Briefcase,         tag: 'CVM'   },
+  { href: '/dashboard',   label: 'Dashboard',      icon: LayoutDashboard,   tag: 'NOVO'  },
+  { href: '/copilot',     label: 'Chat Finance',   icon: MessageSquare,     tag: null    },
+  { href: '/status',      label: 'Status ETL',     icon: ServerCog,         tag: null    },
 ]
 
 export function Sidebar() {
@@ -57,7 +58,9 @@ export function Sidebar() {
           Mercados
         </p>
         {links.map(({ href, label, icon: Icon, tag }) => {
-          const active = pathname === href
+          const active = href === '/dashboard'
+            ? pathname.startsWith('/dashboard')
+            : pathname === href
           return (
             <Link
               key={href}

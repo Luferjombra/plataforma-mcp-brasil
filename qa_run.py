@@ -289,6 +289,127 @@ else:
     check("GET /health/etl acessível", False,
           f"status={r.status_code if r else 'timeout'} — rota implementada?")
 
+# ── Seção 5 — ETL Indicadores (Incrementalidade) ─────────────────────────────
+print("\n▶ SEÇÃO 5 — ETL Indicadores (Incrementalidade)\n")
+
+print("[5.1] Frescor dos dados por série")
+FRESHNESS = {
+    "selic": 7,
+    "cdi":   7,
+    "ipca":  45,   # publicação mensal com defasagem
+    "pib":   45,   # trimestral
+}
+for serie, max_dias in FRESHNESS.items():
+    r, _ = get(f"/indicadores?serie={serie}&limit=1")
+    if r and r.status_code == 200:
+        data_list = r.json().get("data", [])
+        if data_list:
+            dt_str = data_list[0].get("data", "")[:10]
+            try:
+                diff = (date.today() - date.fromisoformat(dt_str)).days
+                check(f"Indicador {serie.upper()} frescor ≤{max_dias}d",
+                      diff <= max_dias, f"última data={dt_str}, {diff}d atrás")
+            except ValueError:
+                check(f"Indicador {serie.upper()} data válida", False, f"data={dt_str}")
+        else:
+            check(f"Indicador {serie.upper()} tem dados", False, "data=[]")
+    else:
+        check(f"GET /indicadores?serie={serie}", False,
+              f"status={r.status_code if r else 'timeout'}")
+
+print("\n[5.2] Jobs indicadores em etl_runs")
+r, _ = get("/health/etl")
+if r and r.status_code == 200:
+    jobs = r.json().get("jobs", [])
+    for serie in ["selic", "ipca", "cdi", "pib"]:
+        job_name = f"indicadores_{serie}"
+        job = next((j for j in jobs if j.get("job") == job_name), None)
+        check(f"ETL job '{job_name}' presente", job is not None,
+              f"status={job.get('status')} rows={job.get('rows_upserted')}" if job else "não encontrado")
+else:
+    check("GET /health/etl para indicadores", False, "inacessível")
+
+# ── Seção 6 — ETL Fundos (Log Correto) ───────────────────────────────────────
+print("\n▶ SEÇÃO 6 — ETL Fundos (Log Correto)\n")
+
+print("[6.1] ETL fundos_historico em etl_runs")
+r, _ = get("/health/etl")
+if r and r.status_code == 200:
+    jobs = r.json().get("jobs", [])
+    fundo_job = next((j for j in jobs if j.get("job") == "fundos_historico"), None)
+    check("ETL 'fundos_historico' presente em etl_runs", fundo_job is not None,
+          "não encontrado — fundos.py rodou?" if not fundo_job else "")
+    if fundo_job:
+        status = fundo_job.get("status", "")
+        rows   = fundo_job.get("rows_upserted") or 0
+        check("ETL fundos_historico status não é 'error'", status != "error",
+              f"status={status}")
+        check("ETL fundos_historico registrou linhas (> 0)", rows > 0,
+              f"rows_upserted={rows}")
+else:
+    check("GET /health/etl para fundos", False, "inacessível")
+
+print("\n[6.2] Dados de fundo recentes")
+r, _ = get("/fundos")
+if r and r.status_code == 200:
+    fundos_list = r.json().get("data", [])
+    if fundos_list:
+        cnpj = fundos_list[0].get("cnpj", "")
+        from urllib.parse import quote
+        r2, _ = get(f"/fundos/historico/{quote(cnpj, safe='')}?limit=1")
+        if r2 and r2.status_code == 200:
+            data_list = r2.json().get("data", [])
+            if data_list:
+                dt_str = data_list[0].get("data", "")[:10]
+                try:
+                    diff = (date.today() - date.fromisoformat(dt_str)).days
+                    check("Histórico de fundo recente (≤60 dias)", diff <= 60,
+                          f"última data={dt_str}, {diff}d atrás")
+                except ValueError:
+                    check("Histórico de fundo data válida", False, f"data={dt_str}")
+            else:
+                check("Histórico de fundo tem dados", False, "data=[]")
+        else:
+            check("GET /fundos/historico/{cnpj}", False,
+                  f"status={r2.status_code if r2 else 'timeout'}")
+    else:
+        check("GET /fundos retornou fundos", False, "lista vazia")
+else:
+    check("GET /fundos", False, f"status={r.status_code if r else 'timeout'}")
+
+# ── Seção 7 — Endpoints do Dashboard ─────────────────────────────────────────
+print("\n▶ SEÇÃO 7 — Endpoints do Dashboard\n")
+
+print("[7.1] Endpoints consumidos pelo dashboard")
+dashboard_endpoints = [
+    ("/rv/ativos",                         "RV — lista de ativos"),
+    ("/rv/historico/PETR4?limit=5",        "RV — histórico PETR4"),
+    ("/rf/titulos",                        "RF — lista de títulos"),
+    ("/rf/historico/LFT_2029?limit=5",     "RF — histórico LFT Selic"),
+    ("/indicadores?serie=selic&limit=5",   "Indicadores — SELIC"),
+    ("/indicadores?serie=ipca&limit=5",    "Indicadores — IPCA"),
+    ("/fundos",                            "Fundos — lista"),
+]
+for path, label in dashboard_endpoints:
+    r, elapsed = get(path)
+    if r and r.status_code == 200:
+        body = r.json()
+        # Aceita 'data' (lista) ou resposta não-vazia
+        data_field = body.get("data", body)
+        has_data = (isinstance(data_field, list) and len(data_field) > 0) or \
+                   (isinstance(data_field, dict) and len(data_field) > 0)
+        check(f"{label}", has_data, f"status=200, {elapsed:.1f}s, len={len(data_field) if isinstance(data_field, list) else '?'}")
+    else:
+        check(f"{label}", False,
+              f"status={r.status_code if r else 'timeout'} em {elapsed:.1f}s")
+
+print("\n[7.2] Endpoint de RF com código comum (fallback gracioso)")
+# LFT_2029 pode não existir — verificar que não é 500
+r, _ = get("/rf/historico/CODIGO_INEXISTENTE?limit=5")
+ok = r and r.status_code in (200, 404, 422)
+check("RF histórico de código inexistente não retorna 500", ok,
+      f"status={r.status_code if r else 'timeout'}")
+
 # ── Resumo ────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
 print("RESUMO")
