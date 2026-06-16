@@ -403,7 +403,46 @@ for path, label in dashboard_endpoints:
         check(f"{label}", False,
               f"status={r.status_code if r else 'timeout'} em {elapsed:.1f}s")
 
-print("\n[7.2] Endpoint de RF com código comum (fallback gracioso)")
+print("\n[7.2] Formatação de valores — 2 casas decimais")
+# Verifica que os valores retornados pela API permitem formatação com 2 casas
+for serie in ["selic", "ipca"]:
+    r, _ = get(f"/indicadores?serie={serie}&limit=1")
+    if r and r.status_code == 200:
+        data_list = r.json().get("data", [])
+        if data_list:
+            val = data_list[0].get("valor", 0)
+            fmt = f"{val:.2f}%"
+            check(f"Indicador {serie.upper()} formatável com 2 casas ({fmt})",
+                  len(fmt) > 3, f"valor_bruto={val}")
+
+r, _ = get("/rf/titulos")
+if r and r.status_code == 200:
+    titulos = r.json().get("data", [])
+    for t in titulos[:2]:
+        taxa = t.get("taxa_atual")
+        if taxa is not None:
+            fmt = f"{taxa:.2f}%"
+            check(f"RF {t.get('codigo','?')} taxa formatável com 2 casas ({fmt})",
+                  len(fmt) > 3, f"valor_bruto={taxa}")
+            break
+
+r, _ = get("/fundos")
+if r and r.status_code == 200:
+    fundos_list = r.json().get("data", [])
+    if fundos_list:
+        from urllib.parse import quote as _quote
+        cnpj = fundos_list[0].get("cnpj", "")
+        r2, _ = get(f"/fundos/historico/{_quote(cnpj, safe='')}?limit=1")
+        if r2 and r2.status_code == 200:
+            data_list = r2.json().get("data", [])
+            if data_list:
+                cota = data_list[0].get("valor_cota", 0)
+                # Cota formatada com 2 casas (ex: R$ 415,15)
+                fmt = f"R$ {cota:,.2f}"
+                check(f"Cota de fundo formatável com 2 casas ({fmt})",
+                      len(fmt) > 4, f"valor_bruto={cota}")
+
+print("\n[7.3] Endpoint de RF com código comum (fallback gracioso)")
 # LFT_2029 pode não existir — verificar que não é 500
 r, _ = get("/rf/historico/CODIGO_INEXISTENTE?limit=5")
 ok = r and r.status_code in (200, 404, 422)
