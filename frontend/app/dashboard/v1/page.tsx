@@ -67,7 +67,7 @@ function CustomTooltip({ active, payload, label }: any) {
         let formatted = ''
         if (name === 'rv')        formatted = formatBRL(p.value)
         else if (name === 'fundo') formatted = formatCota(p.value)
-        else                      formatted = p.value.toFixed(4) + '%'
+        else                      formatted = p.value.toFixed(2) + '%'
         return (
           <div key={name} className="flex items-center gap-2">
             <span className="inline-block h-2 w-2 rounded-full" style={{ background: p.color }} />
@@ -215,13 +215,13 @@ export default function DashboardV1() {
       const tc   = last.taxa_compra ?? 0
       const ptc  = prev?.taxa_compra ?? null
       const var_ = ptc != null ? ((tc - ptc) / Math.abs(ptc)) * 100 : null
-      result.push({ familia: 'rf', ativo: rfCodigo, valor: tc.toFixed(4) + '%', variacao: var_, data: last.data.slice(0, 10), cor: CORES.rf })
+      result.push({ familia: 'rf', ativo: rfCodigo, valor: tc.toFixed(2) + '%', variacao: var_, data: last.data.slice(0, 10), cor: CORES.rf })
     }
     if (indicData.length) {
       const last = indicData[indicData.length - 1]
       const prev = indicData.length > 1 ? indicData[indicData.length - 2] : null
       const var_ = prev ? ((last.valor - prev.valor) / Math.abs(prev.valor)) * 100 : null
-      result.push({ familia: 'indicadores', ativo: indicSerie.toUpperCase(), valor: last.valor.toFixed(4) + '%', variacao: var_, data: last.data.slice(0, 10), cor: CORES.indicador })
+      result.push({ familia: 'indicadores', ativo: indicSerie.toUpperCase(), valor: last.valor.toFixed(2) + '%', variacao: var_, data: last.data.slice(0, 10), cor: CORES.indicador })
     }
     if (fundoData.length) {
       const last = fundoData[fundoData.length - 1]

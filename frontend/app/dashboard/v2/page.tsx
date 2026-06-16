@@ -281,7 +281,7 @@ export default function DashboardV2() {
     rf: {
       ativo: rfCodigo,
       pontos: rfPontos,
-      formatter: (v: number) => v.toFixed(4) + '%',
+      formatter: (v: number) => v.toFixed(2) + '%',
       selectorLabel: 'Título',
       options: rfCodigos.map(c => ({ value: c, label: c })),
       onSelect: setRfCodigo,
@@ -290,7 +290,7 @@ export default function DashboardV2() {
     indicadores: {
       ativo: indicSerie.toUpperCase(),
       pontos: indicPontos,
-      formatter: (v: number) => v.toFixed(4) + '%',
+      formatter: (v: number) => v.toFixed(2) + '%',
       selectorLabel: 'Série',
       options: INDICADORES_SERIES.map(s => ({ value: s, label: s.toUpperCase() })),
       onSelect: setIndicSerie,
@@ -331,7 +331,7 @@ export default function DashboardV2() {
         />
         <SparklineCard
           titulo="Renda Fixa"
-          valor={loading ? '...' : (lastVal(rfPontos).toFixed(4) + '%')}
+          valor={loading ? '...' : (lastVal(rfPontos).toFixed(2) + '%')}
           variacao={loading ? null : lastVar(rfPontos)}
           sparkData={rfPontos.slice(-60).map(p => p.valor)}
           cor={CORES.rf}
@@ -341,7 +341,7 @@ export default function DashboardV2() {
         />
         <SparklineCard
           titulo="Indicadores"
-          valor={loading ? '...' : (lastVal(indicPontos).toFixed(4) + '%')}
+          valor={loading ? '...' : (lastVal(indicPontos).toFixed(2) + '%')}
           variacao={loading ? null : lastVar(indicPontos)}
           sparkData={indicPontos.slice(-60).map(p => p.valor)}
           cor={CORES.indicadores}

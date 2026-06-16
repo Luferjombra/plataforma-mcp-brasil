@@ -1,22 +1,16 @@
 /* Formatadores compartilhados (pt-BR) */
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
-const BRL_COTA = new Intl.NumberFormat('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-  minimumFractionDigits: 6,
-})
-
 /** R$ 1.234,56 — preços em geral */
 export function formatBRL(v: number | null): string {
   if (v == null) return '—'
   return BRL.format(v)
 }
 
-/** R$ 1,234567 — valor de cota de fundo (6 casas) */
+/** R$ 1,23 — valor de cota de fundo (2 casas) */
 export function formatCota(v: number | null): string {
   if (v == null) return '—'
-  return BRL_COTA.format(v)
+  return BRL.format(v)
 }
 
 /** R$ 1.2B / R$ 340M — valores grandes abreviados; null se < 1M */

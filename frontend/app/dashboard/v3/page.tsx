@@ -88,7 +88,7 @@ function MetricasPanel({ dados, familia, nome }: MetricasPanelProps) {
     if (v == null) return '—'
     if (familia === 'rv')    return formatBRL(v)
     if (familia === 'fundos') return formatCota(v)
-    return `${v.toFixed(4)}%`
+    return `${v.toFixed(2)}%`
   }
 
   if (!m) return (
@@ -162,7 +162,7 @@ function GraficoPrincipal({ dados, cor, familia, periodo, onPeriodoChange, carre
   function tooltipFormat(v: number): string {
     if (familia === 'rv')     return formatBRL(v)
     if (familia === 'fundos') return formatCota(v)
-    return `${v.toFixed(4)}%`
+    return `${v.toFixed(2)}%`
   }
 
   function xLabel(data: string): string {
