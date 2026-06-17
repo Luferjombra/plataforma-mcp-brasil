@@ -198,6 +198,69 @@ export function getEtlHealth() {
   return fetchAPI<EtlHealth>('/health/etl')
 }
 
+// Carteira
+export interface Posicao {
+  id: string
+  session_id: string
+  ticker: string
+  tipo: 'acao' | 'fii' | 'etf'
+  quantidade: number
+  preco_medio: number
+  data_entrada: string
+  preco_atual: number | null
+  data_preco: string | null
+  pl_valor: number | null
+  pl_pct: number | null
+  valor_pos: number
+}
+
+export interface AnaliseCarteira {
+  pl_total: number
+  rentabilidade_pct: number
+  vs_cdi_pp: number | null
+  vs_ibov_pp: number | null
+  sharpe: number | null
+  sortino: number | null
+  calmar: number | null
+  drawdown_max: number | null
+  win_rate: number | null
+  posicoes_count: number
+  valor_total: number
+  serie_carteira: { data: string; valor: number }[]
+}
+
+export function getPosicoes(sessionId: string) {
+  return fetchAPI<{ data: Posicao[]; total: number; valor_total: number }>(
+    `/carteira/posicoes?session_id=${encodeURIComponent(sessionId)}`
+  )
+}
+
+export function addPosicao(
+  sessionId: string,
+  body: { ticker: string; tipo: string; quantidade: number; preco_medio: number; data_entrada?: string }
+) {
+  return fetchAPI<Posicao>(
+    `/carteira/posicoes?session_id=${encodeURIComponent(sessionId)}`,
+    { method: 'POST', body: JSON.stringify(body) }
+  )
+}
+
+export async function deletePosicao(sessionId: string, posicaoId: string): Promise<void> {
+  const res = await fetch(
+    `${API_URL}/carteira/posicoes/${posicaoId}?session_id=${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
+  )
+  if (!res.ok && res.status !== 204) {
+    throw new APIError(res.status, null, `/carteira/posicoes/${posicaoId}`)
+  }
+}
+
+export function getAnaliseCarteira(sessionId: string, periodoDias = 252) {
+  return fetchAPI<AnaliseCarteira>(
+    `/carteira/analise?session_id=${encodeURIComponent(sessionId)}&periodo_dias=${periodoDias}`
+  )
+}
+
 // Busca global
 export interface SearchResult {
   q: string
