@@ -8,8 +8,11 @@ on:
     - cron: '30 20 * * 1-5'
     # Fundos CVM: 18h BRT (21h UTC) — CVM publica D-1 à tarde
     - cron: '0 21 * * 1-5'
-    # Indicadores macro (BACEN/IBGE): segunda 9h BRT (12h UTC) — semanal
-    - cron: '0 12 * * 1'
+    # Indicadores macro (BACEN/IBGE): dias úteis 9h BRT (12h UTC).
+    # SELIC e CDI são diários — semanal deixava dashboard defasado.
+    # IPCA (mensal) e PIB (trimestral) só atualizam quando há nova publicação,
+    # mas o ETL é idempotente (upsert), então rodar diário é seguro.
+    - cron: '0 12 * * 1-5'
   workflow_dispatch:
     inputs:
       etl:
@@ -101,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'indicadores' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && github.event.schedule == '0 12 * * 1'
+      github.event_name == 'schedule' && github.event.schedule == '0 12 * * 1-5'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

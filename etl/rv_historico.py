@@ -50,7 +50,8 @@ ATIVOS = [
     {"ticker": "XPLG11", "nome": "XP Log FII",                                      "setor": "Fundos Imobiliários", "tipo": "FII"},
     {"ticker": "KNRI11", "nome": "Kinea Renda Imobiliária FII",                     "setor": "Fundos Imobiliários", "tipo": "FII"},
     {"ticker": "MXRF11", "nome": "Maxi Renda FII",                                  "setor": "Fundos Imobiliários", "tipo": "FII"},
-    {"ticker": "BCFF11", "nome": "BTG Pactual Fundo de Fundos FII",                 "setor": "Fundos Imobiliários", "tipo": "FII"},
+    # BCFF11 removido em 2026-06-16 — brapi.dev retorna 404 persistente.
+    # Provavelmente o FII foi renomeado/incorporado pela B3.
     {"ticker": "HGRE11", "nome": "CSHG Real Estate FII",                            "setor": "Fundos Imobiliários", "tipo": "FII"},
     {"ticker": "VISC11", "nome": "Vinci Shopping Centers FII",                      "setor": "Fundos Imobiliários", "tipo": "FII"},
     {"ticker": "XPML11", "nome": "XP Malls FII",                                    "setor": "Fundos Imobiliários", "tipo": "FII"},
