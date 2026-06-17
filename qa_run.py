@@ -381,14 +381,22 @@ else:
 print("\n▶ SEÇÃO 7 — Endpoints do Dashboard\n")
 
 print("[7.1] Endpoints consumidos pelo dashboard")
+# Descobre o código LFT real da API (evita hardcode de data de vencimento)
+_lft_cod = "LFT_2029-03-01"  # fallback conhecido
+_r_tit, _ = get("/rf/titulos")
+if _r_tit and _r_tit.status_code == 200:
+    _selic_tits = [t for t in _r_tit.json().get("data", []) if t.get("indexador") == "SELIC"]
+    if _selic_tits:
+        _lft_cod = _selic_tits[0]["codigo"]
+
 dashboard_endpoints = [
-    ("/rv/ativos",                         "RV — lista de ativos"),
-    ("/rv/historico/PETR4?limit=5",        "RV — histórico PETR4"),
-    ("/rf/titulos",                        "RF — lista de títulos"),
-    ("/rf/historico/LFT_2029?limit=5",     "RF — histórico LFT Selic"),
-    ("/indicadores?serie=selic&limit=5",   "Indicadores — SELIC"),
-    ("/indicadores?serie=ipca&limit=5",    "Indicadores — IPCA"),
-    ("/fundos",                            "Fundos — lista"),
+    ("/rv/ativos",                             "RV — lista de ativos"),
+    ("/rv/historico/PETR4?limit=5",            "RV — histórico PETR4"),
+    ("/rf/titulos",                            "RF — lista de títulos"),
+    (f"/rf/historico/{_lft_cod}?limit=5",      "RF — histórico LFT Selic"),
+    ("/indicadores?serie=selic&limit=5",       "Indicadores — SELIC"),
+    ("/indicadores?serie=ipca&limit=5",        "Indicadores — IPCA"),
+    ("/fundos",                                "Fundos — lista"),
 ]
 for path, label in dashboard_endpoints:
     r, elapsed = get(path)
