@@ -15,3 +15,14 @@ build/
 # Arquivos CVM — grandes demais para o repositório
 etl/data/cvm/*.csv
 etl/data/cvm/*.zip
+
+# Claude Code — config local e skills instaladas (não versionar)
+.claude/
+
+# Skills QA — zip e pasta extraída são locais, não versionar
+qa-financeiro-extracted/
+qa-financeiro.zip
+
+# Performance test outputs — resultados locais
+perf/resultado_*.csv
+perf/resumo_*.txt
