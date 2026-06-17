@@ -22,6 +22,8 @@ etl/data/cvm/*.zip
 # Skills QA — zip e pasta extraída são locais, não versionar
 qa-financeiro-extracted/
 qa-financeiro.zip
+_tmp_skill.md
+monitoring/qa-financeiro-SKILL-updated.md
 
 # Performance test outputs — resultados locais
 perf/resultado_*.csv
