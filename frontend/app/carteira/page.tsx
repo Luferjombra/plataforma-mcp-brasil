@@ -386,7 +386,7 @@ export default function CarteiraPage() {
                     width={52}
                   />
                   <Tooltip
-                    formatter={(v: number) => [fmtBRL(v), 'Carteira']}
+                    formatter={(v) => [typeof v === 'number' ? fmtBRL(v) : '—', 'Carteira']}
                     labelFormatter={l => `Data: ${l}`}
                     contentStyle={{ fontSize: 12, borderRadius: 8 }}
                   />
