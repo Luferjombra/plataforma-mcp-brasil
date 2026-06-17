@@ -20,8 +20,11 @@ from log_etl import ETLRun, log_partial, retry_request
 BRAPI_BASE = "https://brapi.dev/api"
 BRAPI_TOKEN = os.getenv("BRAPI_TOKEN", "")  # opcional
 
-# Histórico: últimos 5 anos usando startDate/endDate (mais robusto que range= no plano free)
+# Histórico: carga inicial 5 anos; incremental limitado a 90 dias para caber no free tier brapi.
+# A brapi free rejeita ranges longos com 400 Bad Request para a maioria dos tickers.
 BRAPI_START_YEARS = 5
+INCREMENTAL_DIAS = 90      # janela de incremental — cabe no free tier
+OVERLAP_DIAS = 5           # re-busca últimos N dias para capturar correções
 
 # Principais ações do Ibovespa
 ATIVOS = [
@@ -78,13 +81,46 @@ def brapi_headers() -> dict:
     return headers
 
 
+def ultima_data_no_banco(ticker: str) -> datetime.date | None:
+    """Retorna a data do pregão mais recente já armazenado para o ticker."""
+    try:
+        result = (
+            supabase.table("rv_historico")
+            .select("data")
+            .eq("ticker", ticker)
+            .order("data", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return datetime.date.fromisoformat(result.data[0]["data"])
+    except Exception as e:
+        print(f"  [aviso] última data para '{ticker}': {e}")
+    return None
+
+
 def buscar_historico(ticker: str, client: httpx.Client) -> list[dict]:
     """
     Busca série histórica do ticker via brapi.dev.
+    - Se o ticker já tem histórico no banco: busca incremental (90 dias com overlap)
+    - Se vazio: carga inicial de 5 anos
     Retorna lista de dicts com keys: date(unix ts), open, high, low, close, volume, adjustedClose.
     """
     today = datetime.date.today()
-    start = (today - datetime.timedelta(days=BRAPI_START_YEARS * 365)).strftime("%Y-%m-%d")
+    ultima = ultima_data_no_banco(ticker)
+
+    if ultima is None:
+        # Carga inicial: 90 dias (limite seguro do free tier brapi).
+        # Próximos runs continuam a popular incrementalmente até o histórico desejado.
+        start_date = today - datetime.timedelta(days=INCREMENTAL_DIAS)
+        print(f"  [carga inicial] sem histórico no banco — janela {INCREMENTAL_DIAS}d")
+    else:
+        # Incremental: janela curta para caber no free tier brapi
+        janela = min(INCREMENTAL_DIAS, (today - ultima).days + OVERLAP_DIAS)
+        start_date = today - datetime.timedelta(days=janela)
+        print(f"  [incremental] última data {ultima} — janela {janela}d")
+
+    start = start_date.strftime("%Y-%m-%d")
     end = today.strftime("%Y-%m-%d")
     params = {
         "startDate": start,
