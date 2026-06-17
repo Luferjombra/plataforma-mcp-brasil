@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
   TrendingUp, BarChart2, Briefcase, MessageSquare,
-  Activity, Sun, Moon, Landmark, ServerCog, LayoutDashboard,
+  Activity, Sun, Moon, Landmark, ServerCog, LayoutDashboard, Newspaper,
 } from 'lucide-react'
 
 const links = [
@@ -16,6 +16,7 @@ const links = [
   { href: '/rf',          label: 'Renda Fixa',     icon: Landmark,          tag: 'TD'    },
   { href: '/fundos',      label: 'Fundos',         icon: Briefcase,         tag: 'CVM'   },
   { href: '/dashboard',   label: 'Dashboard',      icon: LayoutDashboard,   tag: 'NOVO'  },
+  { href: '/noticias',    label: 'Notícias',       icon: Newspaper,         tag: 'RSS'   },
   { href: '/copilot',     label: 'Chat Finance',   icon: MessageSquare,     tag: null    },
   { href: '/status',      label: 'Status ETL',     icon: ServerCog,         tag: null    },
 ]

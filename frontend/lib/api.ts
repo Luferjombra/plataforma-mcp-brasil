@@ -145,6 +145,26 @@ export async function perguntarCopilot(pergunta: string): Promise<RespostaCopilo
   })
 }
 
+// Noticias
+export interface Noticia {
+  id: number
+  titulo: string
+  resumo: string | null
+  url: string
+  fonte: string | null
+  categoria: string | null
+  tickers_rel: string[] | null
+  publicado_em: string | null
+  ingerido_em: string | null
+}
+
+export function getNoticias(opts?: { categoria?: string; ticker?: string; limit?: number }) {
+  const params = new URLSearchParams({ limit: String(opts?.limit ?? 30) })
+  if (opts?.categoria) params.set('categoria', opts.categoria)
+  if (opts?.ticker) params.set('ticker', opts.ticker)
+  return fetchAPI<{ data: Noticia[]; total: number }>(`/noticias?${params}`)
+}
+
 // ETL Health
 export type EtlStatus = 'ok' | 'stale' | 'error' | 'running' | 'unknown'
 

@@ -5,8 +5,9 @@
 ```
 Fontes Públicas
   ├── BCB SGS API          → indicadores_economicos
-  ├── Yahoo Finance (yf)   → rv_ativos + rv_historico
-  └── CVM (arquivos local) → fundos_cadastro + fundos_historico
+  ├── brapi.dev            → rv_ativos + rv_historico  (free tier — janela 90d)
+  ├── CVM (arquivos local) → fundos_cadastro + fundos_historico
+  └── RSS (InfoMoney/MT/Valor) → noticias
          ↓
 ETL Jobs (Python — execução periódica manual ou via cron)
          ↓
@@ -20,6 +21,7 @@ FastAPI — APIs Internas (Render)
   ├── GET  /rv/ativos + /rv/historico/{ticker}
   ├── GET  /fundos + /fundos/historico/{cnpj}
   ├── GET  /rf/titulos + /rf/historico/{codigo}
+  ├── GET  /noticias
   ├── GET  /health/etl
   └── POST /copilot/pergunta
          ↓
@@ -31,6 +33,7 @@ Next.js — Frontend (Vercel)
   ├── /dashboard/v1       — Painel Unificado (Timeline multi-série)
   ├── /dashboard/v2       — Grid + Drawer (SparklineCards)
   ├── /dashboard/v3       — Multi-Panel Analítico (3 colunas)
+  ├── /noticias           — Feed RSS agregado (auto-refresh 5min)
   ├── /copilot            — Chat Finance
   └── /status             — Status ETL
 ```
@@ -128,11 +131,26 @@ def run():
 - BCB retorna `[]` sem erro HTTP quando não há dados — validar com `isinstance(dados, list)`
 - Incrementalidade via `ultima_data_no_banco(serie)` — overlap de 5 dias para IPCA/PIB atrasados
 
-### Yahoo Finance / yfinance (rv_historico.py)
-- Tickers B3 requerem sufixo `.SA` (ex: `PETR4.SA`)
+### brapi.dev (rv_historico.py)
+- API oficial brasileira (substituiu yfinance em 2026)
+- **Free tier limita ranges longos** — recusa `startDate > 90 dias atrás` com 400 Bad Request para a maioria dos FIIs/ações secundárias
+- **Estratégia incremental obrigatória** (fix arquitetural 2026-06-16):
+  - `ultima_data_no_banco(ticker)` antes da chamada
+  - Já no banco: janela `min(90, diff_dias + 5)` — overlap de 5d para correções
+  - Não está no banco: carga inicial limitada a 90 dias; próximos runs populam progressivamente
+  - Constantes em `rv_historico.py`: `INCREMENTAL_DIAS=90`, `OVERLAP_DIAS=5`
 - `safe_float()` obrigatório para filtrar NaN/Inf antes do upsert PostgreSQL
 - Detecção de delisting: último pregão > 30 dias → `status = 'delisted'`
-- Ações delistadas: registram histórico disponível + status no cadastro
+- 404 Not Found = ticker provavelmente renomeado/deslistado pela B3 (ex: BCFF11)
+- **Decisão de negócio futura**: assinar plano Pro (R$ 116/mês anual) quando precisar de histórico > 90d para todos os tickers
+
+### RSS Notícias (noticias.py)
+- Fontes: InfoMoney, Money Times, Valor Investe (feeds RSS públicos)
+- Parse XML via `xml.etree` (stdlib) — sem dependência extra como `feedparser`
+- Categorização por keywords no título+resumo: Macro / Renda Variável / Renda Fixa / Fundos
+- Extração de tickers via regex `\b([A-Z]{4}\d{1,2})\b`
+- Upsert idempotente por `url` em `noticias`
+- Cada fonte vira um `ETLRun` separado (`noticias_infomoney`, etc.) para granularidade no `etl_runs`
 
 ### CVM (fundos.py)
 - **Problema:** Cloudflare WAF bloqueia todas as requisições HTTP automatizadas com 403

@@ -1,3 +1,5 @@
+import sys
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 """
 monitor_supabase.py — Monitor de performance integrado para a Plataforma MCP Brasil.
 
@@ -35,7 +37,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-# ── Tentar carregar supabase-py e psycopg2 ────────────────────────────────────
+# -- Tentar carregar supabase-py e psycopg2 ------------------------------------
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'etl'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
@@ -58,7 +60,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', 'backend', '.env'))
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
 
-# ── Configuracao ──────────────────────────────────────────────────────────────
+# -- Configuracao --------------------------------------------------------------
 
 API_URL = os.getenv("PERF_API_URL", "https://plataforma-mcp-brasil-api.onrender.com")
 
@@ -81,7 +83,7 @@ FASES = [
     (30,   0),   # recuperacao
 ]
 
-# ── Estado compartilhado (thread-safe via asyncio) ───────────────────────────
+# -- Estado compartilhado (thread-safe via asyncio) ---------------------------
 
 class Estado:
     def __init__(self):
@@ -101,7 +103,7 @@ class Estado:
                 "ok": status == 200,
             })
 
-# ── Selecao ponderada de endpoint ─────────────────────────────────────────────
+# -- Selecao ponderada de endpoint ---------------------------------------------
 
 def escolher_endpoint() -> tuple[str, str]:
     import random
@@ -114,7 +116,7 @@ def escolher_endpoint() -> tuple[str, str]:
             return path, label
     return ENDPOINTS[0][0], ENDPOINTS[0][2]
 
-# ── Worker (simula 1 VU) ──────────────────────────────────────────────────────
+# -- Worker (simula 1 VU) ------------------------------------------------------
 
 async def worker(estado: Estado, client: httpx.AsyncClient, vu_id: int):
     while estado.ativo:
@@ -130,7 +132,7 @@ async def worker(estado: Estado, client: httpx.AsyncClient, vu_id: int):
         await estado.registrar(label, status, latencia)
         await asyncio.sleep(0.5 + (vu_id % 5) * 0.1)  # jitter por VU
 
-# ── Monitor de Supabase ───────────────────────────────────────────────────────
+# -- Monitor de Supabase -------------------------------------------------------
 
 def _conexoes_via_psycopg2() -> dict | None:
     """Retorna metricas de pg_stat_activity via conexao direta."""
@@ -234,7 +236,7 @@ async def monitor_banco(estado: Estado, intervalo: int = 10):
             f"{conn_info}{erro_cor}"
         )
 
-# ── Orquestrador de fases ─────────────────────────────────────────────────────
+# -- Orquestrador de fases -----------------------------------------------------
 
 async def orquestrar_fases(estado: Estado, fases: list, client: httpx.AsyncClient):
     workers_ativos: list[asyncio.Task] = []
@@ -242,7 +244,7 @@ async def orquestrar_fases(estado: Estado, fases: list, client: httpx.AsyncClien
 
     for duracao, target in fases:
         delta = target - len(workers_ativos)
-        print(f"\n  → Fase: {target} VUs por {duracao}s (delta={delta:+d})")
+        print(f"\n  -> Fase: {target} VUs por {duracao}s (delta={delta:+d})")
         estado.vus_alvo = target
 
         if delta > 0:
@@ -263,7 +265,7 @@ async def orquestrar_fases(estado: Estado, fases: list, client: httpx.AsyncClien
         t.cancel()
     print("\n  [orquestrador] Todas as fases concluidas.")
 
-# ── Relatorio final ───────────────────────────────────────────────────────────
+# -- Relatorio final -----------------------------------------------------------
 
 def gerar_relatorio(estado: Estado, ts_inicio: str, duracao_total: float, args) -> str:
     amostras = estado.amostras
@@ -335,7 +337,7 @@ def gerar_relatorio(estado: Estado, ts_inicio: str, duracao_total: float, args) 
     linhas.append("=" * 60)
     return "\n".join(linhas)
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
 async def main(args):
     ts_inicio = datetime.now().strftime("%Y%m%d_%H%M%S")
