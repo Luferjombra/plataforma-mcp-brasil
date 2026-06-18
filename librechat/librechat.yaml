@@ -1,0 +1,32 @@
+version: 1.2.1
+
+# Configuração MCP — Plataforma MCP Brasil
+# Doc: https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers
+mcpServers:
+  # Opção A — Streamable HTTP (LibreChat >= 0.7.6, recomendado)
+  plataforma-mcp-brasil:
+    type: streamable-http
+    url: https://plataforma-mcp-brasil-api.onrender.com/mcp
+
+  # Opção B — SSE (LibreChat < 0.7.6, fallback)
+  # Descomente e comente a Opção A se streamable-http não funcionar:
+  # plataforma-mcp-brasil:
+  #   type: sse
+  #   url: https://plataforma-mcp-brasil-api.onrender.com/sse
+  #
+  # Tools disponíveis (exclude_tags: Noticias, Copilot, Monitoramento ETL):
+  # get_indicadores, get_ativos, get_historico_rv, get_fundos, get_historico_fundo,
+  # get_titulos_rf, get_historico_rf, search_ativos,
+  # get_posicoes, add_posicao, delete_posicao, get_analise_carteira
+
+endpoints:
+  custom:
+    - name: "Gemini Pro"
+      apiKey: "${GEMINI_API_KEY}"
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
+      models:
+        default: ["gemini-2.0-flash", "gemini-1.5-pro"]
+        fetch: false
+      titleConvo: true
+      titleModel: "gemini-2.0-flash"
+      modelDisplayLabel: "Gemini"

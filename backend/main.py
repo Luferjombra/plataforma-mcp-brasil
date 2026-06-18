@@ -56,4 +56,5 @@ mcp = FastApiMCP(
     description="Dados financeiros historicos do Brasil.",
     exclude_tags=["Noticias", "Copilot", "Monitoramento ETL"],
 )
-mcp.mount_http()
+mcp.mount_http()  # Streamable HTTP em /mcp (MCP spec 2024-11-05+)
+mcp.mount_sse()   # SSE em /sse (fallback para clientes mais antigos)
