@@ -37,7 +37,11 @@ FONTES = [
     },
     {
         "nome": "Valor Investe",
-        "url": "https://valorinveste.globo.com/rss/valorinveste/",
+        "url": "https://valorinveste.globo.com/rss/valorinveste/financas/",
+    },
+    {
+        "nome": "Valor Investe",
+        "url": "https://valorinveste.globo.com/rss/valorinveste/mercados/",
     },
 ]
 
@@ -77,7 +81,7 @@ def categorizar(titulo: str, resumo: str) -> str:
     for cat, keywords in KEYWORDS_CATEGORIA.items():
         scores[cat] = sum(1 for k in keywords if k in texto)
     best_cat = max(scores, key=scores.get)
-    return best_cat if scores[best_cat] > 0 else "Macro"
+    return best_cat if scores[best_cat] > 0 else "Outros"
 
 
 def extrair_tickers(titulo: str, resumo: str) -> list[str]:

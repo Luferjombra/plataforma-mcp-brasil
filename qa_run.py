@@ -381,14 +381,22 @@ else:
 print("\n▶ SEÇÃO 7 — Endpoints do Dashboard\n")
 
 print("[7.1] Endpoints consumidos pelo dashboard")
+# Descobre o código LFT real da API (evita hardcode de data de vencimento)
+_lft_cod = "LFT_2029-03-01"  # fallback conhecido
+_r_tit, _ = get("/rf/titulos")
+if _r_tit and _r_tit.status_code == 200:
+    _selic_tits = [t for t in _r_tit.json().get("data", []) if t.get("indexador") == "SELIC"]
+    if _selic_tits:
+        _lft_cod = _selic_tits[0]["codigo"]
+
 dashboard_endpoints = [
-    ("/rv/ativos",                         "RV — lista de ativos"),
-    ("/rv/historico/PETR4?limit=5",        "RV — histórico PETR4"),
-    ("/rf/titulos",                        "RF — lista de títulos"),
-    ("/rf/historico/LFT_2029?limit=5",     "RF — histórico LFT Selic"),
-    ("/indicadores?serie=selic&limit=5",   "Indicadores — SELIC"),
-    ("/indicadores?serie=ipca&limit=5",    "Indicadores — IPCA"),
-    ("/fundos",                            "Fundos — lista"),
+    ("/rv/ativos",                             "RV — lista de ativos"),
+    ("/rv/historico/PETR4?limit=5",            "RV — histórico PETR4"),
+    ("/rf/titulos",                            "RF — lista de títulos"),
+    (f"/rf/historico/{_lft_cod}?limit=5",      "RF — histórico LFT Selic"),
+    ("/indicadores?serie=selic&limit=5",       "Indicadores — SELIC"),
+    ("/indicadores?serie=ipca&limit=5",        "Indicadores — IPCA"),
+    ("/fundos",                                "Fundos — lista"),
 ]
 for path, label in dashboard_endpoints:
     r, elapsed = get(path)
@@ -447,6 +455,95 @@ print("\n[7.3] Endpoint de RF com código comum (fallback gracioso)")
 r, _ = get("/rf/historico/CODIGO_INEXISTENTE?limit=5")
 ok = r and r.status_code in (200, 404, 422)
 check("RF histórico de código inexistente não retorna 500", ok,
+      f"status={r.status_code if r else 'timeout'}")
+
+# ── Seção 8 — Módulo Carteira (CARTEIRA-01) ──────────────────────────────────
+print("\n▶ SEÇÃO 8 — Módulo Carteira (CARTEIRA-01)\n")
+
+import uuid as _uuid
+
+def post(path, payload, timeout=TIMEOUT):
+    url = f"{API}{path}"
+    t0 = time.time()
+    try:
+        r = httpx.post(url, json=payload, timeout=timeout, follow_redirects=True)
+        return r, time.time() - t0
+    except Exception:
+        return None, time.time() - t0
+
+def delete(path, timeout=TIMEOUT):
+    url = f"{API}{path}"
+    t0 = time.time()
+    try:
+        r = httpx.delete(url, timeout=timeout, follow_redirects=True)
+        return r, time.time() - t0
+    except Exception:
+        return None, time.time() - t0
+
+_session = f"qa-test-{_uuid.uuid4().hex[:8]}"
+_posicao_id = None
+
+print("[8.1] POST /carteira/posicoes — adicionar posição de teste")
+r, elapsed = post(
+    f"/carteira/posicoes?session_id={_session}",
+    {"ticker": "PETR4", "tipo": "acao", "quantidade": 100, "preco_medio": 38.50},
+)
+if r and r.status_code == 201:
+    body = r.json()
+    _posicao_id = body.get("id")
+    check("POST /carteira/posicoes retorna 201", True, f"id={_posicao_id}, {elapsed:.1f}s")
+    check("Posição tem id UUID", bool(_posicao_id) and len(_posicao_id) == 36,
+          f"id={_posicao_id}")
+else:
+    check("POST /carteira/posicoes retorna 201", False,
+          f"status={r.status_code if r else 'timeout'}")
+
+print("\n[8.2] GET /carteira/posicoes — listar posições")
+r, elapsed = get(f"/carteira/posicoes?session_id={_session}")
+if r and r.status_code == 200:
+    body = r.json()
+    posicoes = body.get("data", [])
+    check("GET /carteira/posicoes retorna 200", True, f"{elapsed:.1f}s")
+    check("Posição PETR4 na lista", any(p.get("ticker") == "PETR4" for p in posicoes),
+          f"total={len(posicoes)}")
+    check("valor_total presente e > 0", body.get("valor_total", 0) > 0,
+          f"valor_total={body.get('valor_total')}")
+else:
+    check("GET /carteira/posicoes retorna 200", False,
+          f"status={r.status_code if r else 'timeout'}")
+
+print("\n[8.3] GET /carteira/analise — análise de performance")
+r, elapsed = get(f"/carteira/analise?session_id={_session}&periodo_dias=63")
+if r and r.status_code == 200:
+    body = r.json()
+    check("GET /carteira/analise retorna 200", True, f"{elapsed:.1f}s")
+    check("Campo pl_total presente", "pl_total" in body, f"body={list(body.keys())}")
+    check("Campo rentabilidade_pct presente", "rentabilidade_pct" in body)
+    check("posicoes_count = 1", body.get("posicoes_count") == 1,
+          f"posicoes_count={body.get('posicoes_count')}")
+else:
+    check("GET /carteira/analise retorna 200", False,
+          f"status={r.status_code if r else 'timeout'}")
+
+print("\n[8.4] DELETE /carteira/posicoes — remover posição de teste")
+if _posicao_id:
+    r, elapsed = delete(f"/carteira/posicoes/{_posicao_id}?session_id={_session}")
+    ok = r and r.status_code == 204
+    check("DELETE /carteira/posicoes retorna 204", ok,
+          f"status={r.status_code if r else 'timeout'}, {elapsed:.1f}s")
+
+    # Verificar que a posição foi removida
+    r2, _ = get(f"/carteira/posicoes?session_id={_session}")
+    if r2 and r2.status_code == 200:
+        posicoes_apos = r2.json().get("data", [])
+        check("Posição removida da lista", len(posicoes_apos) == 0,
+              f"restantes={len(posicoes_apos)}")
+else:
+    check("DELETE /carteira/posicoes — pulado (POST falhou)", False, "sem id")
+
+print("\n[8.5] DELETE em posição inexistente retorna 404")
+r, _ = delete(f"/carteira/posicoes/id-invalido-000?session_id={_session}")
+check("DELETE posição inexistente retorna 404", r and r.status_code == 404,
       f"status={r.status_code if r else 'timeout'}")
 
 # ── Resumo ────────────────────────────────────────────────────────────────────

@@ -21,6 +21,9 @@ Plataforma de dados financeiros brasileiros (CVM, BCB/BACEN, B3) com stack Next.
 
 ## Skills disponíveis
 
+> Skills em `.claude/skills/` são **versionadas no repo** — disponíveis em qualquer ambiente
+> (local, remoto, CI). Para adicionar novas: `git add .claude/skills/<nome>/`.
+
 ### UI & Design
 - `.claude/skills/ui-ux-pro-max/` — 67 estilos UI, 161 paletas de cores, 57 font pairings, 25 tipos de charts
 

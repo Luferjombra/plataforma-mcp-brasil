@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { getNoticias, type Noticia } from '@/lib/api'
 import { Newspaper, ExternalLink, RefreshCw, Filter } from 'lucide-react'
 
-type Categoria = 'Todos' | 'Macro' | 'Renda Variável' | 'Renda Fixa' | 'Fundos'
+type Categoria = 'Todos' | 'Macro' | 'Renda Variável' | 'Renda Fixa' | 'Fundos' | 'Outros'
 
 const CATEGORIAS: { label: Categoria; cor: string }[] = [
   { label: 'Todos',          cor: 'bg-muted text-muted-foreground' },
@@ -12,6 +12,7 @@ const CATEGORIAS: { label: Categoria; cor: string }[] = [
   { label: 'Renda Variável', cor: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
   { label: 'Renda Fixa',     cor: 'bg-violet-500/15 text-violet-600 dark:text-violet-400' },
   { label: 'Fundos',         cor: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+  { label: 'Outros',         cor: 'bg-gray-500/15 text-gray-500 dark:text-gray-400' },
 ]
 
 function corCategoria(cat: string | null): string {
@@ -59,7 +60,7 @@ export default function NoticiasPage() {
   }, [])
 
   const filtradas = useMemo(() => {
-    if (filtro === 'Todos') return noticias
+    if (filtro === 'Todos') return noticias.filter(n => n.categoria !== 'Outros')
     return noticias.filter(n => n.categoria === filtro)
   }, [noticias, filtro])
 
