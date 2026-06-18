@@ -1,34 +1,5 @@
-// Tipos e helpers do módulo Carteira
-
-export interface Posicao {
-  id: string
-  session_id: string
-  ticker: string
-  tipo: 'acao' | 'fii' | 'etf'
-  quantidade: number
-  preco_medio: number
-  data_entrada: string
-  preco_atual: number | null
-  data_preco: string | null
-  pl_valor: number | null
-  pl_pct: number | null
-  valor_pos: number
-}
-
-export interface AnaliseCarteira {
-  pl_total: number
-  rentabilidade_pct: number
-  vs_cdi_pp: number | null
-  vs_ibov_pp: number | null
-  sharpe: number | null
-  sortino: number | null
-  calmar: number | null
-  drawdown_max: number | null
-  win_rate: number | null
-  posicoes_count: number
-  valor_total: number
-  serie_carteira: { data: string; valor: number }[]
-}
+// Helpers de formatação e session para o módulo Carteira
+// Tipos Posicao e AnaliseCarteira definidos em @/lib/api
 
 export const fmtBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })

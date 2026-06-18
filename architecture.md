@@ -23,7 +23,11 @@ FastAPI — APIs Internas (Render)
   ├── GET  /rf/titulos + /rf/historico/{codigo}
   ├── GET  /noticias
   ├── GET  /health/etl
-  └── POST /copilot/pergunta
+  ├── POST /copilot/pergunta
+  ├── POST /carteira/posicoes
+  ├── GET  /carteira/posicoes?session_id=
+  ├── DELETE /carteira/posicoes/{id}?session_id=
+  └── GET  /carteira/analise?session_id=
          ↓
 Next.js — Frontend (Vercel)
   ├── /indicadores        — Macro (BCB)
@@ -33,6 +37,7 @@ Next.js — Frontend (Vercel)
   ├── /dashboard/v1       — Painel Unificado (Timeline multi-série)
   ├── /dashboard/v2       — Grid + Drawer (SparklineCards)
   ├── /dashboard/v3       — Multi-Panel Analítico (3 colunas)
+  ├── /carteira           — Módulo Carteira (session_id anônimo, VibeTrading metrics)
   ├── /noticias           — Feed RSS agregado (auto-refresh 5min)
   ├── /copilot            — Chat Finance
   └── /status             — Status ETL
@@ -73,7 +78,7 @@ Frontend (Chat Finance UI)
 | ETL resiliente | ETLRun context manager + log_partial em erro parcial |
 | Formatação padronizada | Todos os valores monetários e taxas: 2 casas decimais |
 
-## Banco de dados — 13 tabelas
+## Banco de dados — 15 tabelas
 
 | Tabela | Tipo | Descrição |
 |---|---|---|
@@ -90,6 +95,8 @@ Frontend (Chat Finance UI)
 | noticias | relacional | Feed financeiro |
 | etl_runs | operacional | Auditoria de jobs ETL (status, rows_upserted, error_detail) |
 | copilot_cache | cache | Respostas Gemini por hash SHA256 |
+| carteira_posicoes | relacional | Posições por session_id (anônimo) |
+| carteira_snapshots | time series | Snapshots diários de valor e métricas de risco |
 
 > ⚠️ A tabela de auditoria ETL é **`etl_runs`** — não `etl_log` (não existe).
 > Usar sempre via `ETLRun` context manager em `log_etl.py`.
@@ -211,8 +218,16 @@ perf/
 
 ## Decisões de modelagem
 
+### Módulo Carteira
+- `session_id` anônimo gerado no browser via `crypto.randomUUID()` + localStorage
+- Posições suportadas: ação, fii, etf (MVP); fundo, rf, bdr em roadmap
+- Preço atual: busca em `rv_historico` → sem dados → retorna `null`
+- Métricas de risco: VibeTrading `BacktestEngine` (Sharpe, Sortino, Calmar, Max Drawdown, Win Rate) com fallback pandas
+- Snapshot diário em `carteira_snapshots` gerado automaticamente no `GET /carteira/analise`
+- Mínimo 22 pregões com histórico para calcular métricas (1 mês de dados)
+
 ### Renda Variável
-- Dados de pregão B3 via yfinance
+- Dados de pregão B3 via brapi.dev
 - Campos: open, high, low, close, close_adj, volume
 - Status: `ativo` ou `delisted`
 
