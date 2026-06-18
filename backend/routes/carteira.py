@@ -52,9 +52,12 @@ def add_posicao(
         "preco_medio":  body.preco_medio,
         "data_entrada": body.data_entrada,
     }
-    result = supabase.table("carteira_posicoes").insert(posicao).execute()
+    try:
+        result = supabase.table("carteira_posicoes").insert(posicao).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao inserir posição: {e}")
     if not result.data:
-        raise HTTPException(status_code=500, detail="Erro ao salvar posição.")
+        raise HTTPException(status_code=500, detail="Posição não foi salva — sem dados retornados.")
     return result.data[0]
 
 
@@ -136,13 +139,20 @@ def delete_posicao(
 
     Retorna: 204 No Content em caso de sucesso. 404 se posição não encontrada.
     """
-    res = (
-        supabase.table("carteira_posicoes")
-        .delete()
-        .eq("id", posicao_id)
-        .eq("session_id", session_id)
-        .execute()
-    )
+    try:
+        uuid.UUID(posicao_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Posição não encontrada.")
+    try:
+        res = (
+            supabase.table("carteira_posicoes")
+            .delete()
+            .eq("id", posicao_id)
+            .eq("session_id", session_id)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao remover posição: {e}")
     if not res.data:
         raise HTTPException(status_code=404, detail="Posição não encontrada ou sem permissão.")
 
