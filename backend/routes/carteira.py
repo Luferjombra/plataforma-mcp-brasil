@@ -141,15 +141,16 @@ def delete_posicao(
 
     Retorna: 204 No Content em caso de sucesso. 404 se posição não encontrada.
     """
+    # Converte id para int se possível (BIGSERIAL) para PostgREST fazer o cast correto
     try:
-        uuid.UUID(posicao_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Posição não encontrada.")
+        id_val: int | str = int(posicao_id)
+    except (ValueError, TypeError):
+        id_val = posicao_id  # fallback para UUID string
     try:
         res = (
             supabase.table("carteira_posicoes")
             .delete()
-            .eq("id", posicao_id)
+            .eq("id", id_val)
             .eq("session_id", session_id)
             .execute()
         )

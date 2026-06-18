@@ -545,7 +545,7 @@ else:
     check("DELETE /carteira/posicoes — pulado (POST falhou)", False, "sem id")
 
 print("\n[8.5] DELETE em posição inexistente retorna 404")
-r, _ = delete(f"/carteira/posicoes/00000000-0000-0000-0000-000000000000?session_id={_session}")
+r, _ = delete(f"/carteira/posicoes/999999999?session_id={_session}")
 check("DELETE posição inexistente retorna 404", r and r.status_code == 404,
       f"status={r.status_code if r else 'timeout'}")
 
