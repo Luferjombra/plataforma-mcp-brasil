@@ -27,6 +27,8 @@ services:
       - FILE_UPLOADS=true
       - MESSAGE_USER_MAX=20
       - MESSAGE_USER_WINDOW=60
+      - DOMAIN_SERVER=http://localhost:3080
+      - DOMAIN_CLIENT=http://localhost:3080
     env_file:
       - .env
     volumes:
