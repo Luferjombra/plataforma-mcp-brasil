@@ -1,5 +1,23 @@
 version: 1.2.1
 
+interface:
+  appTitle: "Plataforma MCP Brasil"
+  endpointsMenu: true
+  modelSelect: true
+  parameters: true
+  sidePanel: true
+  presets: true
+
+registration:
+  socialLogins: ["google"]
+
+rateLimits:
+  fileUploads:
+    ipMax: 20
+    ipWindowInMinutes: 60
+    userMax: 10
+    userWindowInMinutes: 60
+
 # Configuração MCP — Plataforma MCP Brasil
 # Doc: https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers
 mcpServers:

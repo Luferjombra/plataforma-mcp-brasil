@@ -22,6 +22,11 @@ services:
       - PORT=3080
       - ALLOW_REGISTRATION=true
       - ALLOW_SOCIAL_LOGIN=false
+      - APP_TITLE=Plataforma MCP Brasil
+      - HELP_AND_FAQ_URL=https://plataforma-mcp-brasil.vercel.app
+      - FILE_UPLOADS=true
+      - MESSAGE_USER_MAX=20
+      - MESSAGE_USER_WINDOW=60
     env_file:
       - .env
     volumes:
