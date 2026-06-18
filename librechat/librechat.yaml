@@ -52,3 +52,16 @@ endpoints:
       titleConvo: true
       titleModel: "llama-3.3-70b"
       modelDisplayLabel: "Cerebras"
+
+    # ── 4. GLM/Zhipu (grátis para sempre, 203K contexto, tool calling nativo) ──
+    - name: "GLM"
+      apiKey: "${GLM_API_KEY}"
+      baseURL: "https://open.bigmodel.cn/api/paas/v4/"
+      models:
+        default:
+          - "glm-4.7-flash"
+          - "glm-4.5-flash"
+        fetch: false
+      titleConvo: true
+      titleModel: "glm-4.7-flash"
+      modelDisplayLabel: "GLM"
