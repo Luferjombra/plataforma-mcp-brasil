@@ -142,10 +142,6 @@ def delete_posicao(
     Retorna: 204 No Content em caso de sucesso. 404 se posição não encontrada.
     """
     try:
-        uuid.UUID(posicao_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Posição não encontrada.")
-    try:
         res = (
             supabase.table("carteira_posicoes")
             .delete()
