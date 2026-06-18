@@ -43,8 +43,8 @@ def add_posicao(
 
     Retorna: { id, session_id, ticker, tipo, quantidade, preco_medio, data_entrada }
     """
+    # Não enviar "id" no payload: deixa o banco gerar (funciona com UUID DEFAULT e BIGSERIAL)
     posicao = {
-        "id":           str(uuid.uuid4()),
         "session_id":   session_id,
         "ticker":       body.ticker.upper().strip(),
         "tipo":         body.tipo,
@@ -58,7 +58,9 @@ def add_posicao(
         raise HTTPException(status_code=500, detail=f"Erro ao inserir posição: {e}")
     if not result.data:
         raise HTTPException(status_code=500, detail="Posição não foi salva — sem dados retornados.")
-    return result.data[0]
+    row = result.data[0]
+    row["id"] = str(row["id"])  # normaliza UUID ou BIGSERIAL para string
+    return row
 
 
 @router.get("/posicoes")
