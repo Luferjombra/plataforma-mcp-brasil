@@ -4,112 +4,103 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getIndicadores, type Indicador } from '@/lib/api'
 
-/* ─── brand tokens ─────────────────────────────────────────── */
-const T = {
-  bg:        '#0a0f0a',
-  card:      '#0d130d',
-  card2:     '#111811',
-  line:      '#1a2e1a',
-  lineDim:   '#0f1a0f',
-  green:     '#22c55e',
-  greenHov:  '#10b981',
-  amber:     '#f59e0b',
-  red:       '#ef4444',
-  violet:    '#8b5cf6',
-  blue:      '#3b82f6',
-  text:      '#e8f5e8',
-  muted:     '#6b7e6b',
-  dim:       '#3a4e3a',
-  mono:      "'Courier New', monospace",
-  sans:      "Geist, system-ui, sans-serif",
-}
-
-/* ─── data types ───────────────────────────────────────────── */
+/* ── types ───────────────────────────────────────────────── */
 interface KpiData {
-  label: string; serie: string; value: number | null
-  delta: number | null; fonte: string; history: number[]; color: string; unit: string
+  label: string
+  serie: string
+  value: number | null
+  delta: number | null
+  note: string
+  source: string
+  ref: string
+  unit: string
+  dir: 'up' | 'down' | 'flat'
+  spark: number[]
 }
 
-/* ─── static content ───────────────────────────────────────── */
-const EVENTOS = [
-  { day: '17', mon: 'JUN', title: 'REUNIÃO COPOM', sub: 'Decisão da taxa SELIC · Banco Central', badge: 'EM 9 DIAS', urgent: true },
-  { day: '20', mon: 'JUN', title: 'DIVULGAÇÃO IPCA-15', sub: 'Prévia da inflação · IBGE', badge: 'EM 12 DIAS', urgent: false },
-  { day: '10', mon: 'JUL', title: 'IPCA JUNHO', sub: 'Inflação oficial acumulada · IBGE', badge: 'EM 32 DIAS', urgent: false },
-  { day: '29', mon: 'JUL', title: 'REUNIÃO COPOM', sub: 'Decisão da taxa SELIC · Banco Central', badge: 'EM 51 DIAS', urgent: false },
-]
-
+/* ── static data ──────────────────────────────────────────── */
 const MODULOS = [
-  { tag: 'MACRO', label: 'Indicadores',    href: '/indicadores', desc: 'SELIC, IPCA, CDI, PIB com histórico completo via BCB-SGS', color: T.green },
-  { tag: 'B3',   label: 'Renda Variável', href: '/rv',          desc: 'Ações e FIIs com 252 pregões de histórico via brapi.dev',  color: T.blue },
-  { tag: 'TD',   label: 'Renda Fixa',     href: '/rf',          desc: 'Tesouro Direto com taxa, PU e histórico por indexador',    color: T.violet },
-  { tag: 'CVM',  label: 'Fundos',         href: '/fundos',      desc: '+40 mil fundos com cota diária, PL e performance',        color: T.amber },
+  { tag: 'MACRO', title: 'Indicadores', href: '/indicadores', desc: 'SELIC, IPCA, CDI e PIB com histórico completo via BCB-SGS', n: '4 séries' },
+  { tag: 'B3',   title: 'Renda Variável', href: '/rv',       desc: 'Ações e FIIs com 252 pregões de histórico via brapi.dev', n: '500+ ativos' },
+  { tag: 'TD',   title: 'Renda Fixa',     href: '/rf',       desc: 'Tesouro Direto com taxa, PU e histórico por indexador',   n: '12 títulos' },
+  { tag: 'CVM',  title: 'Fundos',         href: '/fundos',   desc: '+40 mil fundos com cota diária, PL e rentabilidade CVM', n: '40k fundos' },
 ]
 
-/* ─── components ───────────────────────────────────────────── */
-function Clock() {
-  const [t, setT] = useState('')
-  useEffect(() => {
-    const tick = () => setT(new Date().toLocaleTimeString('pt-BR', {
-      timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit',
-    }))
-    tick(); const id = setInterval(tick, 1000); return () => clearInterval(id)
-  }, [])
-  return <>{t}</>
-}
+const EVENTOS = [
+  { d: '29', m: 'JUL', t: 'Reunião COPOM', s: 'Decisão da taxa SELIC · Banco Central', inDays: 36 },
+  { d: '12', m: 'AGO', t: 'IPCA Julho', s: 'Inflação oficial acumulada · IBGE', inDays: 50 },
+  { d: '19', m: 'AGO', t: 'IPCA-15 Agosto', s: 'Prévia da inflação · IBGE', inDays: 57 },
+  { d: '17', m: 'SET', t: 'Reunião COPOM', s: 'Decisão da taxa SELIC · Banco Central', inDays: 86 },
+]
 
-function Sparkline({ data, color }: { data: number[]; color: string }) {
-  if (data.length < 2) return null
-  const min = Math.min(...data), max = Math.max(...data), range = max - min || 1
-  const w = 88, h = 28
-  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * (h - 4)}`).join(' ')
+/* ── components ───────────────────────────────────────────── */
+function Sparkline({ data, dir, w = 120, h = 40 }: { data: number[]; dir: KpiData['dir']; w?: number; h?: number }) {
+  if (data.length < 2) return <div style={{ width: w, height: h }} />
+  const pad = 3
+  const min = Math.min(...data), max = Math.max(...data), rng = max - min || 1
+  const pts = data.map((v, i) => [
+    pad + (i / (data.length - 1)) * (w - pad * 2),
+    h - pad - ((v - min) / rng) * (h - pad * 2),
+  ])
+  const line = pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ')
+  const col  = dir === 'up' ? 'var(--cl-up)' : dir === 'down' ? 'var(--cl-down)' : 'var(--cl-ink3)'
+  const fill = dir === 'up' ? 'var(--cl-up-soft)' : dir === 'down' ? 'var(--cl-down-soft)' : 'var(--cl-line2)'
+  const last = pts[pts.length - 1]
   return (
     <svg width={w} height={h} style={{ display: 'block', overflow: 'visible' }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5"
-        strokeLinejoin="round" strokeLinecap="round" opacity={0.9} />
+      <polygon points={`${pad},${h - pad} ${line} ${w - pad},${h - pad}`} fill={fill} />
+      <polyline points={line} fill="none" stroke={col} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={last[0]} cy={last[1]} r="2.5" fill={col} />
     </svg>
   )
 }
 
-function KpiCard({ k, index }: { k: KpiData; index: number }) {
-  const [hov, setHov] = useState(false)
+function Chip({ dir, delta }: { dir: KpiData['dir']; delta: number | null }) {
+  const arrow = dir === 'up' ? '↑' : dir === 'down' ? '↓' : '→'
+  const color = dir === 'up' ? 'var(--cl-up)' : dir === 'down' ? 'var(--cl-down)' : 'var(--cl-ink3)'
+  const bg    = dir === 'up' ? 'var(--cl-up-soft)' : dir === 'down' ? 'var(--cl-down-soft)' : 'var(--cl-line2)'
+  const text  = delta != null ? `${arrow} ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} p.p.` : `${arrow} —`
   return (
-    <div
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        background: hov ? T.card2 : T.card,
-        padding: '20px 20px 16px',
-        borderLeft: `2px solid ${hov ? k.color : T.lineDim}`,
-        transition: 'all 0.2s ease',
-        transform: hov ? 'translateY(-2px)' : 'none',
-        animation: `fadeUp 0.4s ease-out ${index * 80}ms both`,
-        cursor: 'default',
-      }}
-    >
-      <p style={{ fontFamily: T.mono, fontSize: 9, color: T.muted, letterSpacing: '0.12em', marginBottom: 10, textTransform: 'uppercase' }}>
-        {k.label}
-      </p>
-      <p style={{ fontFamily: T.sans, fontSize: 32, fontWeight: 800, color: T.text, letterSpacing: '-0.03em', marginBottom: 4, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-        {k.value != null ? k.value.toFixed(2) : '—'}<span style={{ fontSize: 14, fontWeight: 400, color: T.muted, marginLeft: 4 }}>%</span>
-      </p>
-      {k.delta != null && (
-        <p style={{ fontFamily: T.mono, fontSize: 10, color: k.delta >= 0 ? k.color : T.red, marginBottom: 10 }}>
-          {k.delta >= 0 ? '▲' : '▼'} {k.delta >= 0 ? '+' : ''}{k.delta.toFixed(2)} p.p.
-        </p>
-      )}
-      {k.history.length > 3 && (
-        <div style={{ margin: '10px 0 6px' }}>
-          <Sparkline data={k.history.slice(-20)} color={k.color} />
-        </div>
-      )}
-      <p style={{ fontFamily: T.mono, fontSize: 8, color: T.dim, letterSpacing: '0.1em', borderTop: `1px solid ${T.lineDim}`, paddingTop: 8, marginTop: 8 }}>
-        FONTE: {k.fonte}
-      </p>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      background: bg, color, borderRadius: 'var(--cl-radius-xs)',
+      padding: '2px 8px', fontSize: 11, fontWeight: 600,
+      fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+    }}>{text}</span>
+  )
+}
+
+function KPICard({ k }: { k: KpiData }) {
+  return (
+    <div style={{
+      background: 'var(--cl-card)',
+      borderRadius: 'var(--cl-radius)',
+      padding: 'var(--cl-card-pad)',
+      boxShadow: 'var(--cl-shadow)',
+      border: '1px solid var(--cl-line)',
+      display: 'flex', flexDirection: 'column', gap: 6,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 12, color: 'var(--cl-ink3)', fontWeight: 500 }}>{k.label}</span>
+        <Chip dir={k.dir} delta={k.delta} />
+      </div>
+      <div style={{ fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 500, color: 'var(--cl-ink)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+        {k.value != null ? k.value.toFixed(2) : '—'}
+        <small style={{ fontSize: 16, fontWeight: 400, color: 'var(--cl-ink3)', marginLeft: 4, fontFamily: 'var(--font-sans)' }}>{k.unit}</small>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 4 }}>
+        <span style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>{k.note}</span>
+        <Sparkline data={k.spark} dir={k.dir} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--cl-ink3)', borderTop: '1px solid var(--cl-line)', paddingTop: 8, marginTop: 2 }}>
+        <span>{k.source}</span>
+        <span>{k.ref}</span>
+      </div>
     </div>
   )
 }
 
-function ModuleCard({ m, index }: { m: typeof MODULOS[0]; index: number }) {
+function ModuleCard({ m }: { m: typeof MODULOS[0] }) {
   const [hov, setHov] = useState(false)
   return (
     <Link href={m.href} style={{ textDecoration: 'none' }}>
@@ -117,34 +108,77 @@ function ModuleCard({ m, index }: { m: typeof MODULOS[0]; index: number }) {
         onMouseEnter={() => setHov(true)}
         onMouseLeave={() => setHov(false)}
         style={{
-          background: hov ? T.card2 : T.card,
-          border: `1px solid ${hov ? m.color + '60' : T.line}`,
-          padding: '20px 24px',
-          transition: 'all 0.2s ease',
+          background: 'var(--cl-card)',
+          border: `1px solid ${hov ? 'var(--cl-accent)' : 'var(--cl-line)'}`,
+          borderRadius: 'var(--cl-radius)',
+          padding: 'var(--cl-card-pad)',
+          boxShadow: hov ? 'var(--cl-shadow-hover)' : 'var(--cl-shadow)',
           transform: hov ? 'translateY(-2px)' : 'none',
-          animation: `fadeUp 0.4s ease-out ${300 + index * 80}ms both`,
+          transition: 'all 0.18s ease',
+          cursor: 'pointer',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <span style={{ fontFamily: T.mono, fontSize: 8, color: m.color, border: `1px solid ${m.color}40`, padding: '3px 10px', letterSpacing: '0.12em' }}>
-            {m.tag}
-          </span>
-          <span style={{ color: hov ? m.color : T.dim, fontSize: 14, transition: 'color 0.2s' }}>→</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+            color: 'var(--cl-accent)', background: 'var(--cl-accent-soft)',
+            borderRadius: 'var(--cl-radius-xs)', padding: '2px 8px',
+          }}>{m.tag}</span>
+          <span style={{ color: hov ? 'var(--cl-accent)' : 'var(--cl-ink3)', transition: 'color 0.18s', fontSize: 14 }}>→</span>
         </div>
-        <p style={{ fontFamily: T.sans, fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 6 }}>{m.label}</p>
-        <p style={{ fontFamily: T.sans, fontSize: 12, color: T.muted, lineHeight: 1.5 }}>{m.desc}</p>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--cl-ink)', marginBottom: 6 }}>{m.title}</h3>
+        <p style={{ fontSize: 12, color: 'var(--cl-ink3)', lineHeight: 1.55 }}>{m.desc}</p>
+        <div style={{ fontSize: 11, color: 'var(--cl-ink3)', marginTop: 12, fontVariantNumeric: 'tabular-nums' }}>{m.n}</div>
       </div>
     </Link>
   )
 }
 
-/* ─── page ─────────────────────────────────────────────────── */
-export default function LandingPage() {
+function GaugeMeta({ ipca }: { ipca: number | null }) {
+  const axisMin = 0, axisMax = 6
+  const posPct = (v: number) => Math.max(0, Math.min(100, ((v - axisMin) / (axisMax - axisMin)) * 100))
+  const above = ipca != null && ipca > 4.5
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: 'var(--cl-ink3)', marginBottom: 8 }}>Meta de inflação 2026 · CMN</div>
+      <div style={{ position: 'relative', height: 8, background: 'var(--cl-line)', borderRadius: 4, overflow: 'visible' }}>
+        <div style={{
+          position: 'absolute', left: `${posPct(1.5)}%`, width: `${posPct(4.5) - posPct(1.5)}%`,
+          top: 0, height: '100%', background: 'var(--cl-up-soft)', borderRadius: 4,
+        }} />
+        {ipca != null && (
+          <div style={{
+            position: 'absolute', left: `${posPct(ipca)}%`,
+            top: -4, width: 3, height: 16,
+            background: above ? 'var(--cl-down)' : 'var(--cl-accent)',
+            borderRadius: 2, transform: 'translateX(-50%)',
+          }} />
+        )}
+        <div style={{
+          position: 'absolute', left: `${posPct(3.0)}%`,
+          top: -3, width: 1.5, height: 14,
+          background: 'var(--cl-amber)', transform: 'translateX(-50%)',
+        }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--cl-ink3)', marginTop: 6 }}>
+        <span>1,5%</span><span style={{ color: 'var(--cl-amber)' }}>meta 3,0%</span><span>4,5%</span>
+      </div>
+      {ipca != null && (
+        <div style={{ fontSize: 11, fontWeight: 600, marginTop: 8, color: above ? 'var(--cl-down)' : 'var(--cl-up)' }}>
+          {above ? '● Acima do teto' : '● Dentro da meta'} · IPCA {ipca.toFixed(2)}%
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── page ─────────────────────────────────────────────────── */
+export default function HomePage() {
   const [kpis, setKpis] = useState<KpiData[]>([
-    { label: 'TAXA SELIC', serie: 'selic', value: null, delta: null, fonte: 'BCB · COPOM', history: [], color: T.green,  unit: '% a.a.' },
-    { label: 'IPCA 12M',  serie: 'ipca',  value: null, delta: null, fonte: 'IBGE',        history: [], color: T.amber,  unit: '%'      },
-    { label: 'CDI DIÁRIO', serie: 'cdi',  value: null, delta: null, fonte: 'CETIP',       history: [], color: T.violet, unit: '% a.a.' },
-    { label: 'PIB ANUAL', serie: 'pib',   value: null, delta: null, fonte: 'IBGE',        history: [], color: T.blue,   unit: '%'      },
+    { label: 'Taxa SELIC', serie: 'selic', value: null, delta: null, note: 'Meta definida pelo COPOM', source: 'BCB · COPOM', ref: 'a.a.', unit: '%', dir: 'flat', spark: [] },
+    { label: 'IPCA 12M',  serie: 'ipca',  value: null, delta: null, note: 'Inflação acumulada 12 meses', source: 'IBGE', ref: 'acum. 12m', unit: '%', dir: 'flat', spark: [] },
+    { label: 'CDI Diário', serie: 'cdi',  value: null, delta: null, note: 'Taxa interbancária de referência', source: 'CETIP', ref: 'a.a.', unit: '%', dir: 'flat', spark: [] },
+    { label: 'PIB Anual', serie: 'pib',   value: null, delta: null, note: 'Crescimento do PIB real', source: 'IBGE', ref: 'variação anual', unit: '%', dir: 'flat', spark: [] },
   ])
 
   useEffect(() => {
@@ -155,261 +189,280 @@ export default function LandingPage() {
         const hist = [...data].reverse().map(d => d.valor)
         const last = data[0]?.valor ?? null
         const prev2 = data[1]?.valor ?? null
-        return { ...k, value: last, delta: last != null && prev2 != null ? last - prev2 : null, history: hist }
+        const delta = last != null && prev2 != null ? last - prev2 : null
+        const dir: KpiData['dir'] = delta == null ? 'flat' : delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'
+        return { ...k, value: last, delta, dir, spark: hist }
       }))
     }).catch(() => {})
   }, [])
 
-  const selic   = kpis[0].value
-  const ipca    = kpis[1].value
-  const juroReal = selic != null && ipca != null ? selic - ipca : null
-  const ipcaPct  = ipca  != null ? Math.min((ipca / 4.5) * 100, 100) : 0
-  const metaPct  = (3.0 / 4.5) * 100
+  const selic = kpis[0].value
+  const ipca  = kpis[1].value
+  const juroReal = selic != null && ipca != null
+    ? +((selic - ipca) / (1 + ipca / 100) * 100).toFixed(2)
+    : null
 
   return (
-    <div style={{ fontFamily: T.sans, background: T.bg, color: T.text, minHeight: '100vh' }}>
+    <div style={{ background: 'var(--cl-bg)', minHeight: '100vh', fontFamily: 'var(--font-sans)' }}>
 
-      {/* CSS animations */}
-      <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.4; }
-        }
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          49%      { opacity: 1; }
-          50%      { opacity: 0; }
-          99%      { opacity: 0; }
-        }
-      `}</style>
-
-      {/* ── NAV ─────────────────────────────────────────── */}
-      <nav style={{
-        background: T.card, borderBottom: `1px solid ${T.line}`,
-        padding: '0 40px', height: 52,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      {/* ── HEADER ────────────────────────────────────────── */}
+      <header style={{
         position: 'sticky', top: 0, zIndex: 50,
-        animation: 'fadeUp 0.3s ease-out both',
+        background: 'var(--cl-card)', borderBottom: '1px solid var(--cl-line)',
+        height: 68, padding: '0 var(--cl-page-x)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        backdropFilter: 'blur(12px)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.green, letterSpacing: '0.15em' }}>MCP BRASIL</span>
-          <div style={{ width: 1, height: 16, background: T.line }} />
-          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.muted, letterSpacing: '0.1em' }}>PLATAFORMA FINANCEIRA</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, background: 'var(--cl-navy)',
+              borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 500,
+            }}>M</div>
+            <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--cl-ink)' }}>MCP Brasil</span>
+          </div>
+          <nav style={{ display: 'flex', gap: 6 }}>
+            {[
+              { label: 'Indicadores', href: '/indicadores' },
+              { label: 'Renda Variável', href: '/rv' },
+              { label: 'Renda Fixa', href: '/rf' },
+              { label: 'Fundos', href: '/fundos' },
+              { label: 'Chat Finance', href: '/copilot' },
+              { label: 'Status', href: '/status' },
+            ].map(l => (
+              <Link key={l.href} href={l.href} style={{
+                fontSize: 13, color: 'var(--cl-ink3)', textDecoration: 'none',
+                padding: '5px 10px', borderRadius: 'var(--cl-radius-xs)',
+                transition: 'all 0.15s',
+              }}
+                onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = 'var(--cl-line2)'; el.style.color = 'var(--cl-ink)' }}
+                onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = 'transparent'; el.style.color = 'var(--cl-ink3)' }}
+              >{l.label}</Link>
+            ))}
+          </nav>
         </div>
-        <div style={{ display: 'flex', gap: 32 }}>
-          {[
-            { href: '/',           label: 'INÍCIO' },
-            { href: '/indicadores', label: 'INDICADORES' },
-            { href: '/rv',         label: 'AÇÕES' },
-            { href: '/rf',         label: 'RENDA FIXA' },
-            { href: '/fundos',     label: 'FUNDOS' },
-          ].map(l => (
-            <Link key={l.href} href={l.href} style={{
-              fontFamily: T.mono, fontSize: 10, color: l.href === '/' ? T.green : T.muted,
-              textDecoration: 'none', letterSpacing: '0.1em', transition: 'color 0.15s',
-            }}
-              onMouseEnter={e => { if (l.href !== '/') (e.target as HTMLElement).style.color = T.text }}
-              onMouseLeave={e => { if (l.href !== '/') (e.target as HTMLElement).style.color = T.muted }}
-            >{l.label}</Link>
-          ))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontFamily: T.mono, fontSize: 10, color: T.muted }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ display: 'inline-block', width: 6, height: 6, background: T.green, borderRadius: '50%', animation: 'pulse 2s ease-in-out infinite' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--cl-ink3)' }}>
+            <span style={{
+              display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+              background: 'var(--cl-up)',
+              boxShadow: '0 0 0 2px var(--cl-up-soft)',
+              animation: 'cl-fadeup 0s',
+            }} />
             LIVE
-          </span>
-          <span style={{ color: T.dim }}>|</span>
-          <span style={{ color: T.text, fontVariantNumeric: 'tabular-nums' }}><Clock /></span>
-        </div>
-      </nav>
-
-      {/* ── HERO ────────────────────────────────────────── */}
-      <div style={{ padding: '64px 40px 48px', borderBottom: `1px solid ${T.line}` }}>
-        <p style={{
-          fontFamily: T.mono, fontSize: 9, color: T.green, letterSpacing: '0.2em',
-          marginBottom: 20, animation: 'fadeUp 0.4s ease-out 0.05s both',
-        }}>
-          // PLATAFORMA DE DADOS FINANCEIROS BRASILEIROS
-        </p>
-
-        <h1 style={{
-          fontFamily: T.sans, fontSize: 'clamp(2rem, 5vw, 3rem)', fontWeight: 800,
-          color: T.text, lineHeight: 1.1, letterSpacing: '-0.03em',
-          marginBottom: 16, maxWidth: 600,
-          animation: 'fadeUp 0.4s ease-out 0.1s both',
-        }}>
-          Dados do <span style={{ color: T.green }}>mercado brasileiro</span>{' '}
-          em tempo real
-        </h1>
-
-        <p style={{
-          fontFamily: T.sans, fontSize: 14, color: T.muted, lineHeight: 1.7,
-          maxWidth: 480, marginBottom: 40,
-          animation: 'fadeUp 0.4s ease-out 0.15s both',
-        }}>
-          Indicadores macro, renda variável, renda fixa e fundos — consolidados
-          em um único painel. Fontes oficiais: BCB, CVM, B3 e Tesouro Direto.
-        </p>
-
-        <div style={{ display: 'flex', gap: 12, animation: 'fadeUp 0.4s ease-out 0.2s both' }}>
-          <Link href="/indicadores" style={{
-            background: T.green, color: T.bg,
-            padding: '12px 32px', fontFamily: T.mono, fontSize: 11,
-            fontWeight: 700, letterSpacing: '0.12em', textDecoration: 'none',
-            display: 'inline-block', transition: 'background 0.15s',
-          }}
-            onMouseEnter={e => (e.currentTarget.style.background = T.greenHov)}
-            onMouseLeave={e => (e.currentTarget.style.background = T.green)}
-          >
-            ACESSAR PLATAFORMA →
-          </Link>
-          <a href="https://plataforma-mcp-brasil-api.onrender.com/docs" target="_blank" rel="noreferrer" style={{
-            background: 'transparent', color: T.green,
-            border: `1px solid ${T.green}`, padding: '12px 32px',
-            fontFamily: T.mono, fontSize: 11, letterSpacing: '0.12em',
-            textDecoration: 'none', display: 'inline-block', transition: 'all 0.15s',
-          }}
-            onMouseEnter={e => { e.currentTarget.style.background = T.green + '15' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-          >
-            VER API DOCS
-          </a>
-        </div>
-
-        {/* KPI CARDS */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: T.lineDim, marginTop: 48 }}>
-          {kpis.map((k, i) => <KpiCard key={k.serie} k={k} index={i} />)}
-        </div>
-      </div>
-
-      {/* ── MÓDULOS ─────────────────────────────────────── */}
-      <div style={{ padding: '40px 40px 0', borderBottom: `1px solid ${T.line}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.muted, letterSpacing: '0.12em' }}>MÓDULOS</span>
-          <div style={{ flex: 1, height: 1, background: T.lineDim }} />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, paddingBottom: 40 }}>
-          {MODULOS.map((m, i) => <ModuleCard key={m.href} m={m} index={i} />)}
-        </div>
-      </div>
-
-      {/* ── BOTTOM GRID ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: T.lineDim, gap: 1 }}>
-
-        {/* PRÓXIMOS EVENTOS */}
-        <div style={{ background: T.card, padding: '32px 32px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.muted, letterSpacing: '0.12em' }}>PRÓXIMOS EVENTOS</span>
-            <div style={{ flex: 1, height: 1, background: T.lineDim }} />
           </div>
-          {EVENTOS.map((e, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 16,
-              padding: '14px 0',
-              borderBottom: i < EVENTOS.length - 1 ? `1px solid ${T.lineDim}` : 'none',
-            }}>
-              <div style={{
-                textAlign: 'center', minWidth: 44, padding: '6px 0',
-                borderLeft: `2px solid ${e.urgent ? T.green : T.dim}`,
-                paddingLeft: 10,
-              }}>
-                <div style={{ fontFamily: T.mono, fontSize: 20, fontWeight: 700, color: e.urgent ? T.green : T.text, lineHeight: 1 }}>{e.day}</div>
-                <div style={{ fontFamily: T.mono, fontSize: 8, color: T.muted, letterSpacing: '0.1em' }}>{e.mon}</div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontFamily: T.sans, fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 3 }}>{e.title}</p>
-                <p style={{ fontFamily: T.sans, fontSize: 11, color: T.muted }}>{e.sub}</p>
-              </div>
-              <span style={{
-                fontFamily: T.mono, fontSize: 8,
-                color: e.urgent ? T.green : T.dim,
-                border: `1px solid ${e.urgent ? T.green + '60' : T.lineDim}`,
-                padding: '3px 10px', letterSpacing: '0.1em', whiteSpace: 'nowrap',
-              }}>{e.badge}</span>
-            </div>
-          ))}
+          <button style={{
+            background: 'var(--cl-navy)', color: '#fff',
+            border: 'none', borderRadius: 'var(--cl-radius-sm)',
+            padding: '8px 18px', fontSize: 13, fontWeight: 600,
+            cursor: 'pointer',
+          }}>
+            Acessar plataforma
+          </button>
         </div>
+      </header>
 
-        {/* JURO REAL + META */}
-        <div style={{ background: T.card, padding: '32px 32px 24px', display: 'flex', flexDirection: 'column', gap: 24 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <span style={{ fontFamily: T.mono, fontSize: 9, color: T.muted, letterSpacing: '0.12em' }}>PAINEL MACRO</span>
-              <div style={{ flex: 1, height: 1, background: T.lineDim }} />
-            </div>
-
-            {/* Juro Real */}
-            <div style={{ background: T.bg, border: `1px solid ${T.line}`, padding: '20px 20px 16px', marginBottom: 16 }}>
-              <p style={{ fontFamily: T.mono, fontSize: 9, color: T.muted, letterSpacing: '0.12em', marginBottom: 14 }}>JURO REAL (SELIC − IPCA)</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 9, marginBottom: 6, letterSpacing: '0.08em' }}>
-                    <span style={{ color: T.green }}>SELIC {selic?.toFixed(2) ?? '—'}%</span>
-                    <span style={{ color: T.amber }}>IPCA {ipca?.toFixed(2) ?? '—'}%</span>
-                  </div>
-                  <div style={{ position: 'relative', height: 6, background: T.lineDim }}>
-                    <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${Math.min(((selic ?? 0) / 20) * 100, 100)}%`, background: T.green, transition: 'width 0.6s ease' }} />
-                    <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${Math.min(((ipca ?? 0) / 20) * 100, 100)}%`, background: T.amber, opacity: 0.65, transition: 'width 0.6s ease' }} />
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right', minWidth: 72 }}>
-                  <p style={{ fontFamily: T.sans, fontSize: 24, fontWeight: 800, color: juroReal != null && juroReal >= 0 ? T.green : T.red, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-                    {juroReal != null ? `${juroReal.toFixed(2)}%` : '—'}
-                  </p>
-                  <p style={{ fontFamily: T.mono, fontSize: 8, color: T.muted, letterSpacing: '0.1em' }}>JURO REAL</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Meta de Inflação */}
-            <div style={{ background: T.bg, border: `1px solid ${T.line}`, padding: '20px 20px 16px' }}>
-              <p style={{ fontFamily: T.mono, fontSize: 9, color: T.muted, letterSpacing: '0.12em', marginBottom: 14 }}>META DE INFLAÇÃO 2026 — CMN</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.mono, fontSize: 8, color: T.dim, marginBottom: 6, letterSpacing: '0.08em' }}>
-                    <span>MÍN 1,5%</span><span style={{ color: T.amber }}>META 3,0%</span><span>MÁX 4,5%</span>
-                  </div>
-                  <div style={{ position: 'relative', height: 6, background: T.lineDim }}>
-                    <div style={{ height: '100%', width: `${ipcaPct}%`, background: ipca != null && ipca > 4.5 ? T.red : T.green, transition: 'width 0.6s ease' }} />
-                    <div style={{ position: 'absolute', left: `${metaPct}%`, top: -3, width: 1.5, height: 12, background: T.amber }} />
-                  </div>
-                  <p style={{ fontFamily: T.mono, fontSize: 8, color: ipca != null && ipca > 4.5 ? T.red : T.muted, marginTop: 5, letterSpacing: '0.08em', textAlign: 'right' }}>
-                    {ipca != null && ipca > 4.5 ? 'ACIMA DO TETO' : 'DENTRO DA META'}
-                  </p>
-                </div>
-                <div style={{ textAlign: 'right', minWidth: 72 }}>
-                  <p style={{ fontFamily: T.sans, fontSize: 24, fontWeight: 800, color: ipca != null && ipca > 4.5 ? T.red : T.green, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-                    {ipca != null ? `${ipca.toFixed(2)}%` : '—'}
-                  </p>
-                  <p style={{ fontFamily: T.mono, fontSize: 8, color: T.muted, letterSpacing: '0.1em' }}>IPCA 12M</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── FOOTER ──────────────────────────────────────── */}
-      <footer style={{
-        background: '#080d08', borderTop: `1px solid ${T.lineDim}`,
-        padding: '16px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      {/* ── HERO ──────────────────────────────────────────── */}
+      <section style={{
+        padding: '72px var(--cl-page-x) 56px',
+        borderBottom: '1px solid var(--cl-line)',
+        maxWidth: 1400, margin: '0 auto',
       }}>
-        <span style={{ fontFamily: T.mono, fontSize: 9, color: T.dim, letterSpacing: '0.1em' }}>
-          © 2026 MCP BRASIL · DADOS PÚBLICOS · USO EDUCACIONAL
-        </span>
+        <div style={{ maxWidth: 720 }}>
+          <div style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: '0.12em',
+            color: 'var(--cl-accent)', textTransform: 'uppercase', marginBottom: 20,
+          }}>
+            Dados financeiros brasileiros
+          </div>
+          <h1 style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: 'clamp(2.2rem, 4vw, 3.25rem)',
+            fontWeight: 500, lineHeight: 1.15,
+            color: 'var(--cl-ink)', marginBottom: 20,
+            letterSpacing: '-0.01em',
+          }}>
+            O mercado brasileiro,<br />
+            <em style={{ fontStyle: 'italic', color: 'var(--cl-navy)' }}>com clareza.</em>
+          </h1>
+          <p style={{ fontSize: 16, color: 'var(--cl-ink2)', lineHeight: 1.65, maxWidth: 540, marginBottom: 32 }}>
+            Indicadores macro, renda variável, renda fixa e fundos consolidados
+            em um único painel — sempre a partir de fontes oficiais.
+          </p>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 40 }}>
+            <Link href="/indicadores" style={{
+              background: 'var(--cl-navy)', color: '#fff',
+              padding: '12px 28px', borderRadius: 'var(--cl-radius-sm)',
+              fontSize: 14, fontWeight: 600, textDecoration: 'none',
+              transition: 'opacity 0.15s',
+            }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.88'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
+            >
+              Acessar plataforma →
+            </Link>
+            <a href="https://plataforma-mcp-brasil-api.onrender.com/docs" target="_blank" rel="noreferrer" style={{
+              background: 'transparent', color: 'var(--cl-ink2)',
+              border: '1px solid var(--cl-line)',
+              padding: '12px 28px', borderRadius: 'var(--cl-radius-sm)',
+              fontSize: 14, fontWeight: 500, textDecoration: 'none',
+              transition: 'all 0.15s',
+            }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--cl-accent)'; (e.currentTarget as HTMLElement).style.color = 'var(--cl-accent)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--cl-line)'; (e.currentTarget as HTMLElement).style.color = 'var(--cl-ink2)' }}
+            >
+              Ver documentação da API
+            </a>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['BCB', 'CVM', 'B3', 'IBGE', 'Tesouro Direto'].map(src => (
+              <span key={src} style={{
+                fontSize: 11, color: 'var(--cl-ink3)',
+                border: '1px solid var(--cl-line)',
+                borderRadius: 'var(--cl-radius-xs)', padding: '3px 10px',
+                background: 'var(--cl-card)',
+              }}>{src}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── KPI CARDS ─────────────────────────────────────── */}
+      <section style={{ padding: '48px var(--cl-page-x)', maxWidth: 1400, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 24 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--cl-ink)' }}>Indicadores-chave</h2>
+          <span style={{ fontSize: 12, color: 'var(--cl-ink3)' }}>Fontes oficiais · Atualizado hoje</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+          {kpis.map(k => <KPICard key={k.serie} k={k} />)}
+        </div>
+      </section>
+
+      {/* ── MAIN GRID (Módulos + Macro | Eventos) ─────────── */}
+      <section style={{
+        padding: '0 var(--cl-page-x) 64px',
+        maxWidth: 1400, margin: '0 auto',
+        display: 'grid',
+        gridTemplateColumns: '1.5fr 1fr',
+        gap: 24,
+        alignItems: 'start',
+      }}>
+
+        {/* LEFT: Módulos + Painel Macro */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {/* Módulos */}
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--cl-ink)', marginBottom: 16 }}>Módulos</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {MODULOS.map(m => <ModuleCard key={m.href} m={m} />)}
+            </div>
+          </div>
+
+          {/* Painel Macro */}
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--cl-ink)', marginBottom: 16 }}>Painel Macro</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+
+              {/* Juro Real */}
+              <div style={{
+                background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+                borderRadius: 'var(--cl-radius)', padding: 'var(--cl-card-pad)',
+                boxShadow: 'var(--cl-shadow)',
+              }}>
+                <div style={{ fontSize: 12, color: 'var(--cl-ink3)', marginBottom: 8 }}>Juro real (ex-ante)</div>
+                <div style={{
+                  fontFamily: 'var(--font-display)', fontSize: 40, fontWeight: 500,
+                  color: juroReal != null && juroReal >= 0 ? 'var(--cl-up)' : 'var(--cl-down)',
+                  lineHeight: 1, fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {juroReal != null ? juroReal.toFixed(2) : '—'}
+                  <small style={{ fontSize: 18, fontWeight: 400, fontFamily: 'var(--font-sans)' }}> %</small>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--cl-ink3)', marginTop: 10 }}>
+                  Selic {selic?.toFixed(2) ?? '—'}% − IPCA {ipca?.toFixed(2) ?? '—'}% · método Fisher
+                </div>
+              </div>
+
+              {/* Gauge Meta */}
+              <div style={{
+                background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+                borderRadius: 'var(--cl-radius)', padding: 'var(--cl-card-pad)',
+                boxShadow: 'var(--cl-shadow)',
+              }}>
+                <GaugeMeta ipca={ipca} />
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: Próximos Eventos */}
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--cl-ink)', marginBottom: 16 }}>Próximos Eventos</h2>
+          <div style={{
+            background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+            borderRadius: 'var(--cl-radius)', boxShadow: 'var(--cl-shadow)',
+            overflow: 'hidden',
+          }}>
+            {EVENTOS.map((e, i) => {
+              const soon = e.inDays <= 7
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 16,
+                  padding: '16px 20px',
+                  borderBottom: i < EVENTOS.length - 1 ? '1px solid var(--cl-line)' : 'none',
+                }}>
+                  <div style={{
+                    textAlign: 'center', minWidth: 44,
+                    borderLeft: `3px solid ${soon ? 'var(--cl-amber)' : 'var(--cl-line)'}`,
+                    paddingLeft: 10,
+                  }}>
+                    <div style={{
+                      fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 500,
+                      color: soon ? 'var(--cl-amber)' : 'var(--cl-ink)', lineHeight: 1,
+                    }}>{e.d}</div>
+                    <div style={{ fontSize: 10, color: 'var(--cl-ink3)', letterSpacing: '0.06em' }}>{e.m}</div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--cl-ink)', marginBottom: 2 }}>{e.t}</p>
+                    <p style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>{e.s}</p>
+                  </div>
+                  <span style={{
+                    fontSize: 11, color: soon ? 'var(--cl-amber)' : 'var(--cl-ink3)',
+                    background: soon ? 'var(--cl-amber-soft)' : 'var(--cl-line2)',
+                    borderRadius: 'var(--cl-radius-xs)', padding: '3px 9px',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    em {e.inDays}d
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+      </section>
+
+      {/* ── FOOTER ────────────────────────────────────────── */}
+      <footer style={{
+        borderTop: '1px solid var(--cl-line)', padding: '20px var(--cl-page-x)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        maxWidth: 1400, margin: '0 auto',
+      }}>
+        <span style={{ fontSize: 12, color: 'var(--cl-ink3)' }}>© 2026 MCP Brasil · Dados públicos · Uso educacional</span>
         <div style={{ display: 'flex', gap: 8 }}>
-          {['BCB', 'CVM', 'B3', 'IBGE', 'TESOURO'].map(src => (
+          {['BCB', 'CVM', 'B3', 'IBGE', 'Tesouro Direto'].map(src => (
             <span key={src} style={{
-              fontFamily: T.mono, fontSize: 8, color: T.dim,
-              border: `1px solid ${T.lineDim}`, padding: '2px 8px', letterSpacing: '0.1em',
+              fontSize: 10, color: 'var(--cl-ink3)',
+              border: '1px solid var(--cl-line)', borderRadius: 4,
+              padding: '2px 8px',
             }}>{src}</span>
           ))}
         </div>
       </footer>
+
     </div>
   )
 }
