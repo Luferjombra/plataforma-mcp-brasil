@@ -48,7 +48,7 @@ export default function CopilotPage() {
   }, [])
 
   const juroReal = lastSelic != null && lastIpca != null
-    ? +((lastSelic - lastIpca) / (1 + lastIpca / 100) * 100).toFixed(2)
+    ? +((lastSelic - lastIpca) / (1 + lastIpca / 100)).toFixed(2)
     : null
 
   const chartData = useMemo(() => selicHistory.map(d => ({
