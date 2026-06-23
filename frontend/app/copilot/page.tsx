@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { getIndicadores, perguntarCopilot, APIError, type Indicador } from '@/lib/api'
+import { getIndicadores, perguntarCopilot, APIError } from '@/lib/api'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'

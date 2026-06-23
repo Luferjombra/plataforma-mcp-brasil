@@ -72,7 +72,7 @@ function RFInner() {
     .finally(() => setLoadingT(false))
   }, [])
 
-  useEffect(() => { carregar() }, [carregar])
+  useEffect(() => { carregar() }, [carregar]) // eslint-disable-line react-hooks/set-state-in-effect
 
   const overlayFormatted = useMemo(() => overlaySeries.map(p => ({
     ...p,

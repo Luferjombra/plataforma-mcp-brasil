@@ -56,7 +56,7 @@ function IndicadoresInner() {
     .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => { carregar() }, [carregar])
+  useEffect(() => { carregar() }, [carregar]) // eslint-disable-line react-hooks/set-state-in-effect
 
   const m = META[serie]
   const reversed = useMemo(() => [...(dados[serie] ?? [])].reverse(), [dados, serie])

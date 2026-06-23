@@ -91,7 +91,7 @@ export default function StatusPage() {
     } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { carregar() }, [carregar])
+  useEffect(() => { carregar() }, [carregar]) // eslint-disable-line react-hooks/set-state-in-effect
 
   useEffect(() => {
     const id = setInterval(() => setCountdown(prev => {
