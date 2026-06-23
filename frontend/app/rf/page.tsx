@@ -1,325 +1,271 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
-import { useTheme } from 'next-themes'
-import { useSearchParams } from 'next/navigation'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Badge } from '@/components/ui/badge'
-import { SearchBar } from '@/components/SearchBar'
+import { useEffect, useState, useMemo, Suspense } from 'react'
 import { getTitulosRF, getHistoricoRF, type TituloRF, type HistoricoRF } from '@/lib/api'
 import { formatBRL, formatPct } from '@/lib/format'
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, ReferenceLine,
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
 
-const GRUPOS: Record<string, { cor: string; label: string }> = {
-  SELIC: { cor: '#10b981', label: 'SELIC' },
-  IPCA:  { cor: '#3b82f6', label: 'IPCA+' },
-  PRE:   { cor: '#f59e0b', label: 'Pré-fixado' },
-  IGPM:  { cor: '#8b5cf6', label: 'IGP-M+' },
-  USD:   { cor: '#ec4899', label: 'Dólar+' },
+const INDEXADORES = [
+  { key: 'IPCA', label: 'IPCA+',       color: 'var(--cl-up)',     bg: 'var(--cl-up-soft)'     },
+  { key: 'PRE',  label: 'Pré-fixado',  color: 'var(--cl-accent)', bg: 'var(--cl-accent-soft)' },
+  { key: 'SELIC',label: 'Selic',       color: 'var(--cl-amber)',  bg: 'var(--cl-amber-soft)'  },
+]
+
+const RISCO: Record<string, string> = {
+  SELIC: 'Baixo', IPCA: 'Baixo', PRE: 'Médio', IGPM: 'Médio', USD: 'Alto',
 }
 
-
-function TaxaBadge({ indexador, taxa }: { indexador: string; taxa: number | null }) {
-  const g = GRUPOS[indexador] ?? { cor: '#6b7280', label: indexador }
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold"
-      style={{ background: `${g.cor}18`, color: g.cor }}
-    >
-      {formatPct(taxa)}
-    </span>
-  )
+interface OverlayPoint {
+  date: string
+  IPCA: number | null
+  PRE:  number | null
+  SELIC: number | null
 }
 
-function RFPageInner() {
-  const { theme } = useTheme()
-  const tickColor = theme === 'dark' ? '#6b7280' : '#9ca3af'
-  const searchParams = useSearchParams()
-  const codigoParam = searchParams.get('codigo')
+function buildOverlay(series: { key: string; data: HistoricoRF[] }[]): OverlayPoint[] {
+  const map = new Map<string, Partial<Record<string, number | null>>>()
+  for (const { key, data } of series) {
+    for (const h of data) {
+      if (!map.has(h.data)) map.set(h.data, {})
+      map.get(h.data)![key] = h.taxa_mercado
+    }
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, vals]) => ({
+      date,
+      IPCA:  vals['IPCA']  ?? null,
+      PRE:   vals['PRE']   ?? null,
+      SELIC: vals['SELIC'] ?? null,
+    }))
+}
 
-  const [titulos, setTitulos] = useState<TituloRF[]>([])
-  const [selecionado, setSelecionado] = useState<string | null>(null)
-  const [historico, setHistorico] = useState<HistoricoRF[]>([])
-  const [loadingTitulos, setLoadingTitulos] = useState(true)
-  const [loadingChart, setLoadingChart] = useState(false)
+function RFInner() {
+  const [titulos, setTitulos]           = useState<TituloRF[]>([])
+  const [overlaySeries, setOverlay]     = useState<OverlayPoint[]>([])
+  const [loadingTitulos, setLoadingT]   = useState(true)
+  const [loadingOverlay, setLoadingO]   = useState(true)
 
   useEffect(() => {
-    getTitulosRF()
-      .then(r => {
-        setTitulos(r.data)
-        const initial = codigoParam
-          ? r.data.find((t: TituloRF) => t.codigo === codigoParam)?.codigo ?? r.data[0]?.codigo
-          : r.data[0]?.codigo
-        if (initial) setSelecionado(initial)
-      })
-      .finally(() => setLoadingTitulos(false))
-  }, [codigoParam])
+    getTitulosRF().then(r => {
+      setTitulos(r.data)
 
-  useEffect(() => {
-    if (!selecionado) return
-    setLoadingChart(true)
-    getHistoricoRF(selecionado, 252)
-      .then(r => setHistorico(r.data))
-      .catch(() => setHistorico([]))
-      .finally(() => setLoadingChart(false))
-  }, [selecionado])
+      // Pick first representative from each indexador for overlay
+      const picks: { key: string; codigo: string }[] = []
+      for (const idx of ['IPCA', 'PRE', 'SELIC']) {
+        const found = r.data.find(t => t.indexador === idx && t.ativo)
+        if (found) picks.push({ key: idx, codigo: found.codigo })
+      }
 
-  const dadosGrafico = [...historico].reverse().map((d: HistoricoRF) => ({
-    data: new Date(d.data + 'T00:00:00').toLocaleDateString('pt-BR', {
-      day: '2-digit', month: 'short',
-    }),
-    taxa: d.taxa_mercado,
-    pu: d.pu_mercado,
-  }))
+      if (picks.length === 0) { setLoadingO(false); return }
 
-  const tituloSel = titulos.find(t => t.codigo === selecionado)
-  const cor = tituloSel ? (GRUPOS[tituloSel.indexador]?.cor ?? '#6b7280') : '#6b7280'
-  const taxaInicio = historico.length > 1 ? historico[historico.length - 1].taxa_mercado : null
+      Promise.all(picks.map(p => getHistoricoRF(p.codigo, 252).then(h => ({ key: p.key, data: h.data }))))
+        .then(series => setOverlay(buildOverlay(series)))
+        .catch(() => setOverlay([]))
+        .finally(() => setLoadingO(false))
 
-  const grupos = Object.keys(GRUPOS)
-  const totalPorGrupo = grupos.reduce<Record<string, TituloRF[]>>((acc, g) => {
-    acc[g] = titulos.filter(t => t.indexador === g)
-    return acc
-  }, {})
-  const outros = titulos.filter(t => !grupos.includes(t.indexador))
+    }).finally(() => setLoadingT(false))
+  }, [])
+
+  const overlayFormatted = useMemo(() => overlaySeries.map(p => ({
+    ...p,
+    dateLabel: new Date(p.date + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }),
+  })), [overlaySeries])
+
+  // Current rates for each indexador (latest taxa from titulos)
+  const currentRates = useMemo(() => {
+    const out: Record<string, number | null> = {}
+    for (const idx of INDEXADORES) {
+      const t = titulos.find(t => t.indexador === idx.key && t.ativo && t.taxa_atual != null)
+      out[idx.key] = t?.taxa_atual ?? null
+    }
+    return out
+  }, [titulos])
+
+  const loading = loadingTitulos || loadingOverlay
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Renda Fixa</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Tesouro Direto · CDB · LCI · LCA
-          </p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      {/* ── OVERLAY CHART ─────────────────────────────── */}
+      <div style={{
+        background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+        borderRadius: 'var(--cl-radius)', boxShadow: 'var(--cl-shadow)',
+        overflow: 'hidden',
+      }}>
+        <div style={{ padding: '20px 20px 12px', borderBottom: '1px solid var(--cl-line)' }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--cl-ink)', marginBottom: 4 }}>
+            Histórico de taxas — Tesouro Direto
+          </h2>
+          <p style={{ fontSize: 12, color: 'var(--cl-ink3)' }}>3 indexadores principais · 252 dias úteis</p>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
+            {INDEXADORES.map(idx => (
+              <div key={idx.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="24" height="2" style={{ overflow: 'visible' }}>
+                  <line x1="0" y1="1" x2="24" y2="1" stroke={idx.color} strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+                <span style={{ fontSize: 12, color: 'var(--cl-ink)', fontWeight: 500 }}>{idx.label}</span>
+                {currentRates[idx.key] != null && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                    color: idx.color, background: idx.bg, borderRadius: 'var(--cl-radius-xs)',
+                    padding: '1px 7px',
+                  }}>
+                    {formatPct(currentRates[idx.key])}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-4 flex-shrink-0">
-          <SearchBar placeholder="Buscar título ou indexador..." />
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
-            {titulos.length} títulos ativos
-          </span>
+
+        <div style={{ padding: '8px 0 8px' }}>
+          {loading ? (
+            <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
+              Carregando séries históricas…
+            </div>
+          ) : overlayFormatted.length === 0 ? (
+            <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
+              Sem dados históricos
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={overlayFormatted} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--cl-line)" vertical={false} />
+                <XAxis dataKey="dateLabel" tick={{ fontSize: 11, fill: 'var(--cl-ink3)' }} stroke="transparent" tickLine={false} height={28} interval={Math.max(1, Math.floor(overlayFormatted.length / 8))} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--cl-ink3)' }} stroke="transparent" tickFormatter={v => `${v.toFixed(0)}%`} domain={['auto', 'auto']} width={48} tickLine={false} />
+                <Tooltip
+                  formatter={(v, name) => [typeof v === 'number' ? `${v.toFixed(2)}% a.a.` : '—', INDEXADORES.find(i => i.key === name)?.label ?? name]}
+                  contentStyle={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius-sm)', fontSize: 12 }}
+                  labelStyle={{ fontWeight: 600 }}
+                />
+                <Line type="monotone" dataKey="IPCA"  stroke="var(--cl-up)"     strokeWidth={2} dot={false} connectNulls activeDot={{ r: 4, stroke: 'var(--cl-card)', strokeWidth: 2 }} />
+                <Line type="monotone" dataKey="PRE"   stroke="var(--cl-accent)" strokeWidth={2} dot={false} connectNulls activeDot={{ r: 4, stroke: 'var(--cl-card)', strokeWidth: 2 }} />
+                <Line type="monotone" dataKey="SELIC" stroke="var(--cl-amber)"  strokeWidth={2} dot={false} connectNulls activeDot={{ r: 4, stroke: 'var(--cl-card)', strokeWidth: 2 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {/* Lista */}
-        <div className="lg:col-span-1">
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
-            <div className="max-h-[580px] overflow-y-auto">
-              {loadingTitulos ? (
-                <div className="p-4 space-y-2">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <Skeleton key={i} className="h-14 w-full rounded-lg" />
-                  ))}
-                </div>
-              ) : (
-                <div>
-                  {grupos.map(g => {
-                    const lista = totalPorGrupo[g]
-                    if (!lista?.length) return null
-                    const cfg = GRUPOS[g]
-                    return (
-                      <div key={g}>
-                        <div
-                          className="flex items-center gap-2 px-4 py-2 text-xs font-semibold sticky top-0 z-10"
-                          style={{
-                            background: `${cfg.cor}12`,
-                            color: cfg.cor,
-                            borderBottom: `1px solid ${cfg.cor}25`,
-                          }}
-                        >
-                          <span
-                            className="h-1.5 w-1.5 rounded-full"
-                            style={{ background: cfg.cor }}
-                          />
-                          {cfg.label}
-                          <span className="ml-auto opacity-60 font-normal">{lista.length}</span>
-                        </div>
-                        <div className="divide-y divide-border/50">
-                          {lista.map(t => {
-                            const active = selecionado === t.codigo
-                            return (
-                              <button
-                                key={t.codigo}
-                                onClick={() => setSelecionado(t.codigo)}
-                                className={`w-full flex items-center justify-between px-4 py-3 text-left text-sm transition-colors ${
-                                  active ? 'bg-primary/8 dark:bg-primary/10' : 'hover:bg-accent/50'
-                                }`}
-                              >
-                                <div className="min-w-0">
-                                  <p className={`font-medium text-xs leading-tight ${active ? 'text-primary' : ''}`}>
-                                    {t.nome_display}
-                                  </p>
-                                  {t.data_vencimento && (
-                                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                                      venc. {new Date(t.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
-                                    </p>
-                                  )}
-                                </div>
-                                <TaxaBadge indexador={t.indexador} taxa={t.taxa_atual} />
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {outros.length > 0 && (
-                    <div>
-                      <div className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-muted-foreground bg-muted/40 border-b border-border/50">
-                        Outros · {outros.length}
-                      </div>
-                      <div className="divide-y divide-border/50">
-                        {outros.map(t => {
-                          const active = selecionado === t.codigo
-                          return (
-                            <button
-                              key={t.codigo}
-                              onClick={() => setSelecionado(t.codigo)}
-                              className={`w-full flex items-center justify-between px-4 py-3 text-left text-sm transition-colors ${
-                                active ? 'bg-primary/8 dark:bg-primary/10' : 'hover:bg-accent/50'
-                              }`}
-                            >
-                              <p className={`text-xs font-medium ${active ? 'text-primary' : ''}`}>
-                                {t.nome_display}
-                              </p>
-                              <TaxaBadge indexador={t.indexador} taxa={t.taxa_atual} />
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+      {/* ── INDEXER CARDS ─────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        {INDEXADORES.map(idx => {
+          const titleForIdx = titulos.find(t => t.indexador === idx.key && t.ativo)
+          const count       = titulos.filter(t => t.indexador === idx.key).length
+          return (
+            <div key={idx.key} style={{
+              background: 'var(--cl-card)', border: `1px solid var(--cl-line)`,
+              borderTop: `3px solid ${idx.color}`,
+              borderRadius: 'var(--cl-radius)', padding: 'var(--cl-card-pad)',
+              boxShadow: 'var(--cl-shadow)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: idx.color, background: idx.bg, borderRadius: 'var(--cl-radius-xs)', padding: '2px 8px' }}>{idx.label}</span>
+                <span style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>{count} título{count !== 1 ? 's' : ''}</span>
+              </div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 500, color: idx.color, lineHeight: 1, fontVariantNumeric: 'tabular-nums', marginBottom: 6 }}>
+                {formatPct(currentRates[idx.key])}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>
+                {titleForIdx?.nome_display ?? 'Taxa representativa'} · taxa atual
+              </div>
             </div>
-          </div>
+          )
+        })}
+      </div>
+
+      {/* ── UNIFIED TABLE ─────────────────────────────── */}
+      <div style={{
+        background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+        borderRadius: 'var(--cl-radius)', overflow: 'hidden', boxShadow: 'var(--cl-shadow)',
+      }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--cl-line)' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--cl-ink)' }}>
+            Todos os títulos · {titulos.filter(t => t.ativo).length} ativos
+          </h2>
         </div>
 
-        {/* Detalhe */}
-        <div className="lg:col-span-2 flex flex-col gap-4">
-          {tituloSel && (
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl border border-border bg-card p-4">
-                <p className="text-xs text-muted-foreground mb-1">Taxa atual</p>
-                <p className="text-xl font-bold tabular-nums" style={{ color: cor }}>
-                  {formatPct(tituloSel.taxa_atual)}
-                </p>
-                <Badge variant="outline" className="mt-1.5 text-[10px]">
-                  {GRUPOS[tituloSel.indexador]?.label ?? tituloSel.indexador}
-                </Badge>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <p className="text-xs text-muted-foreground mb-1">PU mercado</p>
-                <p className="text-xl font-bold tabular-nums">
-                  {formatBRL(tituloSel.pu_atual)}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1.5">por unidade</p>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <p className="text-xs text-muted-foreground mb-1">Vencimento</p>
-                <p className="text-sm font-semibold mt-1">
-                  {tituloSel.data_vencimento
-                    ? new Date(tituloSel.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                      })
-                    : '—'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">{tituloSel.tipo_curto}</p>
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-border bg-card flex-1">
-            <div className="px-5 pt-5 pb-2">
-              <h2 className="font-semibold text-base">
-                {tituloSel?.nome_display ?? '—'}
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Histórico de taxa · 252 dias úteis
-                {tituloSel?.pu_atual != null && ` · PU atual ${formatBRL(tituloSel.pu_atual)}`}
-              </p>
-            </div>
-            <div className="px-2 pb-4">
-              {loadingChart ? (
-                <Skeleton className="h-64 w-full" />
-              ) : dadosGrafico.length === 0 ? (
-                <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
-                  Sem dados históricos
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={280}>
-                  <AreaChart data={dadosGrafico} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="grad-rf" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={cor} stopOpacity={0.2} />
-                        <stop offset="95%" stopColor={cor} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis
-                      dataKey="data"
-                      tick={{ fontSize: 10, fill: tickColor }}
-                      interval={30}
-                      stroke="transparent"
-                      tickLine={false}
-                      height={28}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: tickColor }}
-                      stroke="transparent"
-                      tickFormatter={v => `${v.toFixed(2)}%`}
-                      domain={['auto', 'auto']}
-                      width={56}
-                      tickLine={false}
-                    />
-                    {taxaInicio != null && (
-                      <ReferenceLine
-                        y={taxaInicio}
-                        stroke={cor}
-                        strokeDasharray="4 4"
-                        strokeOpacity={0.4}
-                        label={{
-                          value: `Início ${taxaInicio.toFixed(2)}%`,
-                          position: 'insideTopRight',
-                          fontSize: 10,
-                          fill: cor,
-                          fillOpacity: 0.7,
-                        }}
-                      />
-                    )}
-                    <Tooltip
-                      formatter={(v) => [
-                        typeof v === 'number' ? `${v.toFixed(2)}% a.a.` : '—',
-                        'Taxa',
-                      ]}
-                      contentStyle={{
-                        background: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+        {loadingTitulos ? (
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} style={{ height: 44, background: 'var(--cl-line2)', borderRadius: 6 }} />
+            ))}
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--cl-line2)', borderBottom: '1px solid var(--cl-line)' }}>
+                {['Título', 'Indexador', 'Taxa', 'PU', 'Vencimento', 'Risco', ''].map((h, i) => (
+                  <th key={i} style={{
+                    padding: '10px 16px', fontSize: 10, fontWeight: 700, color: 'var(--cl-ink3)',
+                    letterSpacing: '0.08em', textTransform: 'uppercase',
+                    textAlign: i >= 2 && i <= 5 ? 'right' : 'left',
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {titulos.filter(t => t.ativo).map(t => {
+                const idxCfg = INDEXADORES.find(i => i.key === t.indexador)
+                const risco  = RISCO[t.indexador] ?? 'Médio'
+                const riscoColor = risco === 'Baixo' ? 'var(--cl-up)' : risco === 'Alto' ? 'var(--cl-down)' : 'var(--cl-amber)'
+                return (
+                  <tr key={t.codigo} style={{ borderBottom: '1px solid var(--cl-line2)', transition: 'background 0.1s' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--cl-line2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cl-ink)' }}>{t.nome_display}</div>
+                      <div style={{ fontSize: 10, color: 'var(--cl-ink3)', marginTop: 2 }}>{t.tipo_curto}</div>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      {idxCfg ? (
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, color: idxCfg.color,
+                          background: idxCfg.bg, borderRadius: 'var(--cl-radius-xs)', padding: '2px 8px',
+                        }}>{idxCfg.label}</span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>{t.indexador}</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: idxCfg?.color ?? 'var(--cl-ink)', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatPct(t.taxa_atual)}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, color: 'var(--cl-ink)', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatBRL(t.pu_atual)}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, color: 'var(--cl-ink3)' }}>
+                      {t.data_vencimento
+                        ? new Date(t.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
+                        : '—'}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: riscoColor }}>{risco}</span>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <button style={{
+                        fontSize: 11, fontWeight: 600, color: 'var(--cl-accent)',
+                        background: 'var(--cl-accent-soft)', border: '1px solid var(--cl-accent)',
+                        borderRadius: 'var(--cl-radius-xs)', padding: '4px 12px', cursor: 'pointer',
+                        transition: 'all 0.15s', whiteSpace: 'nowrap',
                       }}
-                      labelStyle={{ fontWeight: 600, marginBottom: 2 }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="taxa"
-                      stroke={cor}
-                      strokeWidth={2}
-                      fill="url(#grad-rf)"
-                      dot={false}
-                      activeDot={{ r: 4, fill: cor, stroke: 'hsl(var(--card))', strokeWidth: 2 }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-        </div>
+                        onMouseEnter={e => { const el = e.currentTarget; el.style.background = 'var(--cl-accent)'; el.style.color = '#fff' }}
+                        onMouseLeave={e => { const el = e.currentTarget; el.style.background = 'var(--cl-accent-soft)'; el.style.color = 'var(--cl-accent)' }}
+                      >
+                        Simular →
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )
@@ -328,7 +274,7 @@ function RFPageInner() {
 export default function RFPage() {
   return (
     <Suspense>
-      <RFPageInner />
+      <RFInner />
     </Suspense>
   )
 }
