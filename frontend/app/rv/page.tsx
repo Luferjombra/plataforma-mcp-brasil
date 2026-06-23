@@ -1,84 +1,45 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
-import { useTheme } from 'next-themes'
+import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Skeleton } from '@/components/ui/skeleton'
-import { SearchBar } from '@/components/SearchBar'
 import { getAtivos, getHistoricoRV, type Ativo, type Historico } from '@/lib/api'
+import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
+import { formatBRL, formatCap } from '@/lib/format'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
-import { TrendingUp, TrendingDown, Building2, Landmark, Minus } from 'lucide-react'
-import { formatBRL as brl, formatCap as cap } from '@/lib/format'
 
-const SETOR_COLORS: Record<string, string> = {
-  'Petróleo e Gás': '#f97316',
-  'Mineração': '#84cc16',
-  'Financeiro': '#3b82f6',
-  'Indústria': '#8b5cf6',
-  'Serviços': '#06b6d4',
-  'Varejo': '#ec4899',
-  'Consumo': '#f59e0b',
-  'Papel e Celulose': '#22c55e',
-  'Saúde': '#ef4444',
-  'Energia': '#eab308',
-  'Telecomunicações': '#6366f1',
-  'Fundos Imobiliários': '#14b8a6',
-}
+type Filtro = 'todos' | 'acao' | 'fii'
+type Range  = '5d' | '1m' | '3m' | '6m' | '1a'
 
-function VarBadge({ v, size = 'md' }: { v: number | null; size?: 'sm' | 'md' }) {
-  if (v == null) return <span className="text-xs text-muted-foreground tabular-nums">—</span>
-  const pos = v >= 0
-  const cls = size === 'sm'
-    ? `inline-flex items-center gap-0.5 text-[10px] font-semibold tabular-nums px-1 py-0.5 rounded ${pos ? 'text-emerald-700 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/60' : 'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-950/60'}`
-    : `inline-flex items-center gap-1 text-sm font-bold tabular-nums px-2 py-0.5 rounded-md ${pos ? 'text-emerald-700 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/60' : 'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-950/60'}`
-  return (
-    <span className={cls}>
-      {pos ? <TrendingUp className={size === 'sm' ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5'} /> : <TrendingDown className={size === 'sm' ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5'} />}
-      {pos ? '+' : ''}{v.toFixed(2)}%
-    </span>
-  )
-}
+const RANGE_N: Record<Range, number> = { '5d': 5, '1m': 21, '3m': 63, '6m': 126, '1a': 252 }
 
-/* ── stat card ───────────────────────────────────────────── */
-function StatCard({ label, value, sub, accent }: {
-  label: string; value: string; sub?: string; accent?: string
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium mb-1">{label}</p>
-      <p className={`text-2xl font-bold tabular-nums tracking-tight ${accent ?? ''}`}>{value}</p>
-      {sub && <p className="text-[11px] text-muted-foreground mt-1">{sub}</p>}
-    </div>
-  )
-}
+function RVInner() {
+  const searchParams  = useSearchParams()
+  const tickerParam   = searchParams.get('ticker')
 
-/* ── main ────────────────────────────────────────────────── */
-function RVPageInner() {
-  const { theme } = useTheme()
-  const tickColor = theme === 'dark' ? '#6b7280' : '#9ca3af'
-  const searchParams = useSearchParams()
-  const tickerParam = searchParams.get('ticker')
-
-  const [ativos, setAtivos] = useState<Ativo[]>([])
-  const [selecionado, setSelecionado] = useState<string | null>(null)
-  const [historico, setHistorico] = useState<Historico[]>([])
+  const [ativos, setAtivos]             = useState<Ativo[]>([])
+  const [selecionado, setSelecionado]   = useState<string | null>(null)
+  const [historico, setHistorico]       = useState<Historico[]>([])
   const [loadingAtivos, setLoadingAtivos] = useState(true)
-  const [loadingChart, setLoadingChart] = useState(false)
-  const [filtro, setFiltro] = useState<'todos' | 'acao' | 'fii'>('todos')
+  const [loadingChart, setLoadingChart]   = useState(false)
+  const [filtro, setFiltro]             = useState<Filtro>('todos')
+  const [range, setRange]               = useState<Range>('1a')
+  const [error, setError]               = useState<string | null>(null)
 
-  useEffect(() => {
-    getAtivos()
-      .then(r => {
-        setAtivos(r.data)
-        const initial = tickerParam
-          ? r.data.find(a => a.ticker === tickerParam.toUpperCase())?.ticker ?? r.data[0]?.ticker
-          : r.data[0]?.ticker
-        if (initial) setSelecionado(initial)
-      })
-      .finally(() => setLoadingAtivos(false))
-  }, [tickerParam])
+  const recarregar = () => {
+    setLoadingAtivos(true); setError(null)
+    getAtivos().then(r => {
+      setAtivos(r.data)
+      const init = tickerParam
+        ? r.data.find(a => a.ticker === tickerParam.toUpperCase())?.ticker ?? r.data[0]?.ticker
+        : r.data[0]?.ticker
+      if (init) setSelecionado(init)
+    }).catch(e => setError(e instanceof Error ? e.message : 'Erro ao conectar na API'))
+    .finally(() => setLoadingAtivos(false))
+  }
+
+  useEffect(() => { recarregar() }, [tickerParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selecionado) return
@@ -89,255 +50,257 @@ function RVPageInner() {
       .finally(() => setLoadingChart(false))
   }, [selecionado])
 
-  /* sorted list: top gainers → top losers → no data */
-  const ativosFiltrados = ativos
-    .filter(a => {
-      if (filtro === 'fii') return a.tipo === 'FII'
-      if (filtro === 'acao') return a.tipo !== 'FII'
-      return true
-    })
+  const ativosFiltrados = useMemo(() => ativos
+    .filter(a => filtro === 'fii' ? a.tipo === 'FII' : filtro === 'acao' ? a.tipo !== 'FII' : true)
     .sort((a, b) => {
-      const av = a.var_dia_pct
-      const bv = b.var_dia_pct
-      if (av == null && bv == null) return 0
-      if (av == null) return 1
-      if (bv == null) return -1
-      return bv - av
-    })
+      if (a.var_dia_pct == null && b.var_dia_pct == null) return 0
+      if (a.var_dia_pct == null) return 1
+      if (b.var_dia_pct == null) return -1
+      return b.var_dia_pct - a.var_dia_pct
+    }), [ativos, filtro])
 
-  const ativoSelecionado = ativos.find(a => a.ticker === selecionado)
-  const isFII = ativoSelecionado?.tipo === 'FII'
+  const ativoSel = ativos.find(a => a.ticker === selecionado)
+  const isFII    = ativoSel?.tipo === 'FII'
 
-  /* chart data */
-  const dadosGrafico = [...historico].reverse().map(d => ({
+  const histReversed = useMemo(() => [...historico].reverse(), [historico])
+  const sliced       = useMemo(() => histReversed.slice(-RANGE_N[range]), [histReversed, range])
+
+  const chartData = useMemo(() => sliced.map(d => ({
     data: new Date(d.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
     fechamento: d.fechamento,
-  }))
+  })), [sliced])
 
-  const primFech = historico.length > 1 ? historico[historico.length - 1].fechamento : null
-  const ultFech  = historico.length > 0 ? historico[0].fechamento : null
-  const ret12m   = primFech && ultFech ? ((ultFech - primFech) / primFech * 100) : null
-  const chartColor = (ativoSelecionado?.var_dia_pct ?? 0) >= 0 ? '#22c55e' : '#ef4444'
+  const ultHist   = historico[0]
+  const primHist  = historico.length > 1 ? historico[historico.length - 1] : null
+  const ret12m    = primHist && ultHist ? ((ultHist.fechamento - primHist.fechamento) / primHist.fechamento * 100) : null
+  const varDay    = ativoSel?.var_dia_pct ?? 0
+  const chartColor = varDay >= 0 ? 'var(--cl-up)' : 'var(--cl-down)'
 
   const totalAcoes = ativos.filter(a => a.tipo !== 'FII').length
   const totalFIIs  = ativos.filter(a => a.tipo === 'FII').length
 
+  if (error) return (
+    <div style={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius)' }}>
+      <ErrorState msg={error} onRetry={recarregar} />
+    </div>
+  )
+
   return (
-    <div className="space-y-5">
+    <div className="cl-panel-rv">
 
-      {/* ── header ────────────────────────────────────────── */}
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Renda Variável</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">B3 via brapi.dev · últimos 252 pregões</p>
-        </div>
-        <div className="flex items-center gap-4 flex-shrink-0">
-          <SearchBar placeholder="Buscar ticker ou fundo..." />
-          <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
-            {totalAcoes} ações · {totalFIIs} FIIs
-          </span>
-        </div>
-      </div>
+      {/* ── LEFT PANEL ─────────────────────────────────── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-      {/* ── stat cards ────────────────────────────────────── */}
-      {ativoSelecionado ? (
-        <div className="grid grid-cols-4 gap-3">
-          <StatCard
-            label="Último preço"
-            value={brl(ativoSelecionado.preco_atual ?? ultFech)}
-            sub={ativoSelecionado.data_preco
-              ? new Date(ativoSelecionado.data_preco + 'T00:00:00').toLocaleDateString('pt-BR')
-              : 'fechamento'}
-          />
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium mb-1">Variação hoje</p>
-            <div className="mt-1"><VarBadge v={ativoSelecionado.var_dia_pct} /></div>
-            <p className="text-[11px] text-muted-foreground mt-1">último pregão</p>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium mb-1">Retorno 12m</p>
-            <div className="mt-1"><VarBadge v={ret12m} /></div>
-            <p className="text-[11px] text-muted-foreground mt-1">vs. início do período</p>
-          </div>
-          <StatCard
-            label="Market cap"
-            value={cap(ativoSelecionado.market_cap) ?? '—'}
-            sub={ativoSelecionado.setor}
-          />
+        {/* Filter tabs */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          {(['todos', 'acao', 'fii'] as Filtro[]).map(f => (
+            <button key={f} onClick={() => setFiltro(f)} style={{
+              flex: 1, padding: '6px 0', fontSize: 12, fontWeight: filtro === f ? 600 : 400,
+              borderRadius: 'var(--cl-radius-xs)', cursor: 'pointer', transition: 'all 0.15s',
+              background: filtro === f ? 'var(--cl-navy)' : 'var(--cl-card)',
+              color: filtro === f ? '#fff' : 'var(--cl-ink3)',
+              border: `1px solid ${filtro === f ? 'var(--cl-navy)' : 'var(--cl-line)'}`,
+            }}>
+              {f === 'todos' ? 'Todas' : f === 'acao' ? 'Ações' : 'FIIs'}
+            </button>
+          ))}
         </div>
-      ) : (
-        <div className="grid grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[84px] rounded-xl" />)}
+
+        <div style={{ fontSize: 11, color: 'var(--cl-ink3)', paddingLeft: 2 }}>
+          {totalAcoes} ações · {totalFIIs} FIIs
         </div>
-      )}
 
-      {/* ── main grid ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-
-        {/* lista */}
-        <div className="lg:col-span-1 flex flex-col gap-3">
-          <div className="flex gap-1.5">
-            {(['todos', 'acao', 'fii'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setFiltro(f)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  filtro === f
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                }`}
-              >
-                {f === 'acao' && <Building2 className="h-3 w-3" />}
-                {f === 'fii' && <Landmark className="h-3 w-3" />}
-                {f === 'todos' ? 'Todos' : f === 'acao' ? 'Ações' : 'FIIs'}
-              </button>
+        {/* Asset list */}
+        <div style={{
+          background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+          borderRadius: 'var(--cl-radius)', overflow: 'hidden', boxShadow: 'var(--cl-shadow)',
+          flex: 1,
+        }}>
+          {/* Column header */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr auto auto',
+            padding: '8px 14px', borderBottom: '1px solid var(--cl-line)',
+            background: 'var(--cl-line2)',
+          }}>
+            {['Ativo', 'Preço', 'Var'].map((h, i) => (
+              <span key={h} style={{
+                fontSize: 10, fontWeight: 700, color: 'var(--cl-ink3)',
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+                textAlign: i === 0 ? 'left' : 'right',
+              }}>{h}</span>
             ))}
           </div>
 
-          {/* separator: gainers / losers */}
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
-            {/* column header */}
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-4 py-2 border-b border-border bg-muted/40">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Ativo</span>
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">Preço</span>
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-right">Var</span>
-            </div>
-
-            <div className="max-h-[520px] overflow-y-auto">
-              {loadingAtivos ? (
-                <div className="p-4 space-y-2">
-                  {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
-                </div>
-              ) : (
-                <div className="divide-y divide-border/60">
-                  {ativosFiltrados.map((a, idx) => {
-                    const cor = SETOR_COLORS[a.setor] ?? '#6b7280'
-                    const active = selecionado === a.ticker
-                    const isFirstLoser = idx > 0
-                      && (ativosFiltrados[idx - 1].var_dia_pct ?? -999) > 0
-                      && (a.var_dia_pct ?? 0) <= 0
-
-                    return (
-                      <div key={a.ticker}>
-                        {isFirstLoser && (
-                          <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/30">
-                            <TrendingDown className="h-3 w-3 text-red-500" />
-                            <span className="text-[10px] font-semibold text-red-500 uppercase tracking-wider">Maiores baixas</span>
-                          </div>
-                        )}
-                        {idx === 0 && (a.var_dia_pct ?? 0) > 0 && (
-                          <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/30">
-                            <TrendingUp className="h-3 w-3 text-emerald-500" />
-                            <span className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wider">Maiores altas</span>
-                          </div>
-                        )}
-                        <button
-                          onClick={() => setSelecionado(a.ticker)}
-                          className={`w-full grid grid-cols-[1fr_auto_auto] gap-2 items-center px-4 py-2.5 text-left transition-colors ${
-                            active ? 'bg-primary/8 dark:bg-primary/10 border-l-2 border-primary' : 'hover:bg-accent/50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: cor }} />
-                            <div className="min-w-0">
-                              <p className={`font-bold text-sm leading-tight ${active ? 'text-primary' : ''}`}>{a.ticker}</p>
-                              <p className="text-[10px] text-muted-foreground truncate leading-tight">{a.setor}</p>
-                            </div>
-                          </div>
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {a.preco_atual != null ? brl(a.preco_atual) : '—'}
-                          </span>
-                          <VarBadge v={a.var_dia_pct} size="sm" />
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* chart */}
-        <div className="lg:col-span-2">
-          <div className="rounded-xl border border-border bg-card h-full">
-            <div className="flex items-start justify-between px-5 pt-5 pb-2">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="font-bold text-lg tracking-tight">{selecionado ?? '—'}</h2>
-                  {ativoSelecionado && (
-                    <span className="text-xs text-muted-foreground font-normal">{ativoSelecionado.nome}</span>
-                  )}
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${isFII ? 'border-teal-500/40 text-teal-600 dark:text-teal-400' : 'border-border text-muted-foreground'}`}>
-                    {isFII ? 'FII' : ativoSelecionado?.tipo ?? 'AÇÃO'}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">Histórico de fechamento ajustado · 252 pregões</p>
+          <div className="cl-rv-list" style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
+            {loadingAtivos ? (
+              <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {Array.from({ length: 8 }).map((_, i) => <SkeletonShimmer key={i} h={44} />)}
               </div>
-              {ret12m != null && <VarBadge v={ret12m} />}
-            </div>
-
-            <div className="px-2 pb-4">
-              {loadingChart ? (
-                <Skeleton className="h-[300px] w-full" />
-              ) : dadosGrafico.length === 0 ? (
-                <div className="h-[300px] flex items-center justify-center">
-                  <div className="text-center">
-                    <Minus className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">Sem dados históricos</p>
-                  </div>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={dadosGrafico} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="grad-rv" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={chartColor} stopOpacity={0.18} />
-                        <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis
-                      dataKey="data"
-                      tick={{ fontSize: 10, fill: tickColor }}
-                      interval={30}
-                      stroke="transparent"
-                      tickLine={false}
-                      height={28}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: tickColor }}
-                      stroke="transparent"
-                      tickFormatter={v => `R$${v.toFixed(0)}`}
-                      domain={['auto', 'auto']}
-                      width={60}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(v) => [typeof v === 'number' ? brl(v) : '—', 'Fechamento']}
-                      contentStyle={{
-                        background: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                      }}
-                      labelStyle={{ fontWeight: 600, marginBottom: 2 }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="fechamento"
-                      stroke={chartColor}
-                      strokeWidth={2}
-                      fill="url(#grad-rv)"
-                      dot={false}
-                      activeDot={{ r: 4, fill: chartColor, stroke: 'hsl(var(--card))', strokeWidth: 2 }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </div>
+            ) : ativosFiltrados.length === 0 ? (
+              <EmptyState msg="Nenhum ativo encontrado" />
+            ) : (
+              <div>
+                {ativosFiltrados.map(a => {
+                  const active = selecionado === a.ticker
+                  const pos    = (a.var_dia_pct ?? 0) >= 0
+                  return (
+                    <button key={a.ticker} onClick={() => setSelecionado(a.ticker)} style={{
+                      width: '100%', display: 'grid', gridTemplateColumns: '1fr auto auto',
+                      gap: 8, alignItems: 'center', padding: '10px 14px', textAlign: 'left',
+                      background: active ? 'var(--cl-accent-soft)' : 'transparent',
+                      borderLeft: active ? '3px solid var(--cl-accent)' : '3px solid transparent',
+                      borderBottom: '1px solid var(--cl-line2)',
+                      cursor: 'pointer', transition: 'all 0.1s',
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: active ? 'var(--cl-accent)' : 'var(--cl-ink)', lineHeight: 1.2 }}>{a.ticker}</div>
+                        <div style={{ fontSize: 10, color: 'var(--cl-ink3)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>
+                          {a.setor || (isFII ? 'FII' : 'Ação')}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 12, color: 'var(--cl-ink)', fontVariantNumeric: 'tabular-nums' }}>
+                        {a.preco_atual != null ? formatBRL(a.preco_atual) : '—'}
+                      </span>
+                      {a.var_dia_pct != null ? (
+                        <span style={{
+                          fontSize: 10, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+                          padding: '2px 6px', borderRadius: 4,
+                          background: pos ? 'var(--cl-up-soft)' : 'var(--cl-down-soft)',
+                          color: pos ? 'var(--cl-up)' : 'var(--cl-down)',
+                        }}>
+                          {pos ? '+' : ''}{a.var_dia_pct.toFixed(2)}%
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 10, color: 'var(--cl-ink3)' }}>—</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
+      </div>
+
+      {/* ── RIGHT AREA ─────────────────────────────────── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+
+        {/* Ticker header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                color: isFII ? 'var(--cl-up)' : 'var(--cl-accent)',
+                background: isFII ? 'var(--cl-up-soft)' : 'var(--cl-accent-soft)',
+                borderRadius: 'var(--cl-radius-xs)', padding: '3px 8px',
+              }}>{isFII ? 'FII' : 'AÇÃO'}</span>
+              <span style={{ fontSize: 13, color: 'var(--cl-ink3)' }}>{ativoSel?.nome ?? '—'}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 42, fontWeight: 500, color: 'var(--cl-ink)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                {selecionado ?? '—'}
+              </span>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 400, color: 'var(--cl-ink)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                {ativoSel?.preco_atual != null ? formatBRL(ativoSel.preco_atual) : (ultHist ? formatBRL(ultHist.fechamento) : '—')}
+              </span>
+              {ativoSel?.var_dia_pct != null && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 3,
+                  background: varDay >= 0 ? 'var(--cl-up-soft)' : 'var(--cl-down-soft)',
+                  color: varDay >= 0 ? 'var(--cl-up)' : 'var(--cl-down)',
+                  borderRadius: 'var(--cl-radius-xs)', padding: '4px 10px',
+                  fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {varDay >= 0 ? '↑' : '↓'} {varDay >= 0 ? '+' : ''}{varDay.toFixed(2)}%
+                </span>
+              )}
+            </div>
+            {ativoSel?.data_preco && (
+              <div style={{ fontSize: 12, color: 'var(--cl-ink3)', marginTop: 6 }}>
+                {new Date(ativoSel.data_preco + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+              </div>
+            )}
+          </div>
+
+          {/* Range selector */}
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            {(['5d', '1m', '3m', '6m', '1a'] as Range[]).map(r => (
+              <button key={r} onClick={() => setRange(r)} style={{
+                padding: '6px 12px', fontSize: 12, borderRadius: 'var(--cl-radius-xs)',
+                background: range === r ? 'var(--cl-navy)' : 'var(--cl-card)',
+                color: range === r ? '#fff' : 'var(--cl-ink3)',
+                border: `1px solid ${range === r ? 'var(--cl-navy)' : 'var(--cl-line)'}`,
+                cursor: 'pointer', fontWeight: range === r ? 600 : 400, transition: 'all 0.15s',
+              }}>
+                {r.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart */}
+        <div style={{
+          background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+          borderRadius: 'var(--cl-radius)', boxShadow: 'var(--cl-shadow)',
+          padding: '16px 0 8px',
+        }}>
+          {loadingChart ? (
+            <div style={{ padding: '8px 20px' }}><SkeletonShimmer h={280} /></div>
+          ) : chartData.length === 0 ? (
+            <EmptyState hint="Selecione um ativo com histórico disponível" />
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="grad-rv-cl" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={varDay >= 0 ? '#0f9d58' : '#d93838'} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={varDay >= 0 ? '#0f9d58' : '#d93838'} stopOpacity={0}    />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--cl-line)" vertical={false} />
+                <XAxis dataKey="data" tick={{ fontSize: 11, fill: 'var(--cl-ink3)' }} stroke="transparent" tickLine={false} height={28} interval={Math.max(1, Math.floor(chartData.length / 6))} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--cl-ink3)' }} stroke="transparent" tickFormatter={v => `R$${v.toFixed(0)}`} domain={['auto', 'auto']} width={60} tickLine={false} />
+                <Tooltip
+                  formatter={(v) => [typeof v === 'number' ? formatBRL(v) : '—', 'Fechamento']}
+                  contentStyle={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius-sm)', fontSize: 12 }}
+                  labelStyle={{ fontWeight: 600 }}
+                />
+                <Area type="monotone" dataKey="fechamento" stroke={chartColor} strokeWidth={2} fill="url(#grad-rv-cl)" dot={false} activeDot={{ r: 4, fill: chartColor, stroke: 'var(--cl-card)', strokeWidth: 2 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Stat cards */}
+        <div className="cl-kpi4" style={{ gap: 12 }}>
+          {[
+            { label: 'Abertura',    value: ultHist?.abertura  != null ? formatBRL(ultHist.abertura)  : '—' },
+            { label: 'Máxima',      value: ultHist?.maxima    != null ? formatBRL(ultHist.maxima)    : '—' },
+            { label: 'Mínima',      value: ultHist?.minima    != null ? formatBRL(ultHist.minima)    : '—' },
+            { label: 'Retorno 12M', value: ret12m != null ? `${ret12m >= 0 ? '+' : ''}${ret12m.toFixed(2)}%` : '—', accent: ret12m != null ? (ret12m >= 0 ? 'var(--cl-up)' : 'var(--cl-down)') : undefined },
+          ].map(s => (
+            <div key={s.label} style={{
+              background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+              borderRadius: 'var(--cl-radius)', padding: 'var(--cl-card-pad)', boxShadow: 'var(--cl-shadow)',
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--cl-ink3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>{s.label}</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 500, color: s.accent ?? 'var(--cl-ink)', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+              {s.label === 'Retorno 12M' && <div style={{ fontSize: 10, color: 'var(--cl-ink3)', marginTop: 4 }}>vs. início do período</div>}
+              {s.label === 'Abertura' && ativoSel?.data_preco && <div style={{ fontSize: 10, color: 'var(--cl-ink3)', marginTop: 4 }}>{new Date(ativoSel.data_preco + 'T00:00:00').toLocaleDateString('pt-BR')}</div>}
+              {s.label === 'Máxima' && <div style={{ fontSize: 10, color: 'var(--cl-ink3)', marginTop: 4 }}>pregão atual</div>}
+              {s.label === 'Mínima' && <div style={{ fontSize: 10, color: 'var(--cl-ink3)', marginTop: 4 }}>pregão atual</div>}
+            </div>
+          ))}
+        </div>
+
+        {/* Market cap / setor info */}
+        {ativoSel && (formatCap(ativoSel.market_cap) || ativoSel.setor) && (
+          <div style={{ display: 'flex', gap: 24, fontSize: 12, color: 'var(--cl-ink3)', paddingLeft: 2 }}>
+            {ativoSel.setor && <span>Setor: <strong style={{ color: 'var(--cl-ink)' }}>{ativoSel.setor}</strong></span>}
+            {formatCap(ativoSel.market_cap) && <span>Market cap: <strong style={{ color: 'var(--cl-ink)' }}>{formatCap(ativoSel.market_cap)}</strong></span>}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -346,7 +309,7 @@ function RVPageInner() {
 export default function RVPage() {
   return (
     <Suspense>
-      <RVPageInner />
+      <RVInner />
     </Suspense>
   )
 }

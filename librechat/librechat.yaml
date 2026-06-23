@@ -1,0 +1,85 @@
+version: 1.2.1
+
+interface:
+  appTitle: "Plataforma MCP Brasil"
+  endpointsMenu: true
+  modelSelect: true
+  parameters: true
+  sidePanel: true
+  presets: true
+
+registration:
+  socialLogins: ["google"]
+
+rateLimits:
+  fileUploads:
+    ipMax: 20
+    ipWindowInMinutes: 60
+    userMax: 10
+    userWindowInMinutes: 60
+
+# Configuração MCP — Plataforma MCP Brasil
+# Doc: https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers
+mcpServers:
+  # Streamable HTTP (LibreChat >= 0.7.6, recomendado)
+  plataforma-mcp-brasil:
+    type: streamable-http
+    url: https://plataforma-mcp-brasil-api.onrender.com/mcp
+  # Fallback SSE — descomente se streamable-http não funcionar:
+  # plataforma-mcp-brasil:
+  #   type: sse
+  #   url: https://plataforma-mcp-brasil-api.onrender.com/sse
+
+endpoints:
+  custom:
+    # ── 1. DeepSeek (recomendado: 5M tokens grátis, melhor custo) ──────────
+    - name: "DeepSeek"
+      apiKey: "${DEEPSEEK_API_KEY}"
+      baseURL: "https://api.deepseek.com/v1/"
+      models:
+        default: ["deepseek-v4-flash", "deepseek-v4-pro"]
+        fetch: false
+      titleConvo: true
+      titleModel: "deepseek-v4-flash"
+      modelDisplayLabel: "DeepSeek"
+
+    # ── 2. Groq (fallback: 14.400 req/dia, <100ms latência) ────────────────
+    - name: "Groq"
+      apiKey: "${GROQ_API_KEY}"
+      baseURL: "https://api.groq.com/openai/v1/"
+      models:
+        default:
+          - "llama-3.3-70b-versatile"
+          - "llama-3.1-8b-instant"
+          - "deepseek-r1-distill-llama-70b"
+        fetch: false
+      titleConvo: true
+      titleModel: "llama-3.1-8b-instant"
+      modelDisplayLabel: "Groq"
+
+    # ── 3. Cerebras (1M tokens/dia grátis, Qwen3 32B top tool calling) ─────
+    - name: "Cerebras"
+      apiKey: "${CEREBRAS_API_KEY}"
+      baseURL: "https://api.cerebras.ai/v1/"
+      models:
+        default:
+          - "qwen-3-32b"
+          - "llama-3.3-70b"
+          - "deepseek-r1-distill-llama-70b"
+        fetch: false
+      titleConvo: true
+      titleModel: "llama-3.3-70b"
+      modelDisplayLabel: "Cerebras"
+
+    # ── 4. GLM/Zhipu (grátis para sempre, 203K contexto, tool calling nativo) ──
+    - name: "GLM"
+      apiKey: "${GLM_API_KEY}"
+      baseURL: "https://open.bigmodel.cn/api/paas/v4/"
+      models:
+        default:
+          - "glm-4.7-flash"
+          - "glm-4.5-flash"
+        fetch: false
+      titleConvo: true
+      titleModel: "glm-4.7-flash"
+      modelDisplayLabel: "GLM"

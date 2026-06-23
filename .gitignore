@@ -30,3 +30,4 @@ monitoring/qa-financeiro-SKILL-updated.md
 # Performance test outputs — resultados locais
 perf/resultado_*.csv
 perf/resumo_*.txt
+!frontend/.env.example
