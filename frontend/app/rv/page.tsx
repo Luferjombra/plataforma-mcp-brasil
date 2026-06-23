@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getAtivos, getHistoricoRV, type Ativo, type Historico } from '@/lib/api'
+import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { formatBRL, formatCap } from '@/lib/format'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -24,16 +25,21 @@ function RVInner() {
   const [loadingChart, setLoadingChart]   = useState(false)
   const [filtro, setFiltro]             = useState<Filtro>('todos')
   const [range, setRange]               = useState<Range>('1a')
+  const [error, setError]               = useState<string | null>(null)
 
-  useEffect(() => {
+  const recarregar = () => {
+    setLoadingAtivos(true); setError(null)
     getAtivos().then(r => {
       setAtivos(r.data)
       const init = tickerParam
         ? r.data.find(a => a.ticker === tickerParam.toUpperCase())?.ticker ?? r.data[0]?.ticker
         : r.data[0]?.ticker
       if (init) setSelecionado(init)
-    }).finally(() => setLoadingAtivos(false))
-  }, [tickerParam])
+    }).catch(e => setError(e instanceof Error ? e.message : 'Erro ao conectar na API'))
+    .finally(() => setLoadingAtivos(false))
+  }
+
+  useEffect(() => { recarregar() }, [tickerParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selecionado) return
@@ -72,6 +78,12 @@ function RVInner() {
 
   const totalAcoes = ativos.filter(a => a.tipo !== 'FII').length
   const totalFIIs  = ativos.filter(a => a.tipo === 'FII').length
+
+  if (error) return (
+    <div style={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius)' }}>
+      <ErrorState msg={error} onRetry={recarregar} />
+    </div>
+  )
 
   return (
     <div className="cl-panel-rv">
@@ -122,10 +134,10 @@ function RVInner() {
           <div className="cl-rv-list" style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
             {loadingAtivos ? (
               <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} style={{ height: 44, background: 'var(--cl-line2)', borderRadius: 6 }} />
-                ))}
+                {Array.from({ length: 8 }).map((_, i) => <SkeletonShimmer key={i} h={44} />)}
               </div>
+            ) : ativosFiltrados.length === 0 ? (
+              <EmptyState msg="Nenhum ativo encontrado" />
             ) : (
               <div>
                 {ativosFiltrados.map(a => {
@@ -234,13 +246,9 @@ function RVInner() {
           padding: '16px 0 8px',
         }}>
           {loadingChart ? (
-            <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
-              Carregando histórico…
-            </div>
+            <div style={{ padding: '8px 20px' }}><SkeletonShimmer h={280} /></div>
           ) : chartData.length === 0 ? (
-            <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
-              Sem dados históricos
-            </div>
+            <EmptyState hint="Selecione um ativo com histórico disponível" />
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>

@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo, Suspense } from 'react'
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
 import { getIndicadores, type Indicador } from '@/lib/api'
+import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -43,14 +44,19 @@ function IndicadoresInner() {
   const [serie, setSerie] = useState<Serie>('selic')
   const [range, setRange] = useState<Range>('12m')
   const [loading, setLoading] = useState(true)
+  const [error, setError]   = useState<string | null>(null)
 
-  useEffect(() => {
+  const carregar = useCallback(() => {
+    setLoading(true); setError(null)
     Promise.all(SERIES.map(s => getIndicadores(s, 120))).then(results => {
       const next = { selic: [], ipca: [], cdi: [], pib: [] } as Record<Serie, Indicador[]>
       SERIES.forEach((s, i) => { next[s] = results[i].data })
       setDados(next)
-    }).finally(() => setLoading(false))
+    }).catch(e => setError(e instanceof Error ? e.message : 'Erro ao conectar na API'))
+    .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => { carregar() }, [carregar])
 
   const m = META[serie]
   const reversed = useMemo(() => [...(dados[serie] ?? [])].reverse(), [dados, serie])
@@ -73,6 +79,12 @@ function IndicadoresInner() {
     : null
 
   const tableRows = useMemo(() => [...sliced].reverse(), [sliced])
+
+  if (error) return (
+    <div style={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius)' }}>
+      <ErrorState msg={error} onRetry={carregar} />
+    </div>
+  )
 
   return (
     <div className="cl-panel">
@@ -185,13 +197,9 @@ function IndicadoresInner() {
           padding: '16px 0 8px', overflow: 'hidden',
         }}>
           {loading ? (
-            <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
-              Carregando série histórica…
-            </div>
+            <div style={{ padding: '12px 20px' }}><SkeletonShimmer h={280} /></div>
           ) : chartData.length === 0 ? (
-            <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
-              Sem dados no período
-            </div>
+            <EmptyState hint="Verifique se o backend retornou dados para esta série" />
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>

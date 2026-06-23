@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getFundos, getHistoricoFundo, type Fundo, type HistoricoFundo } from '@/lib/api'
+import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { formatCota, formatMilhoes } from '@/lib/format'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -41,14 +42,19 @@ function FundosInner() {
   const [loadingFundos, setLF]        = useState(true)
   const [loadingChart, setLC]         = useState(false)
   const [filtro, setFiltro]           = useState<string | null>(null)
+  const [error, setError]             = useState<string | null>(null)
 
-  useEffect(() => {
+  const recarregar = () => {
+    setLF(true); setError(null)
     getFundos().then(r => {
       setFundos(r.data)
       const init = cnpjParam ? r.data.find(f => f.cnpj === cnpjParam) ?? r.data[0] : r.data[0]
       if (init) setSelecionado(init)
-    }).finally(() => setLF(false))
-  }, [cnpjParam])
+    }).catch(e => setError(e instanceof Error ? e.message : 'Erro ao conectar na API'))
+    .finally(() => setLF(false))
+  }
+
+  useEffect(() => { recarregar() }, [cnpjParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selecionado) return
@@ -83,6 +89,12 @@ function FundosInner() {
   const retornoPos = retorno != null && retorno >= 0
 
   const selColor = getTipoColor(selecionado?.tipo_fundo ?? null)
+
+  if (error) return (
+    <div style={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius)' }}>
+      <ErrorState msg={error} onRetry={recarregar} />
+    </div>
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -126,9 +138,11 @@ function FundosInner() {
       {/* ── Fund cards grid ───────────────────────────── */}
       {loadingFundos ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} style={{ height: 100, background: 'var(--cl-line2)', borderRadius: 'var(--cl-radius)' }} />
-          ))}
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonShimmer key={i} h={100} />)}
+        </div>
+      ) : fundosFiltrados.length === 0 ? (
+        <div style={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius)' }}>
+          <EmptyState msg="Nenhum fundo encontrado" hint="Tente remover os filtros de tipo" />
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
@@ -219,13 +233,9 @@ function FundosInner() {
 
           <div style={{ padding: '12px 0 8px' }}>
             {loadingChart ? (
-              <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
-                Carregando histórico…
-              </div>
+              <div style={{ padding: '8px 20px' }}><SkeletonShimmer h={220} /></div>
             ) : dadosGrafico.length === 0 ? (
-              <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
-                Sem dados históricos disponíveis
-              </div>
+              <EmptyState msg="Sem histórico disponível" hint="Este fundo pode não ter dados de cota no período" />
             ) : (
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={dadosGrafico} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>

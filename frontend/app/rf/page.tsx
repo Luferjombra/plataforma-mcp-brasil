@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo, Suspense } from 'react'
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
 import { getTitulosRF, getHistoricoRF, type TituloRF, type HistoricoRF } from '@/lib/api'
+import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { formatBRL, formatPct } from '@/lib/format'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
@@ -47,12 +48,13 @@ function RFInner() {
   const [overlaySeries, setOverlay]     = useState<OverlayPoint[]>([])
   const [loadingTitulos, setLoadingT]   = useState(true)
   const [loadingOverlay, setLoadingO]   = useState(true)
+  const [error, setError]               = useState<string | null>(null)
 
-  useEffect(() => {
+  const carregar = useCallback(() => {
+    setLoadingT(true); setLoadingO(true); setError(null)
     getTitulosRF().then(r => {
       setTitulos(r.data)
 
-      // Pick first representative from each indexador for overlay
       const picks: { key: string; codigo: string }[] = []
       for (const idx of ['IPCA', 'PRE', 'SELIC']) {
         const found = r.data.find(t => t.indexador === idx && t.ativo)
@@ -66,8 +68,11 @@ function RFInner() {
         .catch(() => setOverlay([]))
         .finally(() => setLoadingO(false))
 
-    }).finally(() => setLoadingT(false))
+    }).catch(e => { setError(e instanceof Error ? e.message : 'Erro ao conectar na API'); setLoadingO(false) })
+    .finally(() => setLoadingT(false))
   }, [])
+
+  useEffect(() => { carregar() }, [carregar])
 
   const overlayFormatted = useMemo(() => overlaySeries.map(p => ({
     ...p,
@@ -85,6 +90,12 @@ function RFInner() {
   }, [titulos])
 
   const loading = loadingTitulos || loadingOverlay
+
+  if (error) return (
+    <div style={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius)' }}>
+      <ErrorState msg={error} onRetry={carregar} />
+    </div>
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -125,13 +136,9 @@ function RFInner() {
 
         <div style={{ padding: '8px 0 8px' }}>
           {loading ? (
-            <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
-              Carregando séries históricas…
-            </div>
+            <div style={{ padding: '8px 20px' }}><SkeletonShimmer h={260} /></div>
           ) : overlayFormatted.length === 0 ? (
-            <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cl-ink3)', fontSize: 13 }}>
-              Sem dados históricos
-            </div>
+            <EmptyState hint="Nenhum título ativo encontrado para os indexadores IPCA / PRE / SELIC" />
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={overlayFormatted} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
