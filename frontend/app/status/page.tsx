@@ -1,240 +1,269 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { getEtlHealth, type EtlJob, type EtlHealth, type EtlStatus } from '@/lib/api'
-import { RefreshCw, CheckCircle2, AlertTriangle, XCircle, Clock, HelpCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
-// ── Status config ─────────────────────────────────────────────────────────────
-
-const STATUS_CONFIG: Record<EtlStatus, {
-  label: string
-  icon: React.ElementType
-  cardClass: string
-  badgeClass: string
-}> = {
-  ok:      { label: 'OK',           icon: CheckCircle2,   cardClass: 'border-l-4 border-l-emerald-500', badgeClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30' },
-  stale:   { label: 'Desatualizado',icon: Clock,          cardClass: 'border-l-4 border-l-amber-500',   badgeClass: 'bg-amber-500/15 text-amber-500 border-amber-500/30' },
-  error:   { label: 'Erro',         icon: XCircle,        cardClass: 'border-l-4 border-l-red-500',     badgeClass: 'bg-red-500/15 text-red-500 border-red-500/30' },
-  running: { label: 'Rodando',      icon: RefreshCw,      cardClass: 'border-l-4 border-l-blue-500',    badgeClass: 'bg-blue-500/15 text-blue-500 border-blue-500/30' },
-  unknown: { label: 'Sem dados',    icon: HelpCircle,     cardClass: 'border-l-4 border-l-muted',       badgeClass: 'bg-muted/30 text-muted-foreground border-muted/30' },
+const STATUS_CFG: Record<EtlStatus, { label: string; symbol: string; color: string; bg: string }> = {
+  ok:      { label: 'Online',        symbol: '✓', color: 'var(--cl-up)',     bg: 'var(--cl-up-soft)'     },
+  stale:   { label: 'Desatualizado', symbol: '⚠', color: 'var(--cl-amber)',  bg: 'var(--cl-amber-soft)'  },
+  error:   { label: 'Erro',          symbol: '✗', color: 'var(--cl-down)',   bg: 'var(--cl-down-soft)'   },
+  running: { label: 'Rodando',       symbol: '↻', color: 'var(--cl-accent)', bg: 'var(--cl-accent-soft)' },
+  unknown: { label: 'Sem dados',     symbol: '?', color: 'var(--cl-ink3)',   bg: 'var(--cl-line2)'       },
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+const SOURCES = [
+  { key: 'BCB',    label: 'Banco Central',   endpoint: '/indicadores',        matches: (j: string) => /bcb|selic|cdi|cambio|juros/i.test(j) },
+  { key: 'IBGE',   label: 'IBGE',            endpoint: '/indicadores/ipca',   matches: (j: string) => /ibge|ipca|pib/i.test(j) },
+  { key: 'CVM',    label: 'CVM',             endpoint: '/fundos',             matches: (j: string) => /cvm|fundo/i.test(j) },
+  { key: 'B3',     label: 'B3',              endpoint: '/rv/ativos',          matches: (j: string) => /b3|rv|ativo|acao|ibov/i.test(j) },
+  { key: 'TD',     label: 'Tesouro Direto',  endpoint: '/rf/titulos',         matches: (j: string) => /td|rf|tesouro|renda.?fixa/i.test(j) },
+  { key: 'ANBIMA', label: 'ANBIMA',          endpoint: '/fundos/historico',   matches: (j: string) => /anbima/i.test(j) },
+]
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return '–'
+function fmtDate(iso: string | null) {
+  if (!iso) return '—'
   return new Date(iso).toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    day: '2-digit', month: '2-digit', year: 'numeric',
+    timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit',
     hour: '2-digit', minute: '2-digit',
   }) + ' BRT'
 }
 
-function fmtDuration(secs: number | null): string {
-  if (secs == null) return '–'
-  if (secs < 60) return `${secs}s`
-  return `${Math.floor(secs / 60)}m ${secs % 60}s`
+function fmtDuration(secs: number | null) {
+  if (secs == null) return '—'
+  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`
 }
 
-function fmtRows(n: number | null): string {
-  if (n == null) return '–'
-  return n.toLocaleString('pt-BR')
-}
+function TerminalLog({ jobs }: { jobs: EtlJob[] }) {
+  const lines = jobs.flatMap(j => {
+    const cfg  = STATUS_CFG[j.status]
+    const time = j.started_at ? new Date(j.started_at).toISOString().slice(11, 19) : '--:--:--'
+    const rows = [
+      { type: j.status === 'ok' ? 'ok' : j.status === 'error' ? 'error' : 'info',
+        text: `[${time}] ${cfg.symbol} ${j.job} · ${cfg.label}${j.rows_upserted != null ? ` · ${j.rows_upserted.toLocaleString('pt-BR')} linhas` : ''}${j.duration_seconds != null ? ` · ${fmtDuration(j.duration_seconds)}` : ''}` },
+    ]
+    if (j.error_msg) rows.push({ type: 'error', text: `  ↳ ${j.error_msg}` })
+    return rows
+  })
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function KpiCard({ label, value, variant }: { label: string; value: number; variant?: 'ok' | 'error' | 'warn' }) {
-  return (
-    <Card className={cn(
-      variant === 'ok'    && value > 0 && 'border-emerald-500/40 bg-emerald-500/5',
-      variant === 'error' && value > 0 && 'border-red-500/40 bg-red-500/5',
-      variant === 'warn'  && value > 0 && 'border-amber-500/40 bg-amber-500/5',
-    )}>
-      <CardContent className="pt-6 text-center">
-        <p className="text-3xl font-bold">{value}</p>
-        <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">{label}</p>
-      </CardContent>
-    </Card>
-  )
-}
-
-function JobCard({ job }: { job: EtlJob }) {
-  const cfg = STATUS_CONFIG[job.status] ?? STATUS_CONFIG.unknown
-  const Icon = cfg.icon
+  const LINE_COLORS: Record<string, string> = {
+    ok:    'var(--cl-up)',
+    error: 'var(--cl-down)',
+    warn:  'var(--cl-amber)',
+    info:  'var(--cl-ink3)',
+  }
 
   return (
-    <Card className={cn('transition-all', cfg.cardClass)}>
-      <CardContent className="pt-5 pb-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-sm font-semibold truncate">{job.job}</span>
-              <Badge variant="outline" className={cn('text-xs shrink-0', cfg.badgeClass)}>
-                <Icon className={cn('h-3 w-3 mr-1', job.status === 'running' && 'animate-spin')} />
-                {cfg.label}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1.5">
-              Início: {fmtDate(job.started_at)}
-            </p>
-            {job.error_msg && (
-              <p className="mt-2 text-xs font-mono bg-destructive/10 text-destructive rounded px-2 py-1 break-words">
-                {job.error_msg}
-              </p>
-            )}
-          </div>
-          <div className="text-right shrink-0 space-y-1">
-            <p className="text-lg font-semibold tabular-nums">{fmtRows(job.rows_upserted)}</p>
-            <p className="text-xs text-muted-foreground">linhas</p>
-            <p className="text-xs text-muted-foreground">{fmtDuration(job.duration_seconds)}</p>
-          </div>
+    <div style={{
+      background: '#0a0e14', borderRadius: 'var(--cl-radius-sm)',
+      padding: '14px 16px', fontFamily: "'Courier New', 'IBM Plex Mono', monospace",
+      fontSize: 11, lineHeight: 1.8, overflowY: 'auto', maxHeight: 200,
+      border: '1px solid rgba(255,255,255,.06)',
+    }}>
+      {lines.length === 0 ? (
+        <span style={{ color: '#4b5563' }}>// sem logs disponíveis</span>
+      ) : lines.map((l, i) => (
+        <div key={i} style={{ color: LINE_COLORS[l.type] ?? LINE_COLORS.info, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          {l.text}
         </div>
-      </CardContent>
-    </Card>
+      ))}
+    </div>
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
-
-const REFRESH_INTERVAL = 60 // segundos
+const REFRESH = 60
 
 export default function StatusPage() {
-  const [data, setData] = useState<EtlHealth | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [countdown, setCountdown] = useState(REFRESH_INTERVAL)
-  const [lastChecked, setLastChecked] = useState<string>('')
+  const [data, setData]           = useState<EtlHealth | null>(null)
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState<string | null>(null)
+  const [countdown, setCountdown] = useState(REFRESH)
+  const [lastChecked, setLastChecked] = useState('')
 
   const carregar = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
       const res = await getEtlHealth()
       setData(res)
       setLastChecked(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }))
-      setCountdown(REFRESH_INTERVAL)
+      setCountdown(REFRESH)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao conectar na API')
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }, [])
 
-  // Carga inicial
   useEffect(() => { carregar() }, [carregar])
 
-  // Auto-refresh countdown
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) { carregar(); return REFRESH_INTERVAL }
-        return prev - 1
-      })
-    }, 1000)
-    return () => clearInterval(interval)
+    const id = setInterval(() => setCountdown(prev => {
+      if (prev <= 1) { carregar(); return REFRESH }
+      return prev - 1
+    }), 1000)
+    return () => clearInterval(id)
   }, [carregar])
 
+  const jobs    = data?.jobs ?? []
   const summary = data?.summary
-  const jobs = data?.jobs ?? []
+
+  const uptime = summary && summary.total > 0
+    ? Math.round((summary.ok / summary.total) * 100)
+    : null
+  const avgDuration = jobs.length > 0
+    ? jobs.reduce((sum, j) => sum + (j.duration_seconds ?? 0), 0) / jobs.length
+    : null
+
+  // Group jobs by source
+  const grouped = useMemo(() => {
+    const result: { source: typeof SOURCES[0]; jobs: EtlJob[] }[] = []
+    const assigned = new Set<string>()
+    for (const src of SOURCES) {
+      const matched = jobs.filter(j => src.matches(j.job))
+      matched.forEach(j => assigned.add(j.job))
+      result.push({ source: src, jobs: matched })
+    }
+    const others = jobs.filter(j => !assigned.has(j.job))
+    if (others.length > 0) {
+      result.push({ source: { key: 'OTHER', label: 'Outros', endpoint: '—', matches: () => true }, jobs: others })
+    }
+    return result
+  }, [jobs])
+
+  const worstStatus = (jobList: EtlJob[]): EtlStatus => {
+    if (jobList.length === 0) return 'unknown'
+    if (jobList.some(j => j.status === 'error'))   return 'error'
+    if (jobList.some(j => j.status === 'running')) return 'running'
+    if (jobList.some(j => j.status === 'stale'))   return 'stale'
+    if (jobList.some(j => j.status === 'ok'))      return 'ok'
+    return 'unknown'
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      {/* ── Header ─────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div>
-          <h1 className="text-2xl font-semibold">Status ETL</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 500, color: 'var(--cl-ink)' }}>Status ETL</h1>
+          <p style={{ fontSize: 13, color: 'var(--cl-ink3)', marginTop: 4 }}>
             Monitoramento dos pipelines de dados · auto-refresh em {countdown}s
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {lastChecked && (
-            <span className="text-xs text-muted-foreground">Atualizado: {lastChecked} BRT</span>
-          )}
-          <button
-            onClick={carregar}
-            disabled={loading}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm bg-accent hover:bg-accent/80 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {lastChecked && <span style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>Atualizado: {lastChecked} BRT</span>}
+          <button onClick={carregar} disabled={loading} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px',
+            borderRadius: 'var(--cl-radius-sm)', fontSize: 12, fontWeight: 600, cursor: loading ? 'default' : 'pointer',
+            background: 'var(--cl-card)', border: '1px solid var(--cl-line)', color: 'var(--cl-ink)',
+            transition: 'all 0.15s', opacity: loading ? 0.6 : 1,
+          }}>
+            <span style={{ display: 'inline-block', animation: loading ? 'cl-fadeup 1s linear infinite' : 'none' }}>↻</span>
             Atualizar
           </button>
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {loading && !data ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i}><CardContent className="pt-6"><Skeleton className="h-12 w-full" /></CardContent></Card>
-          ))
-        ) : (
-          <>
-            <KpiCard label="Total jobs" value={summary?.total ?? 0} />
-            <KpiCard label="✓ OK"       value={summary?.ok ?? 0}    variant="ok" />
-            <KpiCard label="⚠ Stale"   value={summary?.stale ?? 0} variant="warn" />
-            <KpiCard label="✗ Erro"     value={(summary?.error ?? 0) + (summary?.running ?? 0)} variant="error" />
-          </>
-        )}
+      {/* ── KPI cards ──────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        {[
+          { label: 'Uptime', value: uptime != null ? `${uptime}%` : '—', color: uptime != null && uptime >= 80 ? 'var(--cl-up)' : 'var(--cl-down)' },
+          { label: 'Total jobs', value: summary?.total ?? (loading ? '…' : 0), color: 'var(--cl-ink)' },
+          { label: 'Erros', value: summary?.error ?? (loading ? '…' : 0), color: (summary?.error ?? 0) > 0 ? 'var(--cl-down)' : 'var(--cl-ink3)' },
+          { label: 'Latência média', value: avgDuration != null ? fmtDuration(Math.round(avgDuration)) : '—', color: 'var(--cl-ink)' },
+        ].map(k => (
+          <div key={k.label} style={{
+            background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+            borderRadius: 'var(--cl-radius)', padding: 'var(--cl-card-pad)', boxShadow: 'var(--cl-shadow)',
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--cl-ink3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>{k.label}</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 500, color: k.color, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{String(k.value)}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Error state */}
+      {/* ── Error state ─────────────────────────────── */}
       {error && (
-        <Card className="border-destructive bg-destructive/5">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <XCircle className="h-4 w-4 shrink-0" />
-              <p className="text-sm font-medium">{error}</p>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1 ml-6">
-              Verifique se o backend está no ar. O Render pode levar até 30s no cold start.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Jobs */}
-      {!error && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Jobs ({jobs.length})
-          </h2>
-
-          {loading && !data ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i}><CardContent className="pt-5 pb-5"><Skeleton className="h-16 w-full" /></CardContent></Card>
-            ))
-          ) : jobs.length === 0 ? (
-            <Card>
-              <CardContent className="pt-6 pb-6 text-center text-muted-foreground">
-                <HelpCircle className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">Nenhum job encontrado.</p>
-                <p className="text-xs mt-1">
-                  Execute a migration <code className="bg-muted px-1 rounded">003_etl_runs.sql</code> no Supabase
-                  e rode pelo menos um ETL pelo GitHub Actions.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            jobs.map(job => <JobCard key={job.job} job={job} />)
-          )}
+        <div style={{
+          background: 'var(--cl-down-soft)', border: '1px solid var(--cl-down)',
+          borderRadius: 'var(--cl-radius)', padding: '16px 20px',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cl-down)', marginBottom: 4 }}>✗ {error}</div>
+          <div style={{ fontSize: 12, color: 'var(--cl-ink3)' }}>Verifique se o backend está no ar. O Render pode levar até 30s no cold start.</div>
         </div>
       )}
 
-      {/* Footer info */}
-      <Card className="bg-muted/30">
-        <CardContent className="pt-4 pb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-muted-foreground">
-            <div><span className="font-medium text-foreground">RV (B3)</span> · 21h UTC via brapi.dev</div>
-            <div><span className="font-medium text-foreground">Indicadores</span> · 22h UTC via BCB-SGS</div>
-            <div><span className="font-medium text-foreground">Fundos (CVM)</span> · 23h UTC · Renda Fixa: manual</div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* ── Source cards grid ───────────────────────── */}
+      {!error && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+          {grouped.filter(g => g.jobs.length > 0 || SOURCES.find(s => s.key === g.source.key)).map(({ source, jobs: srcJobs }) => {
+            const status = worstStatus(srcJobs)
+            const cfg    = STATUS_CFG[status]
+            return (
+              <div key={source.key} style={{
+                background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+                borderLeft: `3px solid ${cfg.color}`,
+                borderRadius: 'var(--cl-radius)', boxShadow: 'var(--cl-shadow)',
+                overflow: 'hidden',
+              }}>
+                <div style={{ padding: '16px 18px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--cl-ink)' }}>{source.key}</span>
+                      <span style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>{source.label}</span>
+                    </div>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, color: cfg.color, background: cfg.bg,
+                      borderRadius: 4, padding: '2px 8px', letterSpacing: '0.06em',
+                    }}>{cfg.symbol} {cfg.label}</span>
+                  </div>
+
+                  <div style={{ fontFamily: "'Courier New', monospace", fontSize: 10, color: 'var(--cl-ink3)', background: 'var(--cl-bg)', borderRadius: 4, padding: '4px 8px', marginBottom: 10 }}>
+                    {source.endpoint}
+                  </div>
+
+                  {/* Metrics 2×2 */}
+                  {srcJobs.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                      {[
+                        { label: 'Jobs', value: String(srcJobs.length) },
+                        { label: 'OK', value: String(srcJobs.filter(j => j.status === 'ok').length) },
+                        { label: 'Última exec.', value: srcJobs[0]?.started_at ? fmtDate(srcJobs[0].started_at).split(' ')[0] : '—' },
+                        { label: 'Linhas', value: srcJobs.reduce((s, j) => s + (j.rows_upserted ?? 0), 0).toLocaleString('pt-BR') },
+                      ].map(m => (
+                        <div key={m.label} style={{ background: 'var(--cl-bg)', borderRadius: 4, padding: '6px 8px', border: '1px solid var(--cl-line2)' }}>
+                          <div style={{ fontSize: 9, color: 'var(--cl-ink3)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>{m.label}</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cl-ink)', fontVariantNumeric: 'tabular-nums' }}>{m.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {srcJobs.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--cl-ink3)', padding: '4px 0 8px' }}>Nenhum job mapeado para esta fonte</div>
+                  )}
+                </div>
+
+                {/* Terminal log */}
+                {srcJobs.length > 0 && (
+                  <div style={{ padding: '0 14px 14px' }}>
+                    <TerminalLog jobs={srcJobs} />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Schedule info ──────────────────────────── */}
+      <div style={{
+        background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
+        borderRadius: 'var(--cl-radius)', padding: '14px 20px',
+      }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, fontSize: 12 }}>
+          <div><span style={{ fontWeight: 700, color: 'var(--cl-ink)' }}>RV (B3)</span><span style={{ color: 'var(--cl-ink3)' }}> · 21h UTC via brapi.dev</span></div>
+          <div><span style={{ fontWeight: 700, color: 'var(--cl-ink)' }}>Indicadores</span><span style={{ color: 'var(--cl-ink3)' }}> · 22h UTC via BCB-SGS</span></div>
+          <div><span style={{ fontWeight: 700, color: 'var(--cl-ink)' }}>Fundos (CVM)</span><span style={{ color: 'var(--cl-ink3)' }}> · 23h UTC · Renda Fixa: manual</span></div>
+        </div>
+      </div>
     </div>
   )
 }
