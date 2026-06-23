@@ -75,7 +75,7 @@ function IndicadoresInner() {
   const tableRows = useMemo(() => [...sliced].reverse(), [sliced])
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 24 }}>
+    <div className="cl-panel">
 
       {/* ── LEFT PANEL ─────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -340,13 +340,9 @@ export default function HomePage() {
       </section>
 
       {/* ── MAIN GRID (Módulos + Macro | Eventos) ─────────── */}
-      <section style={{
+      <section className="cl-main2" style={{
         padding: '0 var(--cl-page-x) 64px',
         maxWidth: 1400, margin: '0 auto',
-        display: 'grid',
-        gridTemplateColumns: '1.5fr 1fr',
-        gap: 24,
-        alignItems: 'start',
       }}>
 
         {/* LEFT: Módulos + Painel Macro */}

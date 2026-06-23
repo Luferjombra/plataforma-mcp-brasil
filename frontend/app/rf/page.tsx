@@ -153,7 +153,7 @@ function RFInner() {
       </div>
 
       {/* ── INDEXER CARDS ─────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+      <div className="cl-rf3">
         {INDEXADORES.map(idx => {
           const titleForIdx = titulos.find(t => t.indexador === idx.key && t.ativo)
           const count       = titulos.filter(t => t.indexador === idx.key).length

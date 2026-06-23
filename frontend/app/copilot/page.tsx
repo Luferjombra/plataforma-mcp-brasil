@@ -85,10 +85,7 @@ export default function CopilotPage() {
   ]
 
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20,
-      height: 'calc(100vh - 64px)',
-    }}>
+    <div className="cl-copilot">
 
       {/* ── LEFT PANEL — Contexto de mercado ─────────── */}
       <div style={{
@@ -161,7 +158,7 @@ export default function CopilotPage() {
       </div>
 
       {/* ── RIGHT PANEL — Chat ────────────────────────── */}
-      <div style={{
+      <div className="cl-copilot-chat" style={{
         display: 'flex', flexDirection: 'column',
         background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
         borderRadius: 'var(--cl-radius)', boxShadow: 'var(--cl-shadow)',

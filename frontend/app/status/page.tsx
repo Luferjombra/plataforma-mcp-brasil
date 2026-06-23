@@ -162,7 +162,7 @@ export default function StatusPage() {
       </div>
 
       {/* ── KPI cards ──────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+      <div className="cl-kpi4">
         {[
           { label: 'Uptime', value: uptime != null ? `${uptime}%` : '—', color: uptime != null && uptime >= 80 ? 'var(--cl-up)' : 'var(--cl-down)' },
           { label: 'Total jobs', value: summary?.total ?? (loading ? '…' : 0), color: 'var(--cl-ink)' },
@@ -258,7 +258,7 @@ export default function StatusPage() {
         background: 'var(--cl-card)', border: '1px solid var(--cl-line)',
         borderRadius: 'var(--cl-radius)', padding: '14px 20px',
       }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, fontSize: 12 }}>
+        <div className="cl-sched3">
           <div><span style={{ fontWeight: 700, color: 'var(--cl-ink)' }}>RV (B3)</span><span style={{ color: 'var(--cl-ink3)' }}> · 21h UTC via brapi.dev</span></div>
           <div><span style={{ fontWeight: 700, color: 'var(--cl-ink)' }}>Indicadores</span><span style={{ color: 'var(--cl-ink3)' }}> · 22h UTC via BCB-SGS</span></div>
           <div><span style={{ fontWeight: 700, color: 'var(--cl-ink)' }}>Fundos (CVM)</span><span style={{ color: 'var(--cl-ink3)' }}> · 23h UTC · Renda Fixa: manual</span></div>

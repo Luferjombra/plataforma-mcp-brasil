@@ -74,7 +74,7 @@ function RVInner() {
   const totalFIIs  = ativos.filter(a => a.tipo === 'FII').length
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, minWidth: 0 }}>
+    <div className="cl-panel-rv">
 
       {/* ── LEFT PANEL ─────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -119,7 +119,7 @@ function RVInner() {
             ))}
           </div>
 
-          <div style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
+          <div className="cl-rv-list" style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
             {loadingAtivos ? (
               <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {Array.from({ length: 8 }).map((_, i) => (
@@ -265,7 +265,7 @@ function RVInner() {
         </div>
 
         {/* Stat cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <div className="cl-kpi4" style={{ gap: 12 }}>
           {[
             { label: 'Abertura',    value: ultHist?.abertura  != null ? formatBRL(ultHist.abertura)  : '—' },
             { label: 'Máxima',      value: ultHist?.maxima    != null ? formatBRL(ultHist.maxima)    : '—' },

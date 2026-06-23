@@ -98,6 +98,31 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ── Responsive layout utilities ────────────────────────── */
+.cl-panel     { display: grid; grid-template-columns: 240px 1fr; gap: 24px; }
+.cl-panel-rv  { display: grid; grid-template-columns: 300px 1fr; gap: 24px; min-width: 0; }
+.cl-main2     { display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; align-items: start; }
+.cl-kpi4      { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.cl-sched3    { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; font-size: 12px; }
+.cl-rf3       { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.cl-copilot   { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: calc(100vh - 64px); overflow: hidden; }
+
+@media (max-width: 767px) {
+  :root {
+    --cl-card-pad: 16px;
+    --cl-page-x: 16px;
+  }
+  .cl-panel,
+  .cl-panel-rv,
+  .cl-main2     { grid-template-columns: 1fr; }
+  .cl-kpi4      { grid-template-columns: repeat(2, 1fr); }
+  .cl-sched3,
+  .cl-rf3       { grid-template-columns: 1fr; }
+  .cl-copilot   { grid-template-columns: 1fr; height: auto; overflow: visible; }
+  .cl-copilot-chat { height: 72vh; min-height: 420px; }
+  .cl-rv-list   { max-height: 260px !important; }
+}
+
 /* ── shadcn base tokens ─────────────────────────────────── */
 :root {
   --background: oklch(1 0 0);
