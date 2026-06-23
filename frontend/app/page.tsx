@@ -199,7 +199,7 @@ export default function HomePage() {
   const selic = kpis[0].value
   const ipca  = kpis[1].value
   const juroReal = selic != null && ipca != null
-    ? +((selic - ipca) / (1 + ipca / 100) * 100).toFixed(2)
+    ? +((selic - ipca) / (1 + ipca / 100)).toFixed(2)
     : null
 
   return (
