@@ -8,27 +8,42 @@ on:
       - 'librechat/**'
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/librechat-mcp-brasil
+
 jobs:
-  deploy:
-    name: Deploy to Railway
+  build-and-deploy:
+    name: Build image + Deploy to Koyeb
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli@latest
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Deploy LibreChat
-        working-directory: librechat
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service librechat --detach
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./librechat
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      - name: Wait for deployment
+      - name: Install Koyeb CLI
+        run: curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+
+      - name: Redeploy on Koyeb
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          echo "Deployment triggered. Check Railway dashboard for status."
-          echo "URL: https://railway.app/dashboard"
+          KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
+        run: koyeb service redeploy plataforma-mcp-brasil/librechat
