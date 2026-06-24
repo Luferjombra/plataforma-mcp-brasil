@@ -1,6 +1,6 @@
 # Backlog — LibreChat (Épico B)
 
-_Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Render free + MongoDB Atlas._
+_Atualizado em 2026-06-24. Status: B.1–B.4 concluídos. LibreChat live com 3 agents MCP._
 
 ---
 
@@ -11,7 +11,7 @@ _Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Render free
 | B.1 | POC local + MCP | ✅ Concluído |
 | B.2 | Decisão de deploy | ✅ Decidido: Render free + MongoDB Atlas free |
 | B.3 | Deploy produção | ✅ Live: librechat-rfev.onrender.com |
-| B.4 | Agents pré-criados | 🔲 Pendente |
+| B.4 | Agents pré-criados | ✅ Concluído (Analista Quant, Macro, RV) |
 | B.5 | Google OAuth | ⚙️ Config externa pendente |
 | B.6 | Branding | ⚙️ Config externa pendente |
 | B.7 | RAG / PDF | 📅 Roadmap |
