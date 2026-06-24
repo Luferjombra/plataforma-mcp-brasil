@@ -4,6 +4,7 @@ GET /rf/titulos          → lista todos os títulos com taxa atual
 GET /rf/historico/{cod} → histórico de taxas de um título
 """
 
+from typing import Union
 from fastapi import APIRouter, Query
 from db import supabase
 
@@ -102,12 +103,10 @@ def get_titulos():
 @router.get("/historico/{codigo}")
 def get_historico_rf(
     codigo: str,
-    limit: int = Query(252, ge=1, le=2000),
+    limit: Union[int, str] = Query(252, description="Número de registros (inteiro). Padrão: 252 (≈1 ano útil). Máx: 2000."),
 ):
-    """
-    Retorna o histórico de taxas/preços de um título.
-    limit: número de pontos (padrão 252 = ~1 ano útil)
-    """
+    """Retorna o histórico de taxas/preços de um título. limit: número de pontos (padrão 252 = ~1 ano útil)."""
+    limit = max(1, min(int(limit), 2000))
     res = (
         supabase.table("rf_historico")
         .select("codigo,data,taxa_mercado,pu_mercado,taxa_compra,pu_compra")

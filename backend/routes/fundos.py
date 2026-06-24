@@ -1,3 +1,4 @@
+from typing import Union
 from fastapi import APIRouter, Query, HTTPException
 from db import supabase
 
@@ -32,9 +33,10 @@ NOMES_DISPLAY = {
 def get_fundos(
     classe: str = Query(None, description="Multimercado, Renda Fixa, Ações, FII"),
     gestor: str = Query(None),
-    limit: int = Query(50, ge=1, le=500),
+    limit: Union[int, str] = Query(50, description="Número de fundos a retornar (inteiro). Padrão: 50. Máx: 500."),
 ):
     """Lista fundos monitorados pela plataforma."""
+    limit = max(1, min(int(limit), 500))
     query = (
         supabase.table("fundos_cadastro")
         .select("*")
@@ -71,8 +73,9 @@ def get_analytics(cnpj: str):
 
 
 @router.get("/historico/{cnpj:path}")
-def get_historico_fundo(cnpj: str, limit: int = Query(252, ge=1, le=2000)):
+def get_historico_fundo(cnpj: str, limit: Union[int, str] = Query(252, description="Número de registros de cota (inteiro). Padrão: 252. Máx: 2000.")):
     """Retorna histórico de cotas de um fundo."""
+    limit = max(1, min(int(limit), 2000))
     result = (
         supabase.table("fundos_historico")
         .select("*")
