@@ -14,7 +14,7 @@ env:
 
 jobs:
   build-and-deploy:
-    name: Build image + Deploy to Koyeb
+    name: Build image + Deploy to Render
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -40,10 +40,5 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      - name: Install Koyeb CLI
-        run: curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-
-      - name: Redeploy on Koyeb
-        env:
-          KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
-        run: koyeb service redeploy plataforma-mcp-brasil/librechat
+      - name: Trigger Render deploy
+        run: curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"

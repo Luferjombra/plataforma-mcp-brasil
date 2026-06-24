@@ -1,6 +1,6 @@
 # Backlog — LibreChat (Épico B)
 
-_Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Koyeb + MongoDB Atlas._
+_Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Render free + MongoDB Atlas._
 
 ---
 
@@ -40,17 +40,18 @@ _Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Koyeb + Mon
 
 | Plataforma | Custo/mês | RAM | Cold start | Veredicto |
 |------------|-----------|-----|------------|-----------|
-| **Koyeb free** | R$ 0 | 512 MB | Não tem | ✅ Escolhido |
+| **Render free** | R$ 0 | 512 MB | Tem (15min) | ✅ Escolhido |
+| Koyeb | $29/mês Pro | 512 MB | Não tem | Pago — descartado |
 | Railway free | $5 crédito/mês consumível | 512 MB | Não tem | Não é gratuito de verdade |
-| Render Pro | R$ 35 | 2 GB | Não tem | Caro para POC |
 | Fly.io free | R$ 0 | 256 MB | Tem | RAM insuficiente |
 
-**Decisão:** Koyeb free tier + MongoDB Atlas free tier (512MB).
+**Decisão:** Render free tier + MongoDB Atlas free tier (512MB).
 
 - [x] Decisão documentada em `architecture.md`
-- [ ] Criar conta Koyeb em koyeb.com
-- [ ] Criar cluster MongoDB Atlas free (mongodb.com/atlas) e obter URI
-- [ ] Definir hostname definitivo em `architecture.md`
+- [x] Criar serviço no Render (librechat-rlev.onrender.com)
+- [x] Criar cluster MongoDB Atlas free (Sao Paulo) e obter URI
+- [ ] Adicionar secret `RENDER_DEPLOY_HOOK_URL` no GitHub (Render → Settings → Deploy Hook)
+- [ ] Adicionar `0.0.0.0/0` em MongoDB Atlas → Network Access
 
 **Esforço:** 30min (apenas configuração externa)
 
@@ -68,8 +69,8 @@ _Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Koyeb + Mon
 - [x] Criar `.github/workflows/deploy-librechat.yml`
 - [x] Trigger: push em `main` com mudanças em `librechat/**`
 - [x] Build Docker image → push para GHCR (`ghcr.io/luferjombra/librechat-mcp-brasil`)
-- [x] Redeploy via Koyeb CLI (`koyeb service redeploy plataforma-mcp-brasil/librechat`)
-- [ ] Adicionar secret `KOYEB_TOKEN` no GitHub (requer conta Koyeb)
+- [x] Redeploy via Render Deploy Hook (`curl -X POST $RENDER_DEPLOY_HOOK_URL`)
+- [ ] Adicionar secret `RENDER_DEPLOY_HOOK_URL` no GitHub (Render → Settings → Deploy Hook → copiar URL)
 
 ### B.3.3 — Configurar app no Koyeb (você faz no painel, ~30min)
 
