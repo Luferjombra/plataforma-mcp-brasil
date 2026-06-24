@@ -109,6 +109,7 @@ plataforma-mcp-brasil/
 │   │   ├── rv/              ← ativos B3/FIIs · sidebar 300px + AreaChart dinâmico
 │   │   ├── rf/              ← Tesouro Direto · overlay 3 indexadores + tabela
 │   │   ├── fundos/          ← CVM · filter chips + grid cards + AreaChart cota
+│   │   ├── noticias/        ← Feed RSS · filter chips por categoria + tickers + auto-refresh 5min
 │   │   ├── copilot/         ← Chat Finance · split 1fr/1fr + contexto macro
 │   │   └── status/          ← ETL monitor · KPIs + source cards + TerminalLog
 │   ├── components/
@@ -140,6 +141,7 @@ plataforma-mcp-brasil/
 | fundos_historico | ~4.852 | CVM inf_diario_fi_*.zip | 2024–2026 |
 | rf_titulos | 78 | Tesouro Transparente CSV | — |
 | rf_historico | ~65.927 | Tesouro Transparente CSV | 2020–hoje |
+| noticias | atualizado 2×/dia | InfoMoney · Money Times · Valor Investe (RSS) | últimas 24–72h |
 
 ## Setup local
 
@@ -397,6 +399,7 @@ plataforma-mcp-brasil/
 | fundos_historico | ~4.852 | CVM inf_diario_fi_*.zip | 2024–2026 |
 | rf_titulos | 78 | Tesouro Transparente CSV | — |
 | rf_historico | ~65.927 | Tesouro Transparente CSV | 2020–hoje |
+| noticias | atualizado 2×/dia | InfoMoney · Money Times · Valor Investe (RSS) | últimas 24–72h |
 
 ## Setup local
 
