@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { getAtivos, getHistoricoRV, type Ativo, type Historico } from '@/lib/api'
 import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { formatBRL, formatCap } from '@/lib/format'
+import { PageHeader } from '@/components/PageHeader'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -86,7 +87,14 @@ function RVInner() {
   )
 
   return (
-    <div className="cl-panel-rv">
+    <>
+      <PageHeader
+        title="Renda Variável"
+        description="Ações e FIIs negociados na B3 — cotações e histórico de preços"
+        sourceBadge="B3 · brapi"
+      />
+
+      <div className="cl-panel-rv">
 
       {/* ── LEFT PANEL ─────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -303,6 +311,7 @@ function RVInner() {
         )}
       </div>
     </div>
+    </>
   )
 }
 

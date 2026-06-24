@@ -1,6 +1,6 @@
 # Backlog — LibreChat (Épico B)
 
-_Atualizado em 2026-06-18. Status: B.1 POC concluído._
+_Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Render free + MongoDB Atlas._
 
 ---
 
@@ -9,8 +9,8 @@ _Atualizado em 2026-06-18. Status: B.1 POC concluído._
 | Épico | Item | Status |
 |-------|------|--------|
 | B.1 | POC local + MCP | ✅ Concluído |
-| B.2 | Decisão de deploy | 🔲 Pendente |
-| B.3 | Deploy produção | 🔲 Pendente |
+| B.2 | Decisão de deploy | ✅ Decidido: Koyeb free + MongoDB Atlas free |
+| B.3 | Deploy produção | ⚙️ Em andamento (Dockerfile + CI/CD prontos, configurar Koyeb) |
 | B.4 | Agents pré-criados | 🔲 Pendente |
 | B.5 | Google OAuth | ⚙️ Config externa pendente |
 | B.6 | Branding | ⚙️ Config externa pendente |
@@ -36,23 +36,24 @@ _Atualizado em 2026-06-18. Status: B.1 POC concluído._
 
 ---
 
-## B.2 — Decisão de deploy
-
-**Tarefa:** escolher plataforma de produção para o LibreChat.
+## B.2 — Decisão de deploy ✅ DECIDIDO
 
 | Plataforma | Custo/mês | RAM | Cold start | Veredicto |
 |------------|-----------|-----|------------|-----------|
-| **Railway free** | R$ 0 | 512 MB | Não tem | ✅ Recomendado |
-| Render Pro | R$ 35 | 2 GB | Não tem | Caro para POC |
+| **Render free** | R$ 0 | 512 MB | Tem (15min) | ✅ Escolhido |
+| Koyeb | $29/mês Pro | 512 MB | Não tem | Pago — descartado |
+| Railway free | $5 crédito/mês consumível | 512 MB | Não tem | Não é gratuito de verdade |
 | Fly.io free | R$ 0 | 256 MB | Tem | RAM insuficiente |
 
-**Decisão sugerida:** Railway free tier.
+**Decisão:** Render free tier + MongoDB Atlas free tier (512MB).
 
-- [ ] Criar conta Railway em railway.app
-- [ ] Definir hostname definitivo (ex.: `copilot.plataforma-mcp-brasil.com`)
-- [ ] Documentar decisão em `architecture.md`
+- [x] Decisão documentada em `architecture.md`
+- [x] Criar serviço no Render (librechat-rlev.onrender.com)
+- [x] Criar cluster MongoDB Atlas free (Sao Paulo) e obter URI
+- [ ] Adicionar secret `RENDER_DEPLOY_HOOK_URL` no GitHub (Render → Settings → Deploy Hook)
+- [ ] Adicionar `0.0.0.0/0` em MongoDB Atlas → Network Access
 
-**Esforço:** 1h (sem código)
+**Esforço:** 30min (apenas configuração externa)
 
 ---
 
@@ -60,31 +61,30 @@ _Atualizado em 2026-06-18. Status: B.1 POC concluído._
 
 **Pré-requisito:** B.2 decidido.
 
-### B.3.1 — railway.toml (30min)
-- [ ] Criar `librechat/railway.toml`:
-  ```toml
-  [build]
-  builder = "DOCKERFILE"
-  dockerfilePath = "Dockerfile"
+### B.3.1 — Dockerfile customizado (✅ pronto)
+- [x] Criar `librechat/Dockerfile` — estende imagem base, copia `librechat.yaml` para dentro da imagem
+- [x] Permite deploy sem montar volume: Koyeb roda a imagem diretamente
 
-  [deploy]
-  healthcheckPath = "/health"
-  restartPolicyType = "ON_FAILURE"
-  ```
-- [ ] Separar MongoDB como serviço Railway vinculado (plugin MongoDB nativo)
+### B.3.2 — GitHub Action CI/CD (✅ pronto)
+- [x] Criar `.github/workflows/deploy-librechat.yml`
+- [x] Trigger: push em `main` com mudanças em `librechat/**`
+- [x] Build Docker image → push para GHCR (`ghcr.io/luferjombra/librechat-mcp-brasil`)
+- [x] Redeploy via Render Deploy Hook (`curl -X POST $RENDER_DEPLOY_HOOK_URL`)
+- [ ] Adicionar secret `RENDER_DEPLOY_HOOK_URL` no GitHub (Render → Settings → Deploy Hook → copiar URL)
 
-### B.3.2 — GitHub Action CI/CD (1h)
-- [ ] Criar `.github/workflows/deploy-librechat.yml`
-- [ ] Trigger: push em `main` com mudanças em `librechat/**`
-- [ ] Deploy via Railway CLI ou webhook
-- [ ] Secrets no GitHub: `RAILWAY_TOKEN`
+### B.3.3 — Configurar app no Koyeb (você faz no painel, ~30min)
 
-### B.3.3 — Variáveis de ambiente em produção (30min)
-Configurar no painel Railway:
+1. Criar conta em koyeb.com
+2. New App → **Docker** → imagem: `ghcr.io/luferjombra/librechat-mcp-brasil:latest`
+3. Nome do app: `plataforma-mcp-brasil`, nome do serviço: `librechat`
+4. Porta: `3080`
+5. Configurar variáveis de ambiente (copiar de `librechat/.env.example` e preencher):
+
+Variáveis de ambiente no painel Koyeb:
 
 | Variável | Valor |
 |----------|-------|
-| `MONGO_URI` | URI do plugin MongoDB do Railway |
+| `MONGO_URI` | URI do MongoDB Atlas (ex: `mongodb+srv://user:pass@cluster.mongodb.net/LibreChat`) |
 | `JWT_SECRET` | Gerar: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `JWT_REFRESH_SECRET` | Idem |
 | `CREDS_KEY` | Idem |
@@ -96,18 +96,19 @@ Configurar no painel Railway:
 | `MESSAGE_USER_WINDOW` | `60` |
 | `GOOGLE_CLIENT_ID` | (do passo B.5) |
 | `GOOGLE_CLIENT_SECRET` | (do passo B.5) |
-| `GOOGLE_CALLBACK_URL` | `https://SEU_DOMINIO/oauth/google/callback` |
+| `GOOGLE_CALLBACK_URL` | `https://SEU_APP.koyeb.app/oauth/google/callback` |
 | `DEEPSEEK_API_KEY` | Sua key |
 | `GROQ_API_KEY` | Sua key |
 | `CEREBRAS_API_KEY` | Sua key |
 | `GLM_API_KEY` | Sua key |
 | `TELEMETRY_ENABLED` | `false` |
 
-### B.3.4 — Health check + monitoring (30min)
-- [ ] Testar `https://SEU_DOMINIO/health` retorna 200
-- [ ] Adicionar uptime monitor (UptimeRobot free tier)
+6. Health check path: `/health`
+7. Após deploy, testar `https://SEU_APP.koyeb.app/health`
+8. Adicionar uptime monitor: UptimeRobot free tier (uptimerobot.com)
+9. Gerar `KOYEB_TOKEN` em koyeb.com → Account → API → New Token → adicionar no GitHub Secrets
 
-**Esforço total B.3:** ~2,5h
+**Esforço total B.3:** ~1h (código pronto, só configuração no painel)
 
 ---
 
@@ -291,8 +292,8 @@ Depois:
 | # | Tarefa | Onde | Tempo |
 |---|--------|------|-------|
 | 1 | Criar credencial OAuth no Google Cloud | console.cloud.google.com | 15min |
-| 2 | Criar conta Railway | railway.app | 5min |
-| 3 | Criar projeto Railway + plugin MongoDB | railway.app | 15min |
-| 4 | Configurar variáveis de ambiente no Railway | painel Railway | 20min |
+| 2 | Criar conta Koyeb | koyeb.com | 5min |
+| 3 | Criar cluster MongoDB Atlas free + obter URI | mongodb.com/atlas | 15min |
+| 4 | Criar app no Koyeb + configurar variáveis de ambiente | painel Koyeb | 20min |
 | 5 | Criar os 3 Agents no painel Admin | localhost:3080 ou produção | 30min |
 | 6 | (Opcional) Fazer logo 512x512 PNG | Canva / Figma | 30min |

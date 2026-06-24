@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { getFundos, getHistoricoFundo, type Fundo, type HistoricoFundo } from '@/lib/api'
 import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { formatCota, formatMilhoes } from '@/lib/format'
+import { PageHeader } from '@/components/PageHeader'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -101,14 +102,11 @@ function FundosInner() {
 
       {/* ── Header + Filtros ──────────────────────────── */}
       <div>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 500, color: 'var(--cl-ink)', lineHeight: 1.1 }}>
-              Fundos de Investimento
-            </h1>
-            <p style={{ fontSize: 13, color: 'var(--cl-ink3)', marginTop: 4 }}>CVM · Instrução Normativa Diária · {fundos.length} fundos</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Fundos de Investimento"
+          description={`CVM · Instrução Normativa Diária · ${fundos.length} fundos`}
+          sourceBadge="CVM"
+        />
 
         {/* Filter chips */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

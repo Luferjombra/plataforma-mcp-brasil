@@ -97,10 +97,6 @@
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-@keyframes cl-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
 
 /* ── Responsive layout utilities ────────────────────────── */
 .cl-panel     { display: grid; grid-template-columns: 240px 1fr; gap: 24px; }
@@ -110,7 +106,6 @@
 .cl-sched3    { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; font-size: 12px; }
 .cl-rf3       { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .cl-copilot   { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: calc(100vh - 64px); overflow: hidden; }
-.cl-news-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 40px; border-top: 1px solid var(--cl-line); }
 
 @media (max-width: 767px) {
   :root {
@@ -126,9 +121,6 @@
   .cl-copilot   { grid-template-columns: 1fr; height: auto; overflow: visible; }
   .cl-copilot-chat { height: 72vh; min-height: 420px; }
   .cl-rv-list   { max-height: 260px !important; }
-  .cl-news-grid { grid-template-columns: 1fr; }
-  .cl-featured-card { grid-template-columns: 1fr !important; padding: 20px !important; }
-  .cl-featured-card > div:last-child { border-left: none !important; border-top: 1px solid rgba(255,255,255,.1); padding-left: 0 !important; padding-top: 20px; }
 }
 
 /* ── shadcn base tokens ─────────────────────────────────── */
