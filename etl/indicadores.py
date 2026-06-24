@@ -7,7 +7,7 @@ Séries: IPCA (433), SELIC meta (432), CDI diário (12), PIB var% trimestral (73
 import httpx
 import datetime
 from config import supabase
-from log_etl import ETLRun, retry_request, log_partial
+from log_etl import ETLRun, retry_request
 
 # Mapeamento: nome interno → código BCB
 SERIES = {
@@ -98,41 +98,41 @@ def run():
     erros = []
     total_salvos = 0
 
-    for serie, cfg in SERIES.items():
-        print(f"→ {serie.upper()} (código {cfg['codigo']})...")
-        data_inicio = ultima_data_no_banco(serie)
-        print(f"  Buscando a partir de {data_inicio}...")
+    with ETLRun("indicadores_batch") as batch:
+        for serie, cfg in SERIES.items():
+            print(f"→ {serie.upper()} (código {cfg['codigo']})...")
+            data_inicio = ultima_data_no_banco(serie)
+            print(f"  Buscando a partir de {data_inicio}...")
 
-        try:
-            with ETLRun(f"indicadores_{serie}") as run:
-                dados_brutos = buscar_serie(cfg["codigo"], data_inicio)
+            try:
+                with ETLRun(f"indicadores_{serie}") as run:
+                    dados_brutos = buscar_serie(cfg["codigo"], data_inicio)
 
-                if not dados_brutos:
-                    print(f"  ⚠ BCB não retornou novos dados desde {data_inicio}\n")
-                    run.set_rows(0)
-                    continue
+                    if not dados_brutos:
+                        print(f"  ⚠ BCB não retornou novos dados desde {data_inicio}\n")
+                        run.set_rows(0)
+                        continue
 
-                registros = normalizar(dados_brutos, serie, cfg["unidade"])
+                    registros = normalizar(dados_brutos, serie, cfg["unidade"])
 
-                if not registros:
-                    print(f"  ⚠ Nenhum registro válido após normalização\n")
-                    run.set_rows(0)
-                    continue
+                    if not registros:
+                        print(f"  ⚠ Nenhum registro válido após normalização\n")
+                        run.set_rows(0)
+                        continue
 
-                salvos = salvar_no_supabase(registros)
-                run.set_rows(salvos)
-                total_salvos += salvos
-                print(f"  ✓ {salvos} registros salvos de {len(registros)} buscados\n")
+                    salvos = salvar_no_supabase(registros)
+                    run.set_rows(salvos)
+                    total_salvos += salvos
+                    print(f"  ✓ {salvos} registros salvos de {len(registros)} buscados\n")
 
-        except Exception as e:
-            erros.append(f"{serie}: {e}")
-            print(f"  ✗ Erro: {e}\n")
+            except Exception as e:
+                erros.append(f"{serie}: {e}")
+                print(f"  ✗ Erro: {e}\n")
 
-    if erros and total_salvos > 0:
-        log_partial("indicadores_batch", total_salvos, "; ".join(erros))
+        batch.set_rows(total_salvos)
+
+    if erros:
         print(f"⚠ {len(erros)} série(s) com erro: {erros}")
-    elif erros:
-        print(f"✗ Todas as séries falharam: {erros}")
 
     print("=== Concluído ===")
 
