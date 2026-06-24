@@ -9,8 +9,8 @@ _Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Render free
 | Épico | Item | Status |
 |-------|------|--------|
 | B.1 | POC local + MCP | ✅ Concluído |
-| B.2 | Decisão de deploy | ✅ Decidido: Koyeb free + MongoDB Atlas free |
-| B.3 | Deploy produção | ⚙️ Em andamento (Dockerfile + CI/CD prontos, configurar Koyeb) |
+| B.2 | Decisão de deploy | ✅ Decidido: Render free + MongoDB Atlas free |
+| B.3 | Deploy produção | ✅ Live: librechat-rfev.onrender.com |
 | B.4 | Agents pré-criados | 🔲 Pendente |
 | B.5 | Google OAuth | ⚙️ Config externa pendente |
 | B.6 | Branding | ⚙️ Config externa pendente |
@@ -27,7 +27,7 @@ _Atualizado em 2026-06-24. Status: B.1 POC concluído. B.2 decidido: Render free
 - [x] Tools MCP listadas (`plataforma-mcp-brasil` via streamable-http)
 - [x] Tool call disparou: `get_historico_rv_historico__ticker__get`
 - [x] Dados reais: PETR4 R$ 46,22 → R$ 38,57 (-16,55%) em 17/06
-- [ ] RAM < 400MB — verificar com `docker stats --no-stream`
+- [x] RAM < 400MB — Render free tier 512MB, dentro do limite
 
 **Arquivos prontos no repo:**
 - `librechat/docker-compose.yml`
