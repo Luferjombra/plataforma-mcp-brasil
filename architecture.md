@@ -251,6 +251,15 @@ perf/
 | Vercel | Free | plataforma-mcp-brasil.vercel.app |
 | GitHub | Free | github.com/Luferjombra/plataforma-mcp-brasil |
 | Google AI | Free tier | Gemini 2.5 Flash (copilot) |
+| **Render** | **Free** | **LibreChat — librechat-rlev.onrender.com** |
+| **MongoDB Atlas** | **Free (512MB)** | **Banco do LibreChat — cluster0.ksxkolr.mongodb.net** |
+
+### Decisão: LibreChat deploy em Render (2026-06-24)
+
+- **Render free tier** escolhido: Koyeb exige $29/mês Pro, Railway usa crédito consumível, Fly.io tem apenas 256MB
+- **MongoDB Atlas free (M0, Sao Paulo)** para persistência do LibreChat (conversas, usuários) — separado do Supabase que guarda dados financeiros
+- **Imagem customizada:** `ghcr.io/luferjombra/librechat-mcp-brasil:latest` (librechat base + librechat.yaml embutido)
+- **CI/CD:** `.github/workflows/deploy-librechat.yml` — build → GHCR → Render Deploy Hook (`curl -X POST $RENDER_DEPLOY_HOOK_URL`)
 
 ## Controle de custo
 

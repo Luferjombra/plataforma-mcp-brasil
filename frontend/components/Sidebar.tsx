@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
 import {
   TrendingUp, BarChart2, Briefcase, MessageSquare,
   Activity, Sun, Moon, Landmark, ServerCog, LayoutDashboard, Newspaper,
@@ -27,94 +26,117 @@ export function Sidebar() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => { setMounted(true) }, []) // eslint-disable-line react-hooks/set-state-in-effect
 
   return (
-    <aside className="flex-shrink-0 w-56 h-screen border-r border-border bg-background flex flex-col">
-      {/* Logo clicável → home */}
-      <Link
-        href="/"
-        className="px-5 py-5 border-b border-border block group hover:bg-accent/40 transition-colors"
-        title="Ir para início"
-      >
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary group-hover:scale-105 transition-transform">
-            <BarChart2 className="h-4 w-4 text-primary-foreground" />
+    <aside style={{
+      flexShrink: 0, width: 220, height: '100vh',
+      borderRight: '1px solid var(--cl-line)',
+      background: 'var(--cl-card)',
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {/* Logo */}
+      <Link href="/" style={{ textDecoration: 'none', display: 'block' }}>
+        <div style={{
+          padding: '18px 18px 14px',
+          borderBottom: '1px solid var(--cl-line)',
+          cursor: 'pointer',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <div style={{
+              width: 28, height: 28, background: 'var(--cl-navy)',
+              borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <BarChart2 size={15} color="#fff" />
+            </div>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--cl-ink)', lineHeight: 1.2 }}>MCP Brasil</p>
+              <p style={{ fontSize: 10, color: 'var(--cl-ink3)', lineHeight: 1 }}>← início</p>
+            </div>
           </div>
-          <div>
-            <p className="font-bold text-sm leading-tight">MCP Brasil</p>
-            <p className="text-[10px] text-muted-foreground leading-tight group-hover:text-primary transition-colors">← início</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8 }}>
+              <span style={{
+                position: 'absolute', inset: 0, borderRadius: '50%',
+                background: 'var(--cl-up)', opacity: 0.6,
+                animation: 'cl-fadeup 1.5s ease infinite',
+              }} />
+              <span style={{
+                position: 'relative', display: 'inline-flex', width: 8, height: 8,
+                borderRadius: '50%', background: 'var(--cl-up)',
+              }} />
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--cl-ink3)' }}>Dados atualizados</span>
           </div>
-        </div>
-        <div className="flex items-center gap-1.5 mt-3">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-          </span>
-          <span className="text-[10px] text-muted-foreground">Dados atualizados</span>
         </div>
       </Link>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        <p className="px-3 pb-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-          Mercados
-        </p>
+      <nav style={{ flex: 1, padding: '10px 10px', overflowY: 'auto' }}>
+        <p style={{
+          padding: '0 8px 8px', fontSize: 10, fontWeight: 700,
+          color: 'var(--cl-ink3)', textTransform: 'uppercase', letterSpacing: '0.08em',
+        }}>Mercados</p>
         {links.map(({ href, label, icon: Icon, tag }) => {
           const active = href === '/dashboard'
             ? pathname.startsWith('/dashboard')
             : pathname === href
           return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                'group flex items-center justify-between px-3 py-2 rounded-md text-sm transition-all',
-                active
-                  ? 'bg-primary text-primary-foreground font-medium shadow-sm'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-              )}
-            >
-              <div className="flex items-center gap-2.5">
-                <Icon className={cn('h-4 w-4', active ? 'text-primary-foreground' : '')} />
-                <span>{label}</span>
+            <Link key={href} href={href} style={{ textDecoration: 'none', display: 'block' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '8px 10px', borderRadius: 'var(--cl-radius-sm)', marginBottom: 2,
+                background: active ? 'var(--cl-navy)' : 'transparent',
+                cursor: 'pointer', transition: 'background 0.15s',
+              }}
+                onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--cl-line2)' }}
+                onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon size={15} color={active ? '#fff' : 'var(--cl-ink3)'} />
+                  <span style={{ fontSize: 13, color: active ? '#fff' : 'var(--cl-ink)', fontWeight: active ? 600 : 400 }}>{label}</span>
+                </div>
+                {tag && (
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
+                    padding: '2px 6px', borderRadius: 4,
+                    background: active ? 'rgba(255,255,255,.18)' : 'var(--cl-line2)',
+                    color: active ? '#fff' : 'var(--cl-ink3)',
+                  }}>{tag}</span>
+                )}
               </div>
-              {tag && (
-                <span className={cn(
-                  'text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider',
-                  active
-                    ? 'bg-white/20 text-primary-foreground'
-                    : 'bg-muted text-muted-foreground'
-                )}>
-                  {tag}
-                </span>
-              )}
             </Link>
           )
         })}
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-4 border-t border-border space-y-2">
+      <div style={{ padding: '10px 10px', borderTop: '1px solid var(--cl-line)' }}>
         {mounted && (
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+              padding: '8px 10px', borderRadius: 'var(--cl-radius-sm)',
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              fontSize: 13, color: 'var(--cl-ink3)', transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--cl-line2)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
           >
-            {theme === 'dark' ? (
-              <><Sun className="h-4 w-4" /><span>Modo claro</span></>
-            ) : (
-              <><Moon className="h-4 w-4" /><span>Modo escuro</span></>
-            )}
+            {theme === 'dark'
+              ? <><Sun size={14} /><span>Modo claro</span></>
+              : <><Moon size={14} /><span>Modo escuro</span></>}
           </button>
         )}
-        <div className="px-3 pt-1">
-          <p className="text-[10px] text-muted-foreground/60">Fontes públicas</p>
-          <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
+        <div style={{ padding: '6px 10px 2px' }}>
+          <p style={{ fontSize: 10, color: 'var(--cl-ink3)', opacity: 0.6, marginBottom: 4 }}>Fontes públicas</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {['BCB', 'B3', 'CVM', 'Tesouro'].map(s => (
-              <span key={s} className="text-[9px] font-medium text-muted-foreground border border-border rounded px-1 py-0.5">
-                {s}
-              </span>
+              <span key={s} style={{
+                fontSize: 9, fontWeight: 600, color: 'var(--cl-ink3)',
+                border: '1px solid var(--cl-line)', borderRadius: 4, padding: '1px 6px',
+              }}>{s}</span>
             ))}
           </div>
         </div>

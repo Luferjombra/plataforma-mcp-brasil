@@ -33,7 +33,7 @@ jobs:
           echo "Verificando se o backend está respondendo..."
           for i in {1..6}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              https://plataforma-mcp-brasil-api.onrender.com/ --max-time 15)
+              https://plataforma-mcp-brasil-api.onrender.com/ --max-time 30 || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "✅ Backend respondeu (tentativa $i)"
               break
