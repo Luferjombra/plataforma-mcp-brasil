@@ -10,7 +10,7 @@ _Atualizado em 2026-06-18. Status: B.1 POC concluído._
 |-------|------|--------|
 | B.1 | POC local + MCP | ✅ Concluído |
 | B.2 | Decisão de deploy | 🔲 Pendente |
-| B.3 | Deploy produção | 🔲 Pendente |
+| B.3 | Deploy produção | ⚙️ Em andamento (CI/CD criado, Railway pendente) |
 | B.4 | Agents pré-criados | 🔲 Pendente |
 | B.5 | Google OAuth | ⚙️ Config externa pendente |
 | B.6 | Branding | ⚙️ Config externa pendente |
@@ -74,10 +74,10 @@ _Atualizado em 2026-06-18. Status: B.1 POC concluído._
 - [ ] Separar MongoDB como serviço Railway vinculado (plugin MongoDB nativo)
 
 ### B.3.2 — GitHub Action CI/CD (1h)
-- [ ] Criar `.github/workflows/deploy-librechat.yml`
-- [ ] Trigger: push em `main` com mudanças em `librechat/**`
-- [ ] Deploy via Railway CLI ou webhook
-- [ ] Secrets no GitHub: `RAILWAY_TOKEN`
+- [x] Criar `.github/workflows/deploy-librechat.yml`
+- [x] Trigger: push em `main` com mudanças em `librechat/**`
+- [x] Deploy via Railway CLI (`railway up --service librechat`)
+- [ ] Adicionar secret `RAILWAY_TOKEN` no GitHub (requer conta Railway)
 
 ### B.3.3 — Variáveis de ambiente em produção (30min)
 Configurar no painel Railway:

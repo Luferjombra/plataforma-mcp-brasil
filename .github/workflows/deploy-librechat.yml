@@ -1,0 +1,34 @@
+name: Deploy LibreChat
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'librechat/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Deploy LibreChat
+        working-directory: librechat
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service librechat --detach
+
+      - name: Wait for deployment
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          echo "Deployment triggered. Check Railway dashboard for status."
+          echo "URL: https://railway.app/dashboard"

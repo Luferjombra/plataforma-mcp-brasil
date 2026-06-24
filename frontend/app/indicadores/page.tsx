@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
 import { getIndicadores, type Indicador } from '@/lib/api'
 import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
+import { PageHeader } from '@/components/PageHeader'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -87,7 +88,14 @@ function IndicadoresInner() {
   )
 
   return (
-    <div className="cl-panel">
+    <>
+      <PageHeader
+        title="Indicadores Macroeconômicos"
+        description="SELIC · IPCA · CDI · PIB — séries históricas do BCB e IBGE"
+        sourceBadge="BCB · IBGE"
+      />
+
+      <div className="cl-panel">
 
       {/* ── LEFT PANEL ─────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -274,6 +282,7 @@ function IndicadoresInner() {
         )}
       </div>
     </div>
+    </>
   )
 }
 

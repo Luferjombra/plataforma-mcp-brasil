@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
 import { getTitulosRF, getHistoricoRF, type TituloRF, type HistoricoRF } from '@/lib/api'
 import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { formatBRL, formatPct } from '@/lib/format'
+import { PageHeader } from '@/components/PageHeader'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
@@ -99,6 +100,12 @@ function RFInner() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      <PageHeader
+        title="Renda Fixa"
+        description="Tesouro Direto — títulos públicos federais e comparativo de indexadores"
+        sourceBadge="Tesouro Transparente"
+      />
 
       {/* ── OVERLAY CHART ─────────────────────────────── */}
       <div style={{
