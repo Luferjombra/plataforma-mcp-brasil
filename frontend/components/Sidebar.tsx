@@ -45,7 +45,7 @@ export function Sidebar() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <div style={{
-              width: 28, height: 28, background: 'var(--cl-navy)',
+              width: '28px', height: '28px', background: 'var(--cl-navy)',
               borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <BarChart2 size={15} color="#fff" />
@@ -56,14 +56,14 @@ export function Sidebar() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8 }}>
+            <span style={{ position: 'relative', display: 'inline-flex', width: '8px', height: '8px' }}>
               <span style={{
                 position: 'absolute', inset: 0, borderRadius: '50%',
                 background: 'var(--cl-up)', opacity: 0.6,
                 animation: 'cl-fadeup 1.5s ease infinite',
               }} />
               <span style={{
-                position: 'relative', display: 'inline-flex', width: 8, height: 8,
+                position: 'relative', display: 'inline-flex', width: '8px', height: '8px',
                 borderRadius: '50%', background: 'var(--cl-up)',
               }} />
             </span>
