@@ -30,8 +30,8 @@ export function Sidebar() {
   useEffect(() => { setMounted(true) }, []) // eslint-disable-line react-hooks/set-state-in-effect
 
   return (
-    <aside style={{
-      flexShrink: 0, width: 220, height: '100vh',
+    <aside suppressHydrationWarning style={{
+      flexShrink: 0, width: '220px', height: '100vh',
       borderRight: '1px solid var(--cl-line)',
       background: 'var(--cl-card)',
       display: 'flex', flexDirection: 'column',
