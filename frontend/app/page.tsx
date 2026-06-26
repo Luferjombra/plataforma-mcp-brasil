@@ -20,10 +20,11 @@ interface KpiData {
 
 /* ── static data ──────────────────────────────────────────── */
 const MODULOS = [
-  { tag: 'MACRO', title: 'Indicadores', href: '/indicadores', desc: 'SELIC, IPCA, CDI e PIB com histórico completo via BCB-SGS', n: '4 séries' },
-  { tag: 'B3',   title: 'Renda Variável', href: '/rv',       desc: 'Ações e FIIs com 252 pregões de histórico via brapi.dev', n: '500+ ativos' },
-  { tag: 'TD',   title: 'Renda Fixa',     href: '/rf',       desc: 'Tesouro Direto com taxa, PU e histórico por indexador',   n: '12 títulos' },
-  { tag: 'CVM',  title: 'Fundos',         href: '/fundos',   desc: '+40 mil fundos com cota diária, PL e rentabilidade CVM', n: '40k fundos' },
+  { tag: 'MACRO',  title: 'Indicadores',    href: '/indicadores', desc: 'SELIC, IPCA, CDI e PIB com histórico completo via BCB-SGS',      n: '4 séries'   },
+  { tag: 'B3',     title: 'Renda Variável', href: '/rv',          desc: 'Ações e FIIs com 252 pregões de histórico via brapi.dev',         n: '500+ ativos' },
+  { tag: 'TD',     title: 'Tesouro Direto', href: '/rf',          desc: 'Títulos do Tesouro com taxa, PU e histórico por indexador',        n: '12 títulos'  },
+  { tag: 'ANBIMA', title: 'Renda Fixa',     href: '/renda-fixa',  desc: 'Debêntures, CRI e CRA com preços indicativos e taxas ANBIMA',     n: 'Mercado sec.' },
+  { tag: 'CVM',    title: 'Fundos',         href: '/fundos',      desc: '+40 mil fundos com cota diária, PL e rentabilidade CVM',          n: '40k fundos'  },
 ]
 
 const EVENTOS = [
@@ -226,7 +227,8 @@ export default function HomePage() {
             {[
               { label: 'Indicadores', href: '/indicadores' },
               { label: 'Renda Variável', href: '/rv' },
-              { label: 'Renda Fixa', href: '/rf' },
+              { label: 'Tesouro Direto', href: '/rf' },
+              { label: 'Renda Fixa', href: '/renda-fixa' },
               { label: 'Fundos', href: '/fundos' },
               { label: 'Chat Finance', href: '/copilot' },
               { label: 'Status', href: '/status' },
