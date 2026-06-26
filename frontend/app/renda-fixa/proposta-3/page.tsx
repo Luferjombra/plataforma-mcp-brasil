@@ -213,8 +213,8 @@ export default function RendaFixaP3() {
 
       <PageHeader
         title="Renda Fixa"
-        subtitle="Scanner de mercado secundário · ANBIMA"
-        badge="ANBIMA"
+        description="Scanner de mercado secundário · ANBIMA"
+        sourceBadge="ANBIMA"
       />
 
       {/* TABS */}

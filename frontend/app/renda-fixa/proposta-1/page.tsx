@@ -164,8 +164,8 @@ export default function RendaFixaP1() {
 
       <PageHeader
         title="Renda Fixa"
-        subtitle="Preços indicativos ANBIMA · mercado secundário"
-        badge="ANBIMA"
+        description="Preços indicativos ANBIMA · mercado secundário"
+        sourceBadge="ANBIMA"
       />
 
       {/* KPI BAR */}

@@ -206,8 +206,8 @@ export default function RendaFixaP2() {
 
       <PageHeader
         title="Renda Fixa"
-        subtitle="Mercado secundário · preços indicativos ANBIMA"
-        badge="ANBIMA"
+        description="Mercado secundário · preços indicativos ANBIMA"
+        sourceBadge="ANBIMA"
       />
 
       {/* TABS como cartões seletores */}
