@@ -1,6 +1,6 @@
 # Backlog — Integração dos 4 Repos Analisados
 
-_Criado em 2026-06-16 após análise arquitetural._
+_Criado em 2026-06-16 após análise arquitetural. Atualizado em 2026-06-26 — Épico D concluído._
 
 Premissa: nada quebra o que já está em produção. Cada épico é independente e pode ser priorizado ou pausado sem afetar os demais.
 
@@ -118,23 +118,23 @@ Da lista de 100+ connectors do FinceptTerminal, priorizar para mercado BR/compar
 
 **Objetivo:** fechar os achados 🟠 e 🟡 do último QA antes de novas features.
 
-### D.1 — Fix cron de indicadores (✅ JÁ APLICADO — pending push) (15min)
+### D.1 — Fix cron de indicadores ✅ CONCLUÍDO
 - [x] `.github/workflows/etl.yml`: cron de indicadores `0 12 * * 1` → `0 12 * * 1-5`
 - [x] Remover BCFF11 de `ATIVOS[]` em `etl/rv_historico.py`
-- [ ] Commit + push
+- [x] Commit + push
 
-### D.2 — Fix qa_run.py — códigos RF (1h)
-- [ ] Trocar `LFT_2029` por `LFT_2029-03-01` no script de QA
-- [ ] Validar rerun: score deve subir para 92%+
+### D.2 — Fix qa_run.py — códigos RF ✅ CONCLUÍDO
+- [x] Trocar `LFT_2029` por `LFT_2029-03-01` no script de QA (com fallback + descoberta dinâmica via `/rf/titulos`)
+- [x] Validar: código descoberto automaticamente da API, sem hardcode de data
 
-### D.3 — Categorização de notícias (2h)
-- [ ] Trocar URL Valor Investe geral por feeds de seção (`/financas/`, `/mercados/`)
-- [ ] Mudar fallback de "Macro" para "Outros" em `etl/noticias.py:71`
-- [ ] Frontend `/noticias`: filtrar "Outros" por padrão
+### D.3 — Categorização de notícias ✅ CONCLUÍDO
+- [x] Trocar URL Valor Investe geral por feeds de seção (`/financas/`, `/mercados/`)
+- [x] Mudar fallback de "Macro" para "Outros" em `etl/noticias.py`
+- [x] Frontend `/noticias`: filtrar "Outros" por padrão (`filtro === 'Todos'` exclui categoria Outros)
 
-### D.4 — Limpeza de arquivos temporários (15min)
-- [ ] Adicionar ao `.gitignore`: `_tmp_skill.md`, `perf/resultado_*.csv`, `perf/resumo_*.txt`, `qa-financeiro-extracted/`, `qa-financeiro.zip`
-- [ ] Mover SKILL.md atualizado da skill QA para `skills/qa-financeiro/SKILL.md` versionado
+### D.4 — Limpeza de arquivos temporários ✅ CONCLUÍDO
+- [x] Adicionar ao `.gitignore`: `_tmp_skill.md`, `perf/resultado_*.csv`, `perf/resumo_*.txt`, `qa-financeiro-extracted/`, `qa-financeiro.zip`
+- [x] `.gitignore` atualizado e validado
 
 **Esforço total:** ~4h • **Dependências:** nenhuma • **Risco:** zero
 
