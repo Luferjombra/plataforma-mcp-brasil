@@ -13,6 +13,8 @@ on:
     # IPCA (mensal) e PIB (trimestral) só atualizam quando há nova publicação,
     # mas o ETL é idempotente (upsert), então rodar diário é seguro.
     - cron: '0 12 * * 1-5'
+    # ANBIMA: índices IMA/IDA + debêntures às 14h BRT (17h UTC) — dados D-1 disponíveis
+    - cron: '0 17 * * 1-5'
   workflow_dispatch:
     inputs:
       etl:
@@ -26,6 +28,7 @@ on:
           - rv_historico
           - fundos
           - indicadores
+          - anbima
 
 jobs:
   # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
@@ -120,3 +123,28 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+  # ── ANBIMA (Índices IMA/IDA + Debêntures + VNA) ───────────────────────────
+  etl-anbima:
+    name: ETL ANBIMA (Índices + Debêntures + VNA)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'anbima' || github.event.inputs.etl == 'all') ||
+      github.event_name == 'schedule' && github.event.schedule == '0 17 * * 1-5'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+      - name: Rodar ETL ANBIMA
+        working-directory: etl
+        run: python anbima.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ANBIMA_CLIENT_ID: ${{ secrets.ANBIMA_CLIENT_ID }}
+          ANBIMA_CLIENT_SECRET: ${{ secrets.ANBIMA_CLIENT_SECRET }}
