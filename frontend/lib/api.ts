@@ -336,6 +336,10 @@ export function getCRA(limit = 50) {
   )
 }
 
+export function getAnbimaSparklines(tipo: 'debentures' | 'cri' | 'cra', n = 7) {
+  return fetchAPI<{ data: Record<string, number[]> }>(`/anbima/${tipo}/sparklines?n=${n}`)
+}
+
 // Busca global
 export interface SearchResult {
   q: string

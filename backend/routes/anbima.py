@@ -129,6 +129,50 @@ def get_debentures(
     }
 
 
+def _get_sparklines(tipo: str, n: int) -> dict:
+    """Retorna as últimas N taxas_indicativas de cada ativo, por código."""
+    tabela = f"anbima_{tipo}_historico"
+    res = (
+        supabase.table(tabela)
+        .select("data,codigo,taxa_indicativa")
+        .order("data", desc=True)
+        .limit(min(n * 300, 2000))
+        .execute()
+    )
+    if not res.data:
+        return {}
+
+    datas_vistas: list[str] = []
+    datas_set: set[str] = set()
+    for row in res.data:
+        d = row["data"]
+        if d not in datas_set:
+            datas_set.add(d)
+            datas_vistas.append(d)
+        if len(datas_vistas) >= n:
+            break
+
+    datas_validas = set(datas_vistas)
+    from collections import defaultdict
+    series: dict[str, list[float]] = defaultdict(list)
+    rows_filtrados = sorted(
+        [r for r in res.data if r["data"] in datas_validas and r["taxa_indicativa"] is not None],
+        key=lambda x: x["data"],
+    )
+    for row in rows_filtrados:
+        series[row["codigo"]].append(float(row["taxa_indicativa"]))
+
+    return dict(series)
+
+
+@router.get("/debentures/sparklines")
+def get_debentures_sparklines(
+    n: int = Query(7, ge=2, le=30, description="Número de datas de referência"),
+):
+    """Últimas N taxas_indicativas por debênture (para sparklines)."""
+    return {"data": _get_sparklines("debentures", n)}
+
+
 @router.get("/debentures/{codigo}")
 def get_historico_debenture(
     codigo: str,
@@ -218,6 +262,14 @@ def _get_credito_privado_historico(tipo: str, codigo: str, limit: int):
     return {"codigo": codigo.upper(), "cadastro": cadastro.data[0], "historico": historico.data or []}
 
 
+@router.get("/cri/sparklines")
+def get_cri_sparklines(
+    n: int = Query(7, ge=2, le=30, description="Número de datas de referência"),
+):
+    """Últimas N taxas_indicativas por CRI (para sparklines)."""
+    return {"data": _get_sparklines("cri", n)}
+
+
 @router.get("/cri")
 def get_cri(
     indexador: str = Query(None, description="Filtrar por indexador: CDI, IPCA, PRE, TR"),
@@ -234,6 +286,14 @@ def get_historico_cri(
 ):
     """Retorna histórico de preços e taxas de um CRI."""
     return _get_credito_privado_historico("cri", codigo, max(1, min(int(limit), 2000)))
+
+
+@router.get("/cra/sparklines")
+def get_cra_sparklines(
+    n: int = Query(7, ge=2, le=30, description="Número de datas de referência"),
+):
+    """Últimas N taxas_indicativas por CRA (para sparklines)."""
+    return {"data": _get_sparklines("cra", n)}
 
 
 @router.get("/cra")
