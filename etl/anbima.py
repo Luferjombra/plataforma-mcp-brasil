@@ -263,6 +263,108 @@ def etl_vna(client: httpx.Client, token: str, data_ref: date | None = None) -> i
     return rows_total
 
 
+# ── ETL CRI ───────────────────────────────────────────────────────────────────
+def _etl_credito_privado(
+    client: httpx.Client,
+    token: str,
+    tipo: str,         # "cri" ou "cra"
+    data_ref: date | None = None,
+) -> int:
+    """Coleta preços indicativos de CRI ou CRA e atualiza cadastro."""
+    if data_ref is None:
+        data_ref = date.today() - timedelta(days=1)
+
+    data_str = data_ref.strftime("%Y-%m-%d")
+    tabela_cadastro  = f"anbima_{tipo}_cadastro"
+    tabela_historico = f"anbima_{tipo}_historico"
+    rows_total = 0
+    page = 1
+    page_size = 100
+
+    with ETLRun(f"anbima_{tipo}") as run:
+        while True:
+            try:
+                resp = retry_request(
+                    client,
+                    f"{BASE_URL}/feed/precos-indices/v1/{tipo}/mercado-secundario",
+                    params={"data": data_str, "page": page, "pageSize": page_size},
+                    **{"headers": auth_headers(token)},
+                )
+                itens = resp.json()
+
+                if not itens:
+                    break
+
+                cadastros, historicos = [], []
+
+                for item in itens:
+                    codigo = item.get("codigo_ativo") or item.get("codigo")
+                    if not codigo:
+                        continue
+
+                    cadastros.append({
+                        "codigo":               codigo,
+                        "cedente":              item.get("cedente") or item.get("emissor"),
+                        "cnpj_cedente":         item.get("cnpj_cedente") or item.get("cnpj"),
+                        "securitizadora":       item.get("securitizadora"),
+                        "cnpj_securitizadora":  item.get("cnpj_securitizadora"),
+                        "indexador":            item.get("indexador"),
+                        "taxa_emissao":         item.get("taxa_emissao"),
+                        "data_emissao":         item.get("data_emissao"),
+                        "data_vencimento":      item.get("data_vencimento"),
+                        "percentual_index":     item.get("percentual_indexador"),
+                        "rating_nota":          item.get("rating"),
+                        "serie":                item.get("serie") or item.get("numero_serie"),
+                        "ativo":                True,
+                    })
+
+                    historicos.append({
+                        "codigo":           codigo,
+                        "data":             data_str,
+                        "pu_par":           item.get("pu_par"),
+                        "pu_mercado":       item.get("pu_mercado"),
+                        "taxa_indicativa":  item.get("taxa_indicativa"),
+                        "spread_ipca":      item.get("spread_ipca"),
+                        "spread_cdi":       item.get("spread_cdi"),
+                        "duration":         item.get("duration"),
+                        "percentual_pu":    item.get("percentual_pu"),
+                        "volume_negociado": item.get("volume"),
+                    })
+
+                if cadastros:
+                    supabase.table(tabela_cadastro).upsert(
+                        cadastros, on_conflict="codigo"
+                    ).execute()
+
+                if historicos:
+                    supabase.table(tabela_historico).upsert(
+                        historicos, on_conflict="codigo,data"
+                    ).execute()
+                    rows_total += len(historicos)
+
+                print(f"  Página {page}: {len(historicos)} {tipo.upper()}s")
+
+                if len(itens) < page_size:
+                    break
+                page += 1
+
+            except Exception as e:
+                print(f"  Página {page}: ERRO — {e}")
+                break
+
+        run.set_rows(rows_total)
+
+    return rows_total
+
+
+def etl_cri(client: httpx.Client, token: str, data_ref: date | None = None) -> int:
+    return _etl_credito_privado(client, token, "cri", data_ref)
+
+
+def etl_cra(client: httpx.Client, token: str, data_ref: date | None = None) -> int:
+    return _etl_credito_privado(client, token, "cra", data_ref)
+
+
 # ── Run principal ─────────────────────────────────────────────────────────────
 def run(feed: str = "all", data_ref: date | None = None):
     print("=== ETL ANBIMA ===\n")
@@ -285,6 +387,14 @@ def run(feed: str = "all", data_ref: date | None = None):
             print("\n-> Debêntures...")
             totais["debentures"] = etl_debentures(client, token, data_ref)
 
+        if feed in ("all", "cri"):
+            print("\n-> CRI (Certificados de Recebíveis Imobiliários)...")
+            totais["cri"] = etl_cri(client, token, data_ref)
+
+        if feed in ("all", "cra"):
+            print("\n-> CRA (Certificados de Recebíveis do Agronegócio)...")
+            totais["cra"] = etl_cra(client, token, data_ref)
+
         if feed in ("all", "vna"):
             print("\n-> VNA (títulos públicos)...")
             totais["vna"] = etl_vna(client, token, data_ref)
@@ -295,7 +405,7 @@ def run(feed: str = "all", data_ref: date | None = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ETL ANBIMA")
     parser.add_argument("--feed", default="all",
-                        choices=["all", "indices", "debentures", "vna"],
+                        choices=["all", "indices", "debentures", "cri", "cra", "vna"],
                         help="Qual feed executar (padrão: all)")
     parser.add_argument("--data",
                         help="Data de referência YYYY-MM-DD (padrão: ontem)")
