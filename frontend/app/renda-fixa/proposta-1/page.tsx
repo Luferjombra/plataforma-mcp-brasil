@@ -229,7 +229,7 @@ export default function RendaFixaP1() {
       </div>
 
       {/* TABELA */}
-      {loading ? <SkeletonShimmer lines={8} /> : error ? <ErrorState message={error} /> : (
+      {loading ? <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{Array.from({length: 8}).map((_, i) => <SkeletonShimmer key={i} h={38} />)}</div> : error ? <ErrorState msg={error} onRetry={() => window.location.reload()} /> : (
         <div style={{ border: '1px solid var(--cl-line)', borderRadius: 8, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>

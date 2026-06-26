@@ -254,8 +254,8 @@ export default function RendaFixaP3() {
 
           {/* Items */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {loading ? <div style={{ padding: 16 }}><SkeletonShimmer lines={6} /></div> :
-             error ? <div style={{ padding: 16 }}><ErrorState message={error} /></div> :
+            {loading ? <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>{Array.from({length: 6}).map((_, i) => <SkeletonShimmer key={i} h={52} />)}</div> :
+             error ? <div style={{ padding: 16 }}><ErrorState msg={error} onRetry={() => window.location.reload()} /></div> :
              filtered.map(item => {
                const accent = item.indexador ? (IDX_ACCENT[item.indexador] ?? 'var(--cl-ink3)') : 'var(--cl-ink3)'
                const isSel = selected?.codigo === item.codigo

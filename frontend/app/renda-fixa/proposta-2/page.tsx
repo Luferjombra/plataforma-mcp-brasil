@@ -252,7 +252,7 @@ export default function RendaFixaP2() {
       </div>
 
       {/* CARD GRID */}
-      {loading ? <SkeletonShimmer lines={6} /> : error ? <ErrorState message={error} /> : (
+      {loading ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>{Array.from({length: 6}).map((_, i) => <SkeletonShimmer key={i} h={220} />)}</div> : error ? <ErrorState msg={error} onRetry={() => window.location.reload()} /> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
           {filtered.map(c => <AssetCardComponent key={c.codigo} card={c} />)}
         </div>
