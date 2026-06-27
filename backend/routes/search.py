@@ -1,4 +1,5 @@
 import asyncio
+from typing import Union
 
 from fastapi import APIRouter, Query
 from db import supabase
@@ -39,8 +40,9 @@ def _buscar_fundos(pattern: str, limit: int):
 
 
 @router.get("")
-async def search(q: str = Query(..., min_length=1, max_length=100), limit: int = Query(5, ge=1, le=20)):
+async def search(q: str = Query(..., min_length=1, max_length=100), limit: Union[int, str] = Query(5, description="Número máximo de resultados por categoria (inteiro). Padrão: 5. Máx: 20.")):
     """Busca ativos, títulos e fundos por nome ou código (3 queries em paralelo)."""
+    limit = max(1, min(int(limit), 20))
     q = q.strip()
     pattern = f"%{q}%"
 

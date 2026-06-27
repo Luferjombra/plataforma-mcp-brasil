@@ -13,6 +13,9 @@ on:
     # IPCA (mensal) e PIB (trimestral) só atualizam quando há nova publicação,
     # mas o ETL é idempotente (upsert), então rodar diário é seguro.
     - cron: '0 12 * * 1-5'
+    # Notícias RSS: 2x por dia todos os dias (feeds atualizam 24/7)
+    - cron: '0 11 * * *'
+    - cron: '0 22 * * *'
     # ANBIMA: índices IMA/IDA + debêntures às 14h BRT (17h UTC) — dados D-1 disponíveis
     - cron: '0 17 * * 1-5'
   workflow_dispatch:
@@ -28,6 +31,7 @@ on:
           - rv_historico
           - fundos
           - indicadores
+          - noticias
           - anbima
           - anbima_cri
           - anbima_cra
@@ -122,6 +126,29 @@ jobs:
       - name: Rodar ETL Indicadores
         working-directory: etl
         run: python indicadores.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+  # ── Notícias RSS ──────────────────────────────────────────────────────────
+  etl-noticias:
+    name: ETL Notícias RSS
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'noticias' || github.event.inputs.etl == 'all') ||
+      github.event_name == 'schedule' && (github.event.schedule == '0 11 * * *' || github.event.schedule == '0 22 * * *')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+      - name: Rodar ETL Notícias
+        working-directory: etl
+        run: python noticias.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

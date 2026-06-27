@@ -1,4 +1,5 @@
 import logging
+from typing import Union
 
 from fastapi import APIRouter, Query, HTTPException
 from db import supabase
@@ -36,9 +37,10 @@ def get_ativos(setor: str = Query(None), ativo: bool = Query(True)):
 
 
 @router.get("/historico/{ticker}")
-def get_historico(ticker: str, limit: int = Query(252, ge=1, le=2000)):
+def get_historico(ticker: str, limit: Union[int, str] = Query(252, description="Número de registros de pregão (inteiro). Padrão: 252 (≈1 ano útil). Máx: 2000.")):
     """Retorna historico de pregao de um ativo."""
     ticker = ticker.upper()
+    limit = max(1, min(int(limit), 2000))
     result = (
         supabase.table("rv_historico")
         .select("*")
