@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proposta 3 — Market Scanner</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #0f172a; }
+  :root {
+    --navy: #1e3a5f; --accent: #1f6feb; --up: #16a34a; --down: #dc2626;
+    --amber: #d97706; --ink: #0f172a; --ink3: #64748b;
+    --card: #ffffff; --line: #e2e8f0; --line2: #f1f5f9;
+    --up-soft: #dcfce7; --accent-soft: #eff6ff; --amber-soft: #fffbeb;
+  }
+  .page { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  .badge-prop { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 4px; background: #7c3aed; color: #fff; letter-spacing: .06em; margin-bottom: 12px; }
+  h1 { font-size: 28px; font-weight: 600; color: var(--ink); line-height: 1.2; }
+  .subtitle { font-size: 13px; color: var(--ink3); margin-top: 6px; }
+  .badge-src { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border: 1px solid rgba(31,111,235,.18); border-radius: 4px; padding: 3px 10px; }
+  .header-row { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
+
+  /* TABS */
+  .tabs { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 16px; width: fit-content; }
+  .tab { padding: 8px 20px; font-size: 13px; background: var(--navy); color: #fff; border: none; cursor: pointer; font-weight: 700; }
+  .tab.off { background: transparent; color: var(--ink); font-weight: 400; }
+  .tab-count { margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,.2); color: #fff; }
+  .tab-count-off { margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--line2); color: var(--ink3); }
+
+  /* SPLIT LAYOUT */
+  .split { display: grid; grid-template-columns: 320px 1fr; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-height: 560px; }
+
+  /* LIST PANEL */
+  .list-panel { border-right: 1px solid var(--line); background: var(--card); display: flex; flex-direction: column; }
+  .list-header { padding: 12px; border-bottom: 1px solid var(--line); }
+  .search { width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; color: var(--ink); background: var(--line2); outline: none; }
+  .list-items { overflow-y: auto; flex: 1; }
+  .list-item { padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .1s; }
+  .list-item.active { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+  .list-item:hover:not(.active) { background: var(--line2); }
+  .item-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .item-code { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--navy); }
+  .item-taxa { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .taxa-cdi { color: var(--up); }
+  .taxa-ipca { color: var(--accent); }
+  .taxa-pre { color: var(--amber); }
+  .item-emissor { font-size: 11px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+  .tag { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; letter-spacing: .04em; }
+  .tag-cdi { background: var(--up-soft); color: var(--up); }
+  .tag-ipca { background: var(--accent-soft); color: var(--accent); }
+  .tag-pre { background: var(--amber-soft); color: var(--amber); }
+  .list-footer { padding: 10px 14px; border-top: 1px solid var(--line); font-size: 11px; color: var(--ink3); }
+
+  /* DETAIL PANEL */
+  .detail-panel { background: var(--card); padding: 24px; overflow-y: auto; }
+  .detail-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+  .detail-code { font-size: 22px; font-weight: 700; font-family: monospace; color: var(--ink); }
+  .detail-emissor { font-size: 13px; color: var(--ink3); margin-top: 4px; }
+  .detail-rating { font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 6px; background: var(--up-soft); color: var(--up); }
+
+  /* TAXA HERO */
+  .taxa-hero { background: var(--accent-soft); border: 1px solid rgba(31,111,235,.15); border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; text-align: center; }
+  .taxa-hero-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); margin-bottom: 8px; }
+  .taxa-hero-value { font-size: 48px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1; }
+  .taxa-hero-sub { font-size: 12px; color: var(--accent); opacity: .7; margin-top: 6px; }
+
+  /* SPREADS */
+  .spread-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .spread-card { background: var(--line2); border-radius: 8px; padding: 14px; text-align: center; }
+  .spread-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink3); margin-bottom: 6px; }
+  .spread-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .spread-sub { font-size: 10px; color: var(--ink3); margin-top: 3px; }
+
+  /* INFO GRID */
+  .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .info-cell { padding: 12px; background: var(--line2); border-radius: 8px; }
+  .info-key { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink3); margin-bottom: 4px; }
+  .info-val { font-size: 14px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* DURATION BAR */
+  .dur-section { margin-bottom: 20px; }
+  .dur-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink3); margin-bottom: 10px; }
+  .dur-value-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink3); margin-bottom: 6px; }
+  .dur-track { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .dur-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), #7c3aed); }
+
+  /* PU */
+  .pu-section { background: var(--line2); border-radius: 8px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+  .pu-label { font-size: 11px; color: var(--ink3); font-weight: 600; }
+  .pu-value { font-size: 18px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .pu-ref { font-size: 10px; color: var(--ink3); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="badge-prop">PROPOSTA 3 — MARKET SCANNER</div>
+
+  <div class="header-row">
+    <div>
+      <h1>Renda Fixa</h1>
+      <p class="subtitle">Scanner de mercado secundário · ANBIMA</p>
+    </div>
+    <span class="badge-src">ANBIMA</span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab">Debêntures<span class="tab-count">148</span></button>
+    <button class="tab off">CRI<span class="tab-count-off">63</span></button>
+    <button class="tab off">CRA<span class="tab-count-off">41</span></button>
+  </div>
+
+  <div class="split">
+    <!-- LIST -->
+    <div class="list-panel">
+      <div class="list-header">
+        <input class="search" type="text" placeholder="🔍  Buscar código ou emissor..." value="">
+      </div>
+      <div class="list-items">
+        <div class="list-item active">
+          <div class="item-top">
+            <span class="item-code">VALE24</span>
+            <span class="item-taxa taxa-ipca">IPCA+6.20%</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="item-emissor">Vale S.A.</span>
+            <span class="tag tag-ipca">IPCA</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">PETR25</span>
+            <span class="item-taxa taxa-cdi">CDI+1.85%</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="item-emissor">Petróleo Brasileiro S.A.</span>
+            <span class="tag tag-cdi">CDI</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">ITUB23</span>
+            <span class="item-taxa taxa-cdi">CDI+1.40%</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="item-emissor">Itaú Unibanco</span>
+            <span class="tag tag-cdi">CDI</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">RDVT11</span>
+            <span class="item-taxa taxa-ipca">IPCA+7.15%</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="item-emissor">Rede D'Or São Luiz</span>
+            <span class="tag tag-ipca">IPCA</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">CCRO14</span>
+            <span class="item-taxa taxa-pre">13.42%</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="item-emissor">CCR S.A.</span>
+            <span class="tag tag-pre">PRE</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">EMBR12</span>
+            <span class="item-taxa taxa-cdi">CDI+2.10%</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="item-emissor">Embraer S.A.</span>
+            <span class="tag tag-cdi">CDI</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">MULT15</span>
+            <span class="item-taxa taxa-ipca">IPCA+6.95%</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="item-emissor">Multiplan Empreendimentos</span>
+            <span class="tag tag-ipca">IPCA</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">RAIZ14</span>
+            <span class="item-taxa taxa-ipca">IPCA+5.80%</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="item-emissor">Raízen Combustíveis</span>
+            <span class="tag tag-ipca">IPCA</span>
+          </div>
+        </div>
+      </div>
+      <div class="list-footer">148 ativos · ref. 2026-06-25</div>
+    </div>
+
+    <!-- DETAIL -->
+    <div class="detail-panel">
+      <div class="detail-top">
+        <div>
+          <div class="detail-code">VALE24</div>
+          <div class="detail-emissor">Vale S.A. · Setor: Mineração</div>
+        </div>
+        <span class="detail-rating">AA+</span>
+      </div>
+
+      <div class="taxa-hero">
+        <div class="taxa-hero-label">Taxa Indicativa IPCA+</div>
+        <div class="taxa-hero-value">6.20%</div>
+        <div class="taxa-hero-sub">a.a. · mercado secundário · preço indicativo ANBIMA</div>
+      </div>
+
+      <div class="spread-row">
+        <div class="spread-card">
+          <div class="spread-label">Spread IPCA</div>
+          <div class="spread-value">220 bps</div>
+          <div class="spread-sub">sobre NTN-B par</div>
+        </div>
+        <div class="spread-card">
+          <div class="spread-label">Spread CDI</div>
+          <div class="spread-value">—</div>
+          <div class="spread-sub">não aplicável</div>
+        </div>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-cell">
+          <div class="info-key">Indexador</div>
+          <div class="info-val">IPCA</div>
+        </div>
+        <div class="info-cell">
+          <div class="info-key">Vencimento</div>
+          <div class="info-val">2029-03-15</div>
+        </div>
+        <div class="info-cell">
+          <div class="info-key">Volume Neg.</div>
+          <div class="info-val">R$92M</div>
+        </div>
+      </div>
+
+      <div class="dur-section">
+        <div class="dur-title">Duration</div>
+        <div class="dur-value-row">
+          <span>Curto prazo</span>
+          <span style="font-weight:700;color:var(--ink)">4.1 anos</span>
+          <span>Longo prazo (10a)</span>
+        </div>
+        <div class="dur-track">
+          <div class="dur-fill" style="width:41%"></div>
+        </div>
+      </div>
+
+      <div class="pu-section">
+        <div>
+          <div class="pu-label">PU Mercado</div>
+          <div class="pu-ref">ref. 2026-06-25</div>
+        </div>
+        <div style="text-align:right">
+          <div class="pu-value">R$ 1.284,62</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

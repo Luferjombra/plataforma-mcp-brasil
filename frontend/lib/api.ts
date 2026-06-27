@@ -261,6 +261,85 @@ export function getAnaliseCarteira(sessionId: string, periodoDias = 252) {
   )
 }
 
+// ANBIMA — Renda Fixa (Debêntures, CRI, CRA)
+export interface AnbimaDebenture {
+  codigo: string
+  data: string
+  pu_mercado: number | null
+  taxa_indicativa: number | null
+  spread_ipca: number | null
+  spread_cdi: number | null
+  duration: number | null
+  volume_negociado: number | null
+  anbima_debentures_cadastro: {
+    nome_emissor: string | null
+    indexador: string | null
+    data_vencimento: string | null
+    rating_nota: string | null
+    setor: string | null
+  } | null
+}
+
+export interface AnbimaCRI {
+  codigo: string
+  data: string
+  pu_mercado: number | null
+  taxa_indicativa: number | null
+  spread_ipca: number | null
+  spread_cdi: number | null
+  duration: number | null
+  volume_negociado: number | null
+  anbima_cri_cadastro: {
+    cedente: string | null
+    securitizadora: string | null
+    indexador: string | null
+    data_vencimento: string | null
+    rating_nota: string | null
+    serie: string | null
+  } | null
+}
+
+export interface AnbimaCRA {
+  codigo: string
+  data: string
+  pu_mercado: number | null
+  taxa_indicativa: number | null
+  spread_ipca: number | null
+  spread_cdi: number | null
+  duration: number | null
+  volume_negociado: number | null
+  anbima_cra_cadastro: {
+    cedente: string | null
+    securitizadora: string | null
+    indexador: string | null
+    data_vencimento: string | null
+    rating_nota: string | null
+    serie: string | null
+  } | null
+}
+
+export function getDebentures(limit = 50) {
+  return fetchAPI<{ data: AnbimaDebenture[]; total: number; data_referencia: string | null }>(
+    `/anbima/debentures?limit=${limit}`
+  )
+}
+
+export function getCRI(limit = 50) {
+  return fetchAPI<{ data: AnbimaCRI[]; total: number; data_referencia: string | null }>(
+    `/anbima/cri?limit=${limit}`
+  )
+}
+
+export function getCRA(limit = 50) {
+  return fetchAPI<{ data: AnbimaCRA[]; total: number; data_referencia: string | null }>(
+    `/anbima/cra?limit=${limit}`
+  )
+}
+
+export function getAnbimaSparklines(tipo: 'debentures' | 'cri' | 'cra', n = 7) {
+  return fetchAPI<{ data: Record<string, number[]> }>(`/anbima/${tipo}/sparklines?n=${n}`)
+}
+
 // Busca global
 export interface SearchResult {
   q: string
