@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V3 — Renda Fixa · Dashboard Contextual (FINAL)</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #0c1118; padding: 24px; }
+
+:root {
+  --cl-navy: #13315c;
+  --cl-accent: #1f6feb;
+  --cl-accent-soft: rgba(31,111,235,0.08);
+  --cl-up: #0f9d58;
+  --cl-up-soft: rgba(15,157,88,0.10);
+  --cl-down: #d93838;
+  --cl-down-soft: rgba(217,56,56,0.10);
+  --cl-amber: #b9770a;
+  --cl-amber-soft: rgba(185,119,10,0.10);
+  --cl-ink: #0c1118;
+  --cl-ink2: #374151;
+  --cl-ink3: #6b7280;
+  --cl-card: #ffffff;
+  --cl-line: #e5e7eb;
+  --cl-line2: #f3f4f6;
+  --cl-radius: 14px;
+  --cl-radius-sm: 9px;
+}
+
+.wrap { max-width: 1100px; margin: 0 auto; }
+.page-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  background: #7c3aed; color: #fff; padding: 3px 10px; border-radius: 4px;
+  display: inline-block; margin-bottom: 12px; }
+.page-title { font-size: 22px; font-weight: 700; color: var(--cl-ink); margin-bottom: 4px; }
+.page-sub { font-size: 12px; color: var(--cl-ink3); margin-bottom: 20px; }
+
+/* ── Topbar ── */
+.topbar {
+  background: var(--cl-navy);
+  border-radius: var(--cl-radius-sm) var(--cl-radius-sm) 0 0;
+  padding: 16px 20px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+}
+.topbar-title { font-size: 18px; font-weight: 700; color: #fff; }
+.topbar-sub { font-size: 11px; color: rgba(255,255,255,.5); margin-top: 2px; }
+.topbar-stats { display: flex; gap: 24px; align-items: center; }
+.stat-item { text-align: center; }
+.stat-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: rgba(255,255,255,.4); margin-bottom: 2px; }
+.stat-val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-ipca { color: #60a5fa; }
+.stat-cdi  { color: #34d399; }
+.stat-pre  { color: #fbbf24; }
+.badge-src { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--cl-accent); background: rgba(31,111,235,.18); border: 1px solid rgba(31,111,235,.3);
+  border-radius: 4px; padding: 2px 8px; }
+
+/* ── Tab bar ── */
+.tabbar { display: flex; border-left: 1px solid var(--cl-line); border-right: 1px solid var(--cl-line); background: var(--cl-card); }
+.tab { padding: 9px 18px; font-size: 13px; cursor: pointer; border: none;
+  background: transparent; color: var(--cl-ink); border-bottom: 1px solid var(--cl-line); }
+.tab.active { background: var(--cl-navy); color: #fff; font-weight: 700; border-bottom: none; }
+.tab-count { margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+.tab.active .tab-count { background: rgba(255,255,255,.2); color: #fff; }
+.tab:not(.active) .tab-count { background: var(--cl-line2); color: var(--cl-ink3); }
+.tab-spacer { flex: 1; border-bottom: 1px solid var(--cl-line); }
+
+/* ── Split ── */
+.split { display: grid; grid-template-columns: 310px 1fr; gap: 0;
+  border: 1px solid var(--cl-line); border-top: none;
+  border-radius: 0 0 var(--cl-radius-sm) var(--cl-radius-sm);
+  overflow: hidden; min-height: 540px; }
+
+/* ── List panel ── */
+.list-panel { border-right: 1px solid var(--cl-line); background: var(--cl-card); display: flex; flex-direction: column; }
+.list-search { padding: 10px; border-bottom: 1px solid var(--cl-line); }
+.list-search input { width: 100%; padding: 7px 10px; border: 1px solid var(--cl-line);
+  border-radius: 6px; font-size: 12px; color: var(--cl-ink3); background: var(--cl-line2); outline: none; }
+.list-items { overflow-y: auto; flex: 1; }
+.list-item { padding: 11px 13px; border-bottom: 1px solid var(--cl-line); cursor: pointer; border-left: 3px solid transparent; }
+.list-item.active { background: var(--cl-accent-soft); border-left-color: var(--cl-accent); }
+.item-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+.item-code { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--cl-navy); }
+.item-rate { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.item-bottom { display: flex; align-items: center; justify-content: space-between; }
+.item-emissor { font-size: 11px; color: var(--cl-ink3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+.item-right { display: flex; align-items: center; gap: 6px; }
+.list-footer { padding: 8px 13px; border-top: 1px solid var(--cl-line); font-size: 11px; color: var(--cl-ink3); }
+
+/* ── Tags ── */
+.tag { font-size: 9px; font-weight: 700; letter-spacing: .04em; padding: 2px 6px; border-radius: 4px; }
+.tag-cdi  { background: var(--cl-up-soft);   color: var(--cl-up); }
+.tag-ipca { background: var(--cl-accent-soft); color: var(--cl-accent); }
+.tag-pre  { background: var(--cl-amber-soft); color: var(--cl-amber); }
+
+/* ── Detail panel ── */
+.detail { background: var(--cl-card); padding: 24px; overflow-y: auto; }
+.detail-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+.detail-code { font-size: 22px; font-weight: 700; font-family: monospace; color: var(--cl-ink); }
+.detail-emissor { font-size: 13px; color: var(--cl-ink3); margin-top: 4px; }
+.rating { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 6px; }
+.rating-aaa { background: rgba(15,157,88,.12); color: var(--cl-up); }
+.rating-aa  { background: rgba(15,157,88,.08); color: var(--cl-up); }
+.rating-a   { background: rgba(31,111,235,.10); color: var(--cl-accent); }
+
+/* ── Taxa hero ── */
+.taxa-hero { background: var(--cl-accent-soft); border: 1px solid rgba(31,111,235,.15);
+  border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; text-align: center; }
+.taxa-hero-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--cl-accent); margin-bottom: 8px; }
+.taxa-hero-val { font-size: 44px; font-weight: 700; color: var(--cl-accent); font-variant-numeric: tabular-nums; line-height: 1; }
+.taxa-hero-spark { margin: 10px auto 4px; display: block; }
+.taxa-hero-sub { font-size: 11px; color: var(--cl-accent); opacity: .65; margin-top: 4px; }
+
+/* ── Spreads ── */
+.spreads { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.spread-card { background: var(--cl-line2); border-radius: 8px; padding: 14px; text-align: center; }
+.spread-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--cl-ink3); margin-bottom: 6px; }
+.spread-val { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--cl-ink); }
+.spread-sub { font-size: 10px; color: var(--cl-ink3); margin-top: 3px; }
+
+/* ── Info grid ── */
+.info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.info-cell { padding: 12px; background: var(--cl-line2); border-radius: 8px; }
+.info-key { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--cl-ink3); margin-bottom: 4px; }
+.info-val { font-size: 14px; font-weight: 600; color: var(--cl-ink); font-variant-numeric: tabular-nums; }
+
+/* ── Duration ── */
+.dur-section { margin-bottom: 20px; }
+.dur-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--cl-ink3); margin-bottom: 10px; }
+.dur-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--cl-ink3); margin-bottom: 6px; }
+.dur-track { height: 6px; background: var(--cl-line); border-radius: 3px; overflow: hidden; }
+.dur-fill  { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--cl-accent), #7c3aed); }
+
+/* ── PU ── */
+.pu-row { background: var(--cl-line2); border-radius: 8px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+.pu-label { font-size: 11px; color: var(--cl-ink3); font-weight: 600; }
+.pu-sub   { font-size: 10px; color: var(--cl-ink3); margin-top: 2px; }
+.pu-val   { font-size: 18px; font-weight: 700; color: var(--cl-ink); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-label">V3 FINAL — /renda-fixa · Dashboard Contextual</div>
+  <div class="page-title">Renda Fixa</div>
+  <div class="page-sub">Preview estático da implementação final em <code>frontend/app/renda-fixa/page.tsx</code></div>
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">Renda Fixa</div>
+      <div class="topbar-sub">Scanner de mercado secundário · ANBIMA</div>
+    </div>
+    <div class="topbar-stats">
+      <div class="stat-item">
+        <div class="stat-label">Média IPCA</div>
+        <div class="stat-val stat-ipca">IPCA+6.38%</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Média CDI</div>
+        <div class="stat-val stat-cdi">CDI+1.72%</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Média PRE</div>
+        <div class="stat-val stat-pre">13.28%</div>
+      </div>
+      <div><span class="badge-src">ANBIMA</span></div>
+    </div>
+  </div>
+
+  <!-- TAB BAR -->
+  <div class="tabbar">
+    <button class="tab active">Debêntures<span class="tab-count">100</span></button>
+    <button class="tab">CRI<span class="tab-count">63</span></button>
+    <button class="tab">CRA<span class="tab-count">41</span></button>
+    <div class="tab-spacer"></div>
+  </div>
+
+  <!-- SPLIT -->
+  <div class="split">
+    <!-- LIST PANEL -->
+    <div class="list-panel">
+      <div class="list-search">
+        <input type="text" placeholder="Buscar código ou emissor..." />
+      </div>
+
+      <div class="list-items">
+        <!-- Item ativo -->
+        <div class="list-item active">
+          <div class="item-top">
+            <span class="item-code">VALE24</span>
+            <span class="item-rate" style="color:var(--cl-accent)">IPCA+6.20%</span>
+          </div>
+          <div class="item-bottom">
+            <span class="item-emissor">Vale S.A.</span>
+            <div class="item-right">
+              <svg width="60" height="24">
+                <path d="M2,18 L12,14 L22,16 L32,10 L42,12 L52,7 L58,9" fill="none" stroke="var(--cl-accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tag tag-ipca">IPCA</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">PETR25</span>
+            <span class="item-rate" style="color:var(--cl-up)">CDI+1.85%</span>
+          </div>
+          <div class="item-bottom">
+            <span class="item-emissor">Petrobras S.A.</span>
+            <div class="item-right">
+              <svg width="60" height="24">
+                <path d="M2,14 L12,12 L22,15 L32,11 L42,13 L52,10 L58,12" fill="none" stroke="var(--cl-up)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tag tag-cdi">CDI</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">ITUB23</span>
+            <span class="item-rate" style="color:var(--cl-up)">CDI+1.40%</span>
+          </div>
+          <div class="item-bottom">
+            <span class="item-emissor">Itaú Unibanco</span>
+            <div class="item-right">
+              <svg width="60" height="24">
+                <path d="M2,16 L12,15 L22,13 L32,14 L42,11 L52,13 L58,11" fill="none" stroke="var(--cl-up)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tag tag-cdi">CDI</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">RDVT11</span>
+            <span class="item-rate" style="color:var(--cl-accent)">IPCA+7.15%</span>
+          </div>
+          <div class="item-bottom">
+            <span class="item-emissor">Rede D'Or São Luiz</span>
+            <div class="item-right">
+              <svg width="60" height="24">
+                <path d="M2,20 L12,16 L22,18 L32,12 L42,14 L52,9 L58,11" fill="none" stroke="var(--cl-accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tag tag-ipca">IPCA</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">CCRO14</span>
+            <span class="item-rate" style="color:var(--cl-amber)">13.42%</span>
+          </div>
+          <div class="item-bottom">
+            <span class="item-emissor">CCR S.A.</span>
+            <div class="item-right">
+              <svg width="60" height="24">
+                <path d="M2,10 L12,12 L22,9 L32,13 L42,11 L52,14 L58,13" fill="none" stroke="var(--cl-amber)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tag tag-pre">PRE</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">EMBR12</span>
+            <span class="item-rate" style="color:var(--cl-up)">CDI+2.10%</span>
+          </div>
+          <div class="item-bottom">
+            <span class="item-emissor">Embraer S.A.</span>
+            <div class="item-right">
+              <svg width="60" height="24">
+                <path d="M2,18 L12,15 L22,17 L32,13 L42,15 L52,11 L58,13" fill="none" stroke="var(--cl-up)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tag tag-cdi">CDI</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">MULT15</span>
+            <span class="item-rate" style="color:var(--cl-accent)">IPCA+6.95%</span>
+          </div>
+          <div class="item-bottom">
+            <span class="item-emissor">Multiplan Empreend.</span>
+            <div class="item-right">
+              <svg width="60" height="24">
+                <path d="M2,19 L12,16 L22,20 L32,14 L42,16 L52,10 L58,12" fill="none" stroke="var(--cl-accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tag tag-ipca">IPCA</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="list-item">
+          <div class="item-top">
+            <span class="item-code">RAIZ14</span>
+            <span class="item-rate" style="color:var(--cl-accent)">IPCA+5.80%</span>
+          </div>
+          <div class="item-bottom">
+            <span class="item-emissor">Raízen Combustíveis</span>
+            <div class="item-right">
+              <svg width="60" height="24">
+                <path d="M2,14 L12,12 L22,15 L32,11 L42,9 L52,12 L58,10" fill="none" stroke="var(--cl-accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tag tag-ipca">IPCA</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="list-footer">100 ativos · ref. 2026-06-26</div>
+    </div>
+
+    <!-- DETAIL PANEL -->
+    <div class="detail">
+      <div class="detail-head">
+        <div>
+          <div class="detail-code">VALE24</div>
+          <div class="detail-emissor">Vale S.A. · Mineração</div>
+        </div>
+        <span class="rating rating-aaa">AA+</span>
+      </div>
+
+      <!-- Taxa hero com sparkline -->
+      <div class="taxa-hero">
+        <div class="taxa-hero-label">Taxa Indicativa IPCA+</div>
+        <div class="taxa-hero-val">6.20%</div>
+        <svg class="taxa-hero-spark" width="220" height="36">
+          <path d="M4,28 L40,22 L76,26 L112,14 L148,18 L184,8 L216,12"
+            fill="none" stroke="var(--cl-accent)" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="taxa-hero-sub">a.a. · mercado secundário · preço indicativo ANBIMA</div>
+      </div>
+
+      <!-- Spreads -->
+      <div class="spreads">
+        <div class="spread-card">
+          <div class="spread-label">Spread IPCA</div>
+          <div class="spread-val">220 bps</div>
+          <div class="spread-sub">sobre NTN-B par</div>
+        </div>
+        <div class="spread-card">
+          <div class="spread-label">Spread CDI</div>
+          <div class="spread-val">—</div>
+          <div class="spread-sub">não aplicável</div>
+        </div>
+      </div>
+
+      <!-- Info grid -->
+      <div class="info-grid">
+        <div class="info-cell">
+          <div class="info-key">Indexador</div>
+          <div class="info-val">IPCA</div>
+        </div>
+        <div class="info-cell">
+          <div class="info-key">Vencimento</div>
+          <div class="info-val">15/03/2029</div>
+        </div>
+        <div class="info-cell">
+          <div class="info-key">Volume Neg.</div>
+          <div class="info-val">R$92M</div>
+        </div>
+      </div>
+
+      <!-- Duration -->
+      <div class="dur-section">
+        <div class="dur-title">Duration</div>
+        <div class="dur-row">
+          <span>Curto prazo</span>
+          <span style="font-weight:700;color:var(--cl-ink)">4.1 anos</span>
+          <span>Longo prazo (12a)</span>
+        </div>
+        <div class="dur-track">
+          <div class="dur-fill" style="width:34%"></div>
+        </div>
+      </div>
+
+      <!-- PU -->
+      <div class="pu-row">
+        <div>
+          <div class="pu-label">PU Mercado</div>
+          <div class="pu-sub">preço indicativo ANBIMA</div>
+        </div>
+        <div class="pu-val">R$ 1.284,62</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS -->
+  <div style="margin-top:24px; padding:16px; background:#fff; border-radius:9px; border:1px solid #e5e7eb; font-size:13px; color:#374151;">
+    <div style="font-weight:700; margin-bottom:10px; font-size:14px;">Status de deploy</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span style="color:#0f9d58; font-weight:700;">✓</span>
+        <span><code>backend/routes/anbima.py</code> — sparkline routes adicionadas</span>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span style="color:#0f9d58; font-weight:700;">✓</span>
+        <span><code>frontend/lib/api.ts</code> — <code>getAnbimaSparklines()</code></span>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span style="color:#0f9d58; font-weight:700;">✓</span>
+        <span><code>frontend/app/renda-fixa/page.tsx</code> — V3 implementada</span>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span style="color:#d93838; font-weight:700;">✗</span>
+        <span>Branch <strong>não mergeado</strong> para main → Render ainda tem código antigo</span>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span style="color:#b9770a; font-weight:700;">⏳</span>
+        <span>Migration <code>007_anbima_cri_cra.sql</code> — pendente no Supabase</span>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span style="color:#b9770a; font-weight:700;">⏳</span>
+        <span>ETL ANBIMA CRI/CRA — aguardando merge + migration</span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

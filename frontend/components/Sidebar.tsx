@@ -7,14 +7,15 @@ import { useEffect, useState } from 'react'
 import {
   TrendingUp, BarChart2, Briefcase, MessageSquare,
   Activity, Sun, Moon, Landmark, ServerCog, LayoutDashboard, Newspaper,
-  BriefcaseBusiness,
+  BriefcaseBusiness, Building2,
 } from 'lucide-react'
 
 const links = [
-  { href: '/indicadores', label: 'Indicadores',    icon: Activity,            tag: 'MACRO' },
-  { href: '/rv',          label: 'Renda Variável', icon: TrendingUp,          tag: 'B3'    },
-  { href: '/rf',          label: 'Renda Fixa',     icon: Landmark,            tag: 'TD'    },
-  { href: '/fundos',      label: 'Fundos',         icon: Briefcase,           tag: 'CVM'   },
+  { href: '/indicadores',  label: 'Indicadores',     icon: Activity,          tag: 'MACRO'  },
+  { href: '/rv',           label: 'Renda Variável',  icon: TrendingUp,        tag: 'B3'     },
+  { href: '/rf',           label: 'Tesouro Direto',  icon: Landmark,          tag: 'TD'     },
+  { href: '/renda-fixa',   label: 'Renda Fixa',      icon: Building2,         tag: 'ANBIMA' },
+  { href: '/fundos',       label: 'Fundos',          icon: Briefcase,         tag: 'CVM'    },
   { href: '/carteira',    label: 'Carteira',       icon: BriefcaseBusiness,   tag: 'NOVO'  },
   { href: '/dashboard',   label: 'Dashboard',      icon: LayoutDashboard,     tag: null    },
   { href: '/noticias',    label: 'Notícias',       icon: Newspaper,           tag: 'RSS'   },
@@ -29,8 +30,8 @@ export function Sidebar() {
   useEffect(() => { setMounted(true) }, []) // eslint-disable-line react-hooks/set-state-in-effect
 
   return (
-    <aside style={{
-      flexShrink: 0, width: 220, height: '100vh',
+    <aside suppressHydrationWarning style={{
+      flexShrink: 0, width: '220px', height: '100vh',
       borderRight: '1px solid var(--cl-line)',
       background: 'var(--cl-card)',
       display: 'flex', flexDirection: 'column',
@@ -44,7 +45,7 @@ export function Sidebar() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <div style={{
-              width: 28, height: 28, background: 'var(--cl-navy)',
+              width: '28px', height: '28px', background: 'var(--cl-navy)',
               borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <BarChart2 size={15} color="#fff" />
@@ -55,14 +56,14 @@ export function Sidebar() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8 }}>
+            <span style={{ position: 'relative', display: 'inline-flex', width: '8px', height: '8px' }}>
               <span style={{
                 position: 'absolute', inset: 0, borderRadius: '50%',
                 background: 'var(--cl-up)', opacity: 0.6,
                 animation: 'cl-fadeup 1.5s ease infinite',
               }} />
               <span style={{
-                position: 'relative', display: 'inline-flex', width: 8, height: 8,
+                position: 'relative', display: 'inline-flex', width: '8px', height: '8px',
                 borderRadius: '50%', background: 'var(--cl-up)',
               }} />
             </span>

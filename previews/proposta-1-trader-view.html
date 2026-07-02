@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proposta 1 — Trader View</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #0f172a; }
+  :root {
+    --navy: #1e3a5f; --accent: #1f6feb; --up: #16a34a; --down: #dc2626;
+    --amber: #d97706; --ink: #0f172a; --ink3: #64748b;
+    --card: #ffffff; --line: #e2e8f0; --line2: #f1f5f9;
+    --up-soft: #dcfce7; --accent-soft: #eff6ff; --amber-soft: #fffbeb;
+  }
+  .page { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  .badge-prop { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 4px; background: var(--navy); color: #fff; letter-spacing: .06em; margin-bottom: 12px; }
+  h1 { font-size: 28px; font-weight: 600; color: var(--ink); line-height: 1.2; }
+  .subtitle { font-size: 13px; color: var(--ink3); margin-top: 6px; }
+  .badge-src { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border: 1px solid rgba(31,111,235,.18); border-radius: 4px; padding: 3px 10px; }
+
+  /* KPI BAR */
+  .kpi-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--line); margin: 24px 0 20px; }
+  .kpi-cell { background: var(--card); padding: 14px 18px; }
+  .kpi-label { font-size: 10px; color: var(--ink3); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  .kpi-value { font-size: 22px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1; }
+  .kpi-sub { font-size: 10px; color: var(--ink3); margin-top: 3px; }
+
+  /* TABS + FILTERS */
+  .controls { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+  .tab-group { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .tab { padding: 8px 20px; font-size: 13px; background: transparent; color: var(--ink); border: none; cursor: pointer; }
+  .tab.active { background: var(--navy); color: #fff; font-weight: 700; }
+  .tab-count { margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,.2); color: #fff; }
+  .tab-count-off { margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--line2); color: var(--ink3); }
+  .filter-group { display: flex; gap: 6px; }
+  .filter-btn { padding: 6px 12px; font-size: 11px; font-weight: 600; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; background: transparent; color: var(--ink3); }
+  .filter-btn.cdi { border-color: var(--up); background: var(--up-soft); color: var(--up); }
+  .filter-btn.ipca { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .filter-btn.pre { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }
+
+  /* TABLE */
+  .table-wrap { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 8px 12px; font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: .06em; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--line2); }
+  td { padding: 9px 12px; font-size: 12px; color: var(--ink); border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tr:nth-child(even) td { background: var(--line2); }
+  tr:hover td { background: var(--accent-soft); }
+  .code { font-weight: 700; font-family: monospace; color: var(--navy); }
+  .tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: .04em; }
+  .tag-cdi { background: var(--up-soft); color: var(--up); }
+  .tag-ipca { background: var(--accent-soft); color: var(--accent); }
+  .tag-pre { background: var(--amber-soft); color: var(--amber); }
+  .rating-aa { color: var(--up); font-weight: 600; }
+  .rating-a { color: var(--accent); font-weight: 600; }
+  .rating-bbb { color: var(--amber); font-weight: 600; }
+  .table-footer { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 11px; color: var(--ink3); display: flex; justify-content: space-between; }
+  .header-row { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="badge-prop">PROPOSTA 1 — TRADER VIEW</div>
+
+  <div class="header-row">
+    <div>
+      <h1>Renda Fixa</h1>
+      <p class="subtitle">Preços indicativos ANBIMA · mercado secundário</p>
+    </div>
+    <span class="badge-src">ANBIMA</span>
+  </div>
+
+  <div class="kpi-bar">
+    <div class="kpi-cell">
+      <div class="kpi-label">Debêntures</div>
+      <div class="kpi-value">148</div>
+      <div class="kpi-sub">papéis disponíveis</div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-label">Volume Total</div>
+      <div class="kpi-value">R$2.4B</div>
+      <div class="kpi-sub">DEB · último dia</div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-label">Spread Médio</div>
+      <div class="kpi-value">187 bps</div>
+      <div class="kpi-sub">sobre referência</div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-label">Duration Média</div>
+      <div class="kpi-value">3.8 anos</div>
+      <div class="kpi-sub">carteira ANBIMA</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="tab-group">
+      <button class="tab active">Debêntures<span class="tab-count">148</span></button>
+      <button class="tab">CRI<span class="tab-count-off">63</span></button>
+      <button class="tab">CRA<span class="tab-count-off">41</span></button>
+    </div>
+    <div class="filter-group">
+      <button class="filter-btn">Todos</button>
+      <button class="filter-btn cdi">CDI</button>
+      <button class="filter-btn ipca">IPCA</button>
+      <button class="filter-btn pre">PRE</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Código</th><th>Emissor / Cedente</th><th>Indexador</th>
+          <th>Taxa % a.a.</th><th>Spread (bps)</th><th>Duration</th>
+          <th>Vencimento</th><th>Volume</th><th>Rating</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="code">PETR25</td><td>Petróleo Brasileiro S.A.</td><td><span class="tag tag-cdi">CDI</span></td><td><b>CDI + 1.85%</b></td><td>185</td><td>2.3a</td><td>2027-06</td><td>R$148M</td><td class="rating-aa">AAA</td></tr>
+        <tr><td class="code">VALE24</td><td>Vale S.A.</td><td><span class="tag tag-ipca">IPCA</span></td><td><b>IPCA + 6.20%</b></td><td>220</td><td>4.1a</td><td>2029-03</td><td>R$92M</td><td class="rating-aa">AA+</td></tr>
+        <tr><td class="code">ITUB23</td><td>Itaú Unibanco</td><td><span class="tag tag-cdi">CDI</span></td><td><b>CDI + 1.40%</b></td><td>140</td><td>1.8a</td><td>2026-09</td><td>R$210M</td><td class="rating-aa">AAA</td></tr>
+        <tr><td class="code">RDVT11</td><td>Rede D'Or São Luiz</td><td><span class="tag tag-ipca">IPCA</span></td><td><b>IPCA + 7.15%</b></td><td>315</td><td>5.7a</td><td>2031-12</td><td>R$67M</td><td class="rating-a">AA-</td></tr>
+        <tr><td class="code">CCRO14</td><td>CCR S.A.</td><td><span class="tag tag-pre">PRE</span></td><td><b>13.42%</b></td><td>—</td><td>3.2a</td><td>2028-06</td><td>R$54M</td><td class="rating-a">A+</td></tr>
+        <tr><td class="code">EMBR12</td><td>Embraer S.A.</td><td><span class="tag tag-cdi">CDI</span></td><td><b>CDI + 2.10%</b></td><td>210</td><td>2.9a</td><td>2027-11</td><td>R$38M</td><td class="rating-a">A</td></tr>
+        <tr><td class="code">RAIZ14</td><td>Raízen Combustíveis</td><td><span class="tag tag-ipca">IPCA</span></td><td><b>IPCA + 5.80%</b></td><td>180</td><td>6.3a</td><td>2032-08</td><td>R$29M</td><td class="rating-bbb">BBB</td></tr>
+        <tr><td class="code">MULT15</td><td>Multiplan Empreendimentos</td><td><span class="tag tag-ipca">IPCA</span></td><td><b>IPCA + 6.95%</b></td><td>295</td><td>4.8a</td><td>2030-04</td><td>R$21M</td><td class="rating-aa">AA</td></tr>
+      </tbody>
+    </table>
+    <div class="table-footer">
+      <span>148 ativos · fonte ANBIMA preços indicativos</span>
+      <span>Referência: 2026-06-25</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proposta 2 — Card Mosaic</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #0f172a; }
+  :root {
+    --navy: #1e3a5f; --accent: #1f6feb; --up: #16a34a; --down: #dc2626;
+    --amber: #d97706; --ink: #0f172a; --ink3: #64748b;
+    --card: #ffffff; --line: #e2e8f0; --line2: #f1f5f9;
+    --up-soft: #dcfce7; --accent-soft: #eff6ff; --amber-soft: #fffbeb;
+  }
+  .page { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  .badge-prop { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 4px; background: var(--accent); color: #fff; letter-spacing: .06em; margin-bottom: 12px; }
+  h1 { font-size: 28px; font-weight: 600; color: var(--ink); line-height: 1.2; }
+  .subtitle { font-size: 13px; color: var(--ink3); margin-top: 6px; }
+  .badge-src { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border: 1px solid rgba(31,111,235,.18); border-radius: 4px; padding: 3px 10px; }
+  .header-row { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+
+  /* TAB CARDS */
+  .tab-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }
+  .tab-card { padding: 14px 18px; border-radius: 10px; border: 2px solid var(--line); background: var(--card); cursor: pointer; text-align: left; transition: all .15s; }
+  .tab-card.active { border-color: var(--navy); background: var(--navy); }
+  .tab-card-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .tab-card.active .tab-card-title { color: #fff; }
+  .tab-card-desc { font-size: 11px; color: var(--ink3); margin-top: 2px; }
+  .tab-card.active .tab-card-desc { color: rgba(255,255,255,.6); }
+  .tab-card-count { font-size: 20px; font-weight: 700; color: var(--accent); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .tab-card.active .tab-card-count { color: #fff; }
+
+  /* FILTERS */
+  .filters { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+  .filter-label { font-size: 12px; color: var(--ink3); }
+  .pill { padding: 5px 14px; font-size: 12px; border-radius: 20px; border: 1px solid var(--line); cursor: pointer; background: transparent; color: var(--ink3); }
+  .pill.all { background: var(--ink); color: #fff; font-weight: 700; }
+  .pill.cdi { border-color: var(--up); background: var(--up-soft); color: var(--up); font-weight: 700; }
+  .pill.ipca { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+
+  /* ASSET CARDS */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .asset-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; cursor: pointer; transition: all .15s; position: relative; overflow: hidden; }
+  .asset-card:hover { border-color: var(--up); box-shadow: 0 4px 16px rgba(0,0,0,.08); transform: translateY(-2px); }
+  .accent-strip { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .strip-cdi { background: var(--up); }
+  .strip-ipca { background: var(--accent); }
+  .strip-pre { background: var(--amber); }
+  .strip-other { background: var(--ink3); }
+  .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; margin-top: 6px; }
+  .card-code { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--ink); }
+  .card-emissor { font-size: 11px; color: var(--ink3); margin-top: 2px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-rating { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
+  .rating-cdi { background: var(--up-soft); color: var(--up); }
+  .rating-ipca { background: var(--accent-soft); color: var(--accent); }
+  .taxa-box { border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; text-align: center; }
+  .taxa-box-cdi { background: var(--up-soft); }
+  .taxa-box-ipca { background: var(--accent-soft); }
+  .taxa-box-pre { background: var(--amber-soft); }
+  .taxa-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  .taxa-label-cdi { color: var(--up); }
+  .taxa-label-ipca { color: var(--accent); }
+  .taxa-label-pre { color: var(--amber); }
+  .taxa-value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .taxa-value-cdi { color: var(--up); }
+  .taxa-value-ipca { color: var(--accent); }
+  .taxa-value-pre { color: var(--amber); }
+  .taxa-sub { font-size: 10px; margin-top: 2px; opacity: .7; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; }
+  .meta-key { color: var(--ink3); }
+  .meta-val { font-weight: 600; color: var(--ink); margin-top: 2px; }
+  .dur-row { margin-top: 10px; }
+  .dur-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--ink3); margin-bottom: 4px; }
+  .dur-track { height: 3px; background: var(--line); border-radius: 2px; }
+  .dur-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+  .vol-row { margin-top: 10px; font-size: 10px; color: var(--ink3); display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="badge-prop">PROPOSTA 2 — CARD MOSAIC</div>
+
+  <div class="header-row">
+    <div>
+      <h1>Renda Fixa</h1>
+      <p class="subtitle">Mercado secundário · preços indicativos ANBIMA</p>
+    </div>
+    <span class="badge-src">ANBIMA</span>
+  </div>
+
+  <div class="tab-grid">
+    <div class="tab-card active">
+      <div class="tab-card-title">Debêntures</div>
+      <div class="tab-card-desc">Dívida corporativa</div>
+      <div class="tab-card-count">148</div>
+    </div>
+    <div class="tab-card">
+      <div class="tab-card-title">CRI</div>
+      <div class="tab-card-desc">Recebíveis imobiliários</div>
+      <div class="tab-card-count">63</div>
+    </div>
+    <div class="tab-card">
+      <div class="tab-card-title">CRA</div>
+      <div class="tab-card-desc">Recebíveis agronegócio</div>
+      <div class="tab-card-count">41</div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <span class="filter-label">Filtrar:</span>
+    <button class="pill all">Todos (148)</button>
+    <button class="pill cdi">CDI (87)</button>
+    <button class="pill ipca">IPCA (45)</button>
+    <button class="pill">PRE (16)</button>
+  </div>
+
+  <div class="card-grid">
+    <!-- CDI card -->
+    <div class="asset-card">
+      <div class="accent-strip strip-cdi"></div>
+      <div class="card-header">
+        <div><div class="card-code">PETR25</div><div class="card-emissor">Petróleo Brasileiro S.A.</div></div>
+        <span class="card-rating rating-cdi">AAA</span>
+      </div>
+      <div class="taxa-box taxa-box-cdi">
+        <div class="taxa-label taxa-label-cdi">Taxa CDI</div>
+        <div class="taxa-value taxa-value-cdi">CDI+1.85%</div>
+        <div class="taxa-sub taxa-label-cdi">a.a. · preço indicativo</div>
+      </div>
+      <div class="meta-grid">
+        <div><div class="meta-key">Indexador</div><div class="meta-val">CDI</div></div>
+        <div><div class="meta-key">Vencimento</div><div class="meta-val">2027-06</div></div>
+      </div>
+      <div class="dur-row">
+        <div class="dur-labels"><span>Duration</span><span>2.3 anos</span></div>
+        <div class="dur-track"><div class="dur-fill" style="width:23%"></div></div>
+      </div>
+      <div class="vol-row"><span>Volume negociado</span><span><b>R$148M</b></span></div>
+    </div>
+
+    <!-- IPCA card -->
+    <div class="asset-card">
+      <div class="accent-strip strip-ipca"></div>
+      <div class="card-header">
+        <div><div class="card-code">VALE24</div><div class="card-emissor">Vale S.A.</div></div>
+        <span class="card-rating rating-ipca">AA+</span>
+      </div>
+      <div class="taxa-box taxa-box-ipca">
+        <div class="taxa-label taxa-label-ipca">Taxa IPCA+</div>
+        <div class="taxa-value taxa-value-ipca">6.20%</div>
+        <div class="taxa-sub taxa-label-ipca">a.a. · preço indicativo</div>
+      </div>
+      <div class="meta-grid">
+        <div><div class="meta-key">Indexador</div><div class="meta-val">IPCA</div></div>
+        <div><div class="meta-key">Vencimento</div><div class="meta-val">2029-03</div></div>
+      </div>
+      <div class="dur-row">
+        <div class="dur-labels"><span>Duration</span><span>4.1 anos</span></div>
+        <div class="dur-track"><div class="dur-fill" style="width:41%"></div></div>
+      </div>
+      <div class="vol-row"><span>Volume negociado</span><span><b>R$92M</b></span></div>
+    </div>
+
+    <!-- CDI card 2 -->
+    <div class="asset-card">
+      <div class="accent-strip strip-cdi"></div>
+      <div class="card-header">
+        <div><div class="card-code">ITUB23</div><div class="card-emissor">Itaú Unibanco</div></div>
+        <span class="card-rating rating-cdi">AAA</span>
+      </div>
+      <div class="taxa-box taxa-box-cdi">
+        <div class="taxa-label taxa-label-cdi">Taxa CDI</div>
+        <div class="taxa-value taxa-value-cdi">CDI+1.40%</div>
+        <div class="taxa-sub taxa-label-cdi">a.a. · preço indicativo</div>
+      </div>
+      <div class="meta-grid">
+        <div><div class="meta-key">Indexador</div><div class="meta-val">CDI</div></div>
+        <div><div class="meta-key">Vencimento</div><div class="meta-val">2026-09</div></div>
+      </div>
+      <div class="dur-row">
+        <div class="dur-labels"><span>Duration</span><span>1.8 anos</span></div>
+        <div class="dur-track"><div class="dur-fill" style="width:18%"></div></div>
+      </div>
+      <div class="vol-row"><span>Volume negociado</span><span><b>R$210M</b></span></div>
+    </div>
+
+    <!-- IPCA card 2 -->
+    <div class="asset-card">
+      <div class="accent-strip strip-ipca"></div>
+      <div class="card-header">
+        <div><div class="card-code">RDVT11</div><div class="card-emissor">Rede D'Or São Luiz</div></div>
+        <span class="card-rating rating-ipca">AA-</span>
+      </div>
+      <div class="taxa-box taxa-box-ipca">
+        <div class="taxa-label taxa-label-ipca">Taxa IPCA+</div>
+        <div class="taxa-value taxa-value-ipca">7.15%</div>
+        <div class="taxa-sub taxa-label-ipca">a.a. · preço indicativo</div>
+      </div>
+      <div class="meta-grid">
+        <div><div class="meta-key">Indexador</div><div class="meta-val">IPCA</div></div>
+        <div><div class="meta-key">Vencimento</div><div class="meta-val">2031-12</div></div>
+      </div>
+      <div class="dur-row">
+        <div class="dur-labels"><span>Duration</span><span>5.7 anos</span></div>
+        <div class="dur-track"><div class="dur-fill" style="width:57%"></div></div>
+      </div>
+      <div class="vol-row"><span>Volume negociado</span><span><b>R$67M</b></span></div>
+    </div>
+
+    <!-- PRE card -->
+    <div class="asset-card">
+      <div class="accent-strip strip-pre"></div>
+      <div class="card-header">
+        <div><div class="card-code">CCRO14</div><div class="card-emissor">CCR S.A.</div></div>
+        <span class="card-rating" style="background:#fffbeb;color:#d97706">A+</span>
+      </div>
+      <div class="taxa-box taxa-box-pre">
+        <div class="taxa-label taxa-label-pre">Taxa Pré</div>
+        <div class="taxa-value taxa-value-pre">13.42%</div>
+        <div class="taxa-sub taxa-label-pre">a.a. · preço indicativo</div>
+      </div>
+      <div class="meta-grid">
+        <div><div class="meta-key">Indexador</div><div class="meta-val">PRE</div></div>
+        <div><div class="meta-key">Vencimento</div><div class="meta-val">2028-06</div></div>
+      </div>
+      <div class="dur-row">
+        <div class="dur-labels"><span>Duration</span><span>3.2 anos</span></div>
+        <div class="dur-track"><div class="dur-fill" style="width:32%;background:#d97706"></div></div>
+      </div>
+      <div class="vol-row"><span>Volume negociado</span><span><b>R$54M</b></span></div>
+    </div>
+
+    <!-- CDI card 3 -->
+    <div class="asset-card">
+      <div class="accent-strip strip-cdi"></div>
+      <div class="card-header">
+        <div><div class="card-code">EMBR12</div><div class="card-emissor">Embraer S.A.</div></div>
+        <span class="card-rating rating-cdi">A</span>
+      </div>
+      <div class="taxa-box taxa-box-cdi">
+        <div class="taxa-label taxa-label-cdi">Taxa CDI</div>
+        <div class="taxa-value taxa-value-cdi">CDI+2.10%</div>
+        <div class="taxa-sub taxa-label-cdi">a.a. · preço indicativo</div>
+      </div>
+      <div class="meta-grid">
+        <div><div class="meta-key">Indexador</div><div class="meta-val">CDI</div></div>
+        <div><div class="meta-key">Vencimento</div><div class="meta-val">2027-11</div></div>
+      </div>
+      <div class="dur-row">
+        <div class="dur-labels"><span>Duration</span><span>2.9 anos</span></div>
+        <div class="dur-track"><div class="dur-fill" style="width:29%"></div></div>
+      </div>
+      <div class="vol-row"><span>Volume negociado</span><span><b>R$38M</b></span></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
