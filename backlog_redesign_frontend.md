@@ -253,5 +253,5 @@ Polish:                                                  🔲 PENDENTE
 - [x] Dark mode como padrão, toggle funciona
 - [x] Dados reais da API (não mocks estáticos)
 - [x] PageHeader em todas as páginas internas (/indicadores, /rv, /rf, /fundos)
-- [ ] Lighthouse performance > 80 no mobile
-- [ ] TypeScript sem erros (`next build` limpo)
+- [x] Lighthouse performance > 80 no mobile (home 93, /indicadores 95, /renda-fixa 89, /rv 83, /fundos 83)
+- [x] TypeScript sem erros (`next build` limpo)

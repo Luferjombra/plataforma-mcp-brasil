@@ -60,11 +60,16 @@ def get_access_token(client: httpx.Client) -> str:
         TOKEN_URL,
         headers={
             "Authorization": f"Basic {credentials}",
-            "Content-Type": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
         },
-        json={"grant_type": "client_credentials"},
+        data={"grant_type": "client_credentials"},
         timeout=30.0,
     )
+    if resp.status_code == 401:
+        raise EnvironmentError(
+            f"401 no token endpoint — verifique ANBIMA_CLIENT_ID/SECRET e se o "
+            f"app está inscrito nas APIs no portal. Resposta: {resp.text[:300]}"
+        )
     resp.raise_for_status()
     token = resp.json().get("access_token")
     if not token:
