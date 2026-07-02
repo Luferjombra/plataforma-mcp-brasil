@@ -298,7 +298,7 @@ print("[5.1] Frescor dos dados por série")
 FRESHNESS = {
     "selic": 7,
     "cdi":   7,
-    "ipca":  60,   # IBGE publica IPCA do mês M em ~D9 de M+1 (defasagem real ~40d)
+    "ipca":  75,   # IBGE publica IPCA do mês M em ~D9 de M+1 (defasagem real ~40d; 75d cobre fim de ciclo)
     "pib":   600,  # dado trimestral c/ atraso BCB; ETL rodando mas série pode ter gap — TODO: investigar série 7326
 }
 for serie, max_dias in FRESHNESS.items():
