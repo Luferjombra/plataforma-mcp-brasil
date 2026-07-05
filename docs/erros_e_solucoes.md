@@ -1,6 +1,6 @@
 # Erros & Soluções — Plataforma MCP Brasil
 
-Registro de todos os erros encontrados durante o desenvolvimento (Semanas 1–5) e como foram resolvidos.
+Registro de todos os erros encontrados durante o desenvolvimento e como foram resolvidos.
 
 ---
 
@@ -454,6 +454,64 @@ v = float(val)
 
 ---
 
+## ETL — ANBIMA
+
+### Token OAuth2 retorna 401 — Content-Type errado
+
+**Erro:**
+```
+401 Unauthorized em POST /oauth/access-token
+```
+
+**Causa:** O script enviava `Content-Type: application/json` com o corpo `json={"grant_type": "client_credentials"}`. O padrão OAuth2 Client Credentials exige form-urlencoded, não JSON — a ANBIMA rejeita o formato antes mesmo de validar as credenciais.
+
+**Solução:**
+```python
+# ERRADO
+headers={"Content-Type": "application/json"},
+json={"grant_type": "client_credentials"},
+
+# CORRETO
+headers={"Content-Type": "application/x-www-form-urlencoded"},
+data={"grant_type": "client_credentials"},
+```
+
+---
+
+### Token obtido com sucesso, mas todos os endpoints de dados retornam 401
+
+**Sintoma:** `get_access_token()` funciona (token retornado normalmente), mas toda chamada aos feeds (índices, debêntures, CRI, CRA, VNA) retorna `401 Unauthorized`.
+
+**Causa:** Não é bug de código. Token válido + 401 em todos os endpoints de dados significa que o app registrado no portal ANBIMA **não tem autorização para os produtos do Feed de Preços e Índices** — a ANBIMA separa autenticação (obter token) de autorização por produto (o que aquele app pode consultar). O portal (`admin-developers.anbima.com.br`) não expõe uma tela óbvia de "assinar produto" — o acesso aos produtos de dados é concedido pela ANBIMA por fora do autosserviço do portal.
+
+**Solução:** Contatar o suporte da ANBIMA (`suporte.developers@anbima.com.br`) solicitando habilitação do app para o Feed de Preços e Índices. Não adianta trocar de app/credenciais dentro do mesmo portal se nenhum dos apps tiver essa autorização.
+
+---
+
+## ETL — COTAHIST (B3)
+
+### Cron não dispara — comparação de string com espaço duplo
+
+**Sintoma:** Duas das seis janelas de coleta configuradas em `etl.yml` (`21h10` e `22h40` BRT) nunca executavam o job, mesmo com o `schedule` do workflow aparentemente correto — o job aparecia como `skipped` em toda execução.
+
+**Causa:** A definição do cron tinha espaço duplo (`cron: '10 0  * * 2-6'`), mas a condição `if:` do job comparava com `github.event.schedule == '10 0 * * 2-6'` (espaço simples). O GitHub Actions preserva a string do cron literalmente — a comparação nunca dava match, e o job era pulado silenciosamente sem erro visível.
+
+**Solução:** Igualar os espaços nas duas definições (cron e condição `if`). Ao adicionar/editar crons com condições `if: github.event.schedule == '...'`, conferir caractere a caractere — não há validação de que a condição realmente cobre o cron declarado.
+
+---
+
+## QA — Falso positivo em indicador mensal
+
+### Frescor do IPCA falha no QA mesmo com ETL funcionando
+
+**Sintoma:** `qa_run.py` reportava `✗ Indicador IPCA frescor ≤60d` mesmo com o ETL de indicadores rodando normalmente todo dia útil.
+
+**Causa:** IPCA é publicado mensalmente pelo IBGE, com defasagem real de ~40 dias (dado do mês M sai em ~D9 de M+1). Perto do fim do ciclo de publicação (final de junho/início de julho), a última data disponível fica em ~60-62 dias — threshold apertado demais para a cadência real do indicador, gerando falso positivo recorrente.
+
+**Solução:** Ajustar o threshold de 60 para 75 dias em `qa_run.py` (`FRESHNESS["ipca"]`), com folga suficiente para cobrir o fim de ciclo sem mascarar uma falha real de ETL.
+
+---
+
 ## Referências rápidas
 
 | Problema | Arquivo afetado | Solução |
@@ -474,3 +532,7 @@ v = float(val)
 | YAxis começa em 0 | frontend/app/*/page.tsx | `domain={['auto', 'auto']}` |
 | Tesouro CSV URL 404 | etl/rf_tesouro.py | Atualizar resource ID no CKAN |
 | Taxas RF absurdas | etl/rf_tesouro.py | Remover `.replace(".")` — pandas já parseou decimal |
+| ANBIMA 401 no token | etl/anbima.py | Content-Type `x-www-form-urlencoded` + `data=` (não `json=`) |
+| ANBIMA 401 nos feeds (token OK) | etl/anbima.py | App sem autorização de produto — contatar suporte ANBIMA |
+| Cron não dispara (skipped) | .github/workflows/etl.yml | Conferir espaços idênticos entre `cron:` e `if: ... == '...'` |
+| QA IPCA frescor falso positivo | qa_run.py | Threshold de 60d → 75d (indicador mensal, fim de ciclo) |
