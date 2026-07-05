@@ -6,6 +6,8 @@
 Fontes Públicas
   ├── BCB SGS API          → indicadores_economicos
   ├── brapi.dev            → rv_ativos + rv_historico  (free tier — janela 90d)
+  ├── COTAHIST (B3)        → rv_ativos_staging + rv_historico_staging (Fase 1, ver ADR-001)
+  ├── ANBIMA Feed API      → anbima_indices, anbima_debentures_*, anbima_cri_*, anbima_cra_*
   ├── CVM (arquivos local) → fundos_cadastro + fundos_historico
   └── RSS (InfoMoney/MT/Valor) → noticias
          ↓
@@ -21,6 +23,7 @@ FastAPI — APIs Internas (Render)
   ├── GET  /rv/ativos + /rv/historico/{ticker}
   ├── GET  /fundos + /fundos/historico/{cnpj}
   ├── GET  /rf/titulos + /rf/historico/{codigo}
+  ├── GET  /anbima/{indices,debentures,cri,cra}[/sparklines]
   ├── GET  /noticias
   ├── GET  /health/etl
   ├── POST /copilot/pergunta
@@ -33,6 +36,7 @@ Next.js — Frontend (Vercel)
   ├── /indicadores        — Macro (BCB)
   ├── /rv                 — Renda Variável (B3)
   ├── /rf                 — Renda Fixa (Tesouro Direto)
+  ├── /renda-fixa         — Dashboard Contextual V3 (Debêntures/CRI/CRA, sparklines)
   ├── /fundos             — Fundos de Investimento (CVM)
   ├── /dashboard/v1       — Painel Unificado (Timeline multi-série)
   ├── /dashboard/v2       — Grid + Drawer (SparklineCards)
@@ -78,13 +82,16 @@ Frontend (Chat Finance UI)
 | ETL resiliente | ETLRun context manager + log_partial em erro parcial |
 | Formatação padronizada | Todos os valores monetários e taxas: 2 casas decimais |
 
-## Banco de dados — 15 tabelas
+## Banco de dados — 25 tabelas
 
 | Tabela | Tipo | Descrição |
 |---|---|---|
 | indicadores_economicos | time series | IPCA, SELIC, CDI, PIB |
 | rv_ativos | relacional | Cadastro de ações B3 |
 | rv_historico | time series | OHLCV diário |
+| rv_ativos_staging | relacional | COTAHIST — cadastro (Fase 1, ver ADR-001) |
+| rv_historico_staging | time series | COTAHIST — OHLCV diário (Fase 1, ver ADR-001) |
+| cotahist_smoke_test | operacional | Resultado do smoke test por run (8 papéis de tipo conhecido) |
 | fundos_cadastro | relacional | Cadastro CVM |
 | fundos_historico | time series | Cotas diárias CVM |
 | fund_analytics_metrics | analítica | Sharpe, Drawdown, Vol (pré-calculados) |
@@ -92,6 +99,13 @@ Frontend (Chat Finance UI)
 | bdr_cadastro | relacional | — |
 | rf_titulos | relacional | Títulos Tesouro Direto |
 | rf_historico | time series | Taxas e PU históricos |
+| anbima_indices | time series | Índices IMA/IDA diários |
+| anbima_debentures_cadastro | relacional | Cadastro de debêntures |
+| anbima_debentures_historico | time series | Preços/taxas indicativos diários |
+| anbima_cri_cadastro | relacional | Cadastro de CRI |
+| anbima_cri_historico | time series | Preços/taxas indicativos diários |
+| anbima_cra_cadastro | relacional | Cadastro de CRA |
+| anbima_cra_historico | time series | Preços/taxas indicativos diários |
 | noticias | relacional | Feed financeiro |
 | etl_runs | operacional | Auditoria de jobs ETL (status, rows_upserted, error_detail) |
 | copilot_cache | cache | Respostas Gemini por hash SHA256 |
@@ -166,6 +180,19 @@ def run():
 - **Mudança de schema CVM:** coluna `CNPJ_FUNDO` renomeada para `CNPJ_FUNDO_CLASSE` nos arquivos de 2024+. O script detecta e normaliza automaticamente.
 - **Duplicatas:** cad_fi.csv e inf_diario_fi_*.csv podem ter linhas repetidas — `drop_duplicates()` antes de cada upsert
 - `upsert_historico()` tem retry de 3 tentativas com backoff (1s, 2s)
+
+### ANBIMA Feed API (anbima.py)
+- OAuth2 Client Credentials — token via `POST /oauth/access-token`, **`Content-Type: application/x-www-form-urlencoded`** (não JSON — erro comum que gera 401 no token endpoint)
+- Cobre 5 feeds: Índices IMA/IDA, Debêntures, CRI, CRA, VNA de títulos públicos
+- Requer app aprovado no portal `developers.anbima.com.br` com acesso aos produtos de dados — 401 nos endpoints de dados (mesmo com token válido) indica falta de autorização do app, não bug de código
+- Rotas de sparklines (`/anbima/{tipo}/sparklines`) devem ser declaradas **antes** das rotas parametrizadas (`/{codigo}`) — FastAPI casa rotas por ordem de declaração
+
+### COTAHIST (B3) — `cotahist.py` / `cotahist_backfill.py`
+- Ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md) para o contexto completo da decisão
+- Um único download (`COTAHIST_D<ddmmaaaa>.ZIP`) cobre todo o universo de papéis do dia — ao contrário do brapi (ticker a ticker)
+- **Fase 1 (concluída 2026-07-03):** ingestão só em staging (`rv_ativos_staging`/`rv_historico_staging`), nunca em produção
+- Sem horário fixo de publicação da B3 — fallback D-1 obrigatório (não é detalhe de implementação)
+- Backfill anual (`cotahist_backfill.py --anos N`) usa `COTAHIST_A<aaaa>.ZIP`; escopo inicial de 1 ano por limite de armazenamento do Supabase free tier
 
 ## Frontend — Convenções
 
@@ -251,6 +278,7 @@ perf/
 | Vercel | Free | plataforma-mcp-brasil.vercel.app |
 | GitHub | Free | github.com/Luferjombra/plataforma-mcp-brasil |
 | Google AI | Free tier | Gemini 2.5 Flash (copilot) |
+| ANBIMA Feed API | Free (registro) | developers.anbima.com.br — requer app aprovado por produto |
 | **Render** | **Free** | **LibreChat — librechat-rlev.onrender.com** |
 | **MongoDB Atlas** | **Free (512MB)** | **Banco do LibreChat — cluster0.ksxkolr.mongodb.net** |
 
