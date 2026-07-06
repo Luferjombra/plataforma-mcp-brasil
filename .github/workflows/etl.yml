@@ -48,6 +48,7 @@ on:
           - anbima_cra
           - cotahist_staging
           - cotahist_backfill
+          - validar_cotahist
 
 jobs:
   # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
@@ -196,6 +197,29 @@ jobs:
       - name: Rodar ETL COTAHIST Backfill
         working-directory: etl
         run: python cotahist_backfill.py --anos 1
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+  # ── Validação cruzada COTAHIST vs brapi — só manual ───────────────────────
+  # Compara staging (COTAHIST) com produção (brapi) nos tickers já cobertos.
+  # Só leitura — não escreve em nenhuma tabela. Fase 2, ver ADR-001.
+  etl-validar-cotahist:
+    name: Validação cruzada COTAHIST vs brapi
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'validar_cotahist'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+      - name: Rodar validação cruzada
+        working-directory: etl
+        run: python validar_cotahist.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
