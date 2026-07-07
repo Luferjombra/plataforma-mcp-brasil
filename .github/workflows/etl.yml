@@ -49,6 +49,7 @@ on:
           - cotahist_staging
           - cotahist_backfill
           - validar_cotahist
+          - testar_brapi_dividends
 
 jobs:
   # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
@@ -223,6 +224,28 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+  # ── Teste descartável — brapi dividends=true no free tier? ───────────────
+  # Não escreve em nenhuma tabela. Ver docs/adr/001-cotahist-migracao-rv.md
+  # (seção "Eventos corporativos") — apagar depois de decidir a fonte.
+  etl-testar-brapi-dividends:
+    name: Teste — brapi dividends=true
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'testar_brapi_dividends'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+      - name: Testar brapi dividends
+        working-directory: etl
+        run: python testar_brapi_dividends.py
+        env:
+          BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
 
   # ── Notícias RSS ──────────────────────────────────────────────────────────
   etl-noticias:
