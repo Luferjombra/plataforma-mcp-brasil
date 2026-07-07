@@ -102,6 +102,8 @@ class ETLRun:
         self.job = job
         self.run_id: int | None = None
         self.rows = 0
+        self._forced_status: str | None = None
+        self._forced_error: str | None = None
 
     def __enter__(self):
         try:
@@ -120,9 +122,25 @@ class ETLRun:
     def set_rows(self, n: int):
         self.rows = n
 
+    def set_status(self, status: str, error_msg: str | None = None):
+        """Força o status final do run (ex: 'partial' ou 'error') sem levantar
+        exceção — útil quando um loop trata seus próprios erros mas ainda
+        precisa que a falha (parcial ou total) apareça em etl_runs, em vez de
+        ser registrada como 'success'. Uma exceção que escape ainda tem
+        precedência e marca 'error'."""
+        self._forced_status = status
+        self._forced_error = error_msg
+
     def __exit__(self, exc_type, exc_val, exc_tb):
-        status = "error" if exc_type else "success"
-        error_msg = str(exc_val)[:500] if exc_val else None
+        if exc_type:
+            status = "error"
+            error_msg = str(exc_val)[:500]
+        elif self._forced_status:
+            status = self._forced_status
+            error_msg = (self._forced_error or None) and self._forced_error[:500]
+        else:
+            status = "success"
+            error_msg = None
 
         if self.run_id:
             try:

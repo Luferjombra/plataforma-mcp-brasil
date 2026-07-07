@@ -298,12 +298,12 @@ jobs:
           ANBIMA_CLIENT_SECRET: ${{ secrets.ANBIMA_CLIENT_SECRET }}
 
   # ── ANBIMA CRI (Certificados de Recebíveis Imobiliários) ──────────────────
+  # Só no dispatch dedicado 'anbima_cri'. No schedule e no 'all', o job
+  # etl-anbima (feed 'all') já coleta CRI/CRA — antes rodava em dobro.
   etl-anbima-cri:
     name: ETL ANBIMA CRI
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'anbima_cri' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && github.event.schedule == '0 17 * * 1-5'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'anbima_cri'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -323,12 +323,11 @@ jobs:
           ANBIMA_CLIENT_SECRET: ${{ secrets.ANBIMA_CLIENT_SECRET }}
 
   # ── ANBIMA CRA (Certificados de Recebíveis do Agronegócio) ────────────────
+  # Só no dispatch dedicado 'anbima_cra' (ver comentário em etl-anbima-cri).
   etl-anbima-cra:
     name: ETL ANBIMA CRA
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'anbima_cra' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && github.event.schedule == '0 17 * * 1-5'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'anbima_cra'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

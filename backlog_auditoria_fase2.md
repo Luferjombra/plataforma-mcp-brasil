@@ -19,7 +19,7 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 ### Robustez (F5–F12, ~5h)
 - [ ] **F5** Race conditions no frontend (`/rv`, `/fundos`) — resolvido pelo hook `useApi` da Proposta 2 (R1); não corrigir separado para não fazer o trabalho duas vezes.
 - [ ] **F6** `limit: Union[int, str]` + `int()` sem try em ~7 rotas — trocar por `Query(default, ge=1, le=max)` e remover o clamp manual. `1h`
-- [ ] **F7** `etl/anbima.py` (3 loops) — exceções engolidas fazem falha 100% registrar como `success` em `etl_runs`. Contar falhas e chamar `log_partial`/re-levantar quando tudo falhou. É por isso que o 401 da ANBIMA nunca apareceu no `/status`. `1h`
+- [x] **F7** ✅ (2026-07-07) `etl/anbima.py` — adicionado `ETLRun.set_status()` + helper `_marcar_status_parcial`; os 3 loops agora marcam `error` (tudo falhou) ou `partial` (parte) em `etl_runs`. O 401 da ANBIMA passa a aparecer no `/status`.
 - [ ] **F8** `backend/copilot/orchestrator.py` — incluir `contexto_extra` no hash do cache e gravar `expira_em` no insert (hoje o cache é eterno e pode responder com contexto errado). `1h`
 - [ ] **F9** `backend/routes/search.py` — sanitizar `q` (remover `,.()*`) antes de interpolar no `.or_()` do PostgREST (filter-injection). `30min`
 - [ ] **F10** Timezone — helper `hoje_brt()` (`ZoneInfo("America/Sao_Paulo")`) em `log_etl.py`, usar em `cotahist.py`, `rv_historico.py`, `validar_cotahist.py`. `45min`
@@ -53,8 +53,8 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 
 ## Proposta 3 — Performance ⚡ (~9h + itens condicionais)
 
-- [ ] **P1** `etl/rf_tesouro.py` incremental — consultar `MAX(data)` em `rf_historico` e filtrar o DataFrame antes do upsert. Hoje re-upserta o CSV inteiro desde 2002 **todo dia** — é o maior desperdício do pipeline (>95% de redução). `2h`
-- [ ] **P2** `etl.yml` — no cron das 17h UTC, `etl-anbima` roda feed `all` (inclui CRI+CRA) junto com os jobs dedicados de CRI e CRA → coleta duplicada. Mudar o job principal para `--feed indices,debentures,vna` ou tirar CRI/CRA do schedule. `30min`
+- [x] **P1** ✅ (2026-07-07) `etl/rf_tesouro.py` incremental — consulta `MAX(data)` em `rf_historico` e filtra o DataFrame (últimos N dias + overlap de 10d) antes do upsert. Carga inicial (banco vazio) processa tudo. Deixa de re-upsertar o CSV inteiro desde 2020 todo dia.
+- [x] **P2** ✅ (2026-07-07) `etl.yml` — jobs `etl-anbima-cri`/`etl-anbima-cra` agora disparam só no dispatch dedicado; no schedule e no `all`, o `etl-anbima` (feed `all`) já cobre CRI/CRA. Elimina a coleta em dobro (e tripla no `all`).
 - [ ] **P3** `backend/routes/indicadores.py:24` — `/series` carrega a tabela inteira p/ extrair distintos em Python. Criar RPC `SELECT DISTINCT serie`. `1h`
 - [ ] **P4** `etl/fundos.py` — pular arquivos CVM já ingeridos (comparar max data por arquivo antes de reprocessar). `1h`
 - [ ] **P5** brapi batch — usar `/quote/T1,T2,...` onde o plano permitir + `sleep` condicional ao token (hoje 4s fixos ≈ 130s de espera por run). `2h`
