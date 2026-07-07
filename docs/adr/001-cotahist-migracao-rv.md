@@ -1,7 +1,7 @@
 # ADR-001 — Migração da fonte de Renda Variável para o COTAHIST (B3)
 
-**Status:** Fase 1 concluída (2026-07-03) · Fase 2 pendente
-**Referenciado em:** `etl/cotahist.py`, `etl/cotahist_backfill.py`, `database/migrations/008_cotahist_staging.sql`, `.github/workflows/etl.yml`
+**Status:** Fase 1 concluída (2026-07-03) · Validação cruzada concluída (2026-07-07), achou bloqueador de ajuste por proventos · Fase 2 em andamento
+**Referenciado em:** `etl/cotahist.py`, `etl/cotahist_backfill.py`, `etl/validar_cotahist.py`, `database/migrations/008_cotahist_staging.sql`, `.github/workflows/etl.yml`
 
 ---
 
@@ -58,22 +58,50 @@ Migrar a fonte de Renda Variável de brapi.dev (ticker a ticker) para o COTAHIST
 
 Esse limite de armazenamento é a variável que decide se um universo de ~2.000 tickers é viável no free tier ou exige upgrade para o plano Pro (~$25/mês, 8GB) — decisão de negócio ainda em aberto.
 
-## Fase 2 — pendências (não iniciada)
+## Validação cruzada — resultado (2026-07-06/07)
+
+Item 1 da Fase 2 executado via `etl/validar_cotahist.py` (só leitura, compara `rv_historico` produção × `rv_historico_staging` COTAHIST nos 31 tickers da lista curada de `rv_historico.py`, janela de 400 dias). Resultado sobre 4.756 datas comparadas:
+
+| Categoria | Tickers | Achado |
+|---|---|---|
+| Match perfeito | 26/31 | 0% de divergência em todos os campos (abertura/máxima/mínima/fechamento) em até 249 dias cada |
+| Divergência sistemática | `ITUB4`, `MGLU3` | Offset **constante** em todos os 4 campos do candle — 3,0% e 5,0% respectivamente, em ~120 de 249 dias |
+| Divergência isolada | `VIVT3` | 1 dia de 248 diverge, e só no `fechamento` (abertura/máxima/mínima batem 100%) |
+| Sem overlap de datas | `ELET3`, `RBRF11` | Contagens parecidas nas duas fontes (74–90 registros) mas datas completamente diferentes — não investigado a fundo ainda |
+
+**Causa confirmada do offset sistemático (ITUB4/MGLU3):** os dois passaram por **bonificação em ações** com ex-direito em dezembro/2025 — ITUB4 3% (ex-direito 26/12/2025), MGLU3 5% / 1 ação nova a cada 20 (ex-direito 30/12/2025). O fator teórico de ajuste (1 ÷ (1 + bonificação)) bate com o offset observado: 1/1,03 ≈ -2,91% (medido: ~3,0%) e 1/1,05 ≈ -4,76% (medido: ~5,0%). O offset ser idêntico nos 4 campos do candle (não só no fechamento) confirma que é retroajuste de série inteira, não erro de parsing.
+
+**Conclusão:** o brapi retroajusta o histórico de preço (`fechamento`, e também OHLC) para refletir bonificações/desdobramentos futuros em relação à data do candle — mantendo a série "contínua" para quem calcula retorno. O COTAHIST reporta o preço exatamente como foi negociado no pregão daquele dia, sem esse retroajuste. **Não é bug — é diferença de convenção entre as fontes**, mas é uma diferença que precisa de decisão explícita antes da promoção (ver item 4 da Fase 2 abaixo, agora com evidência concreta).
+
+O caso VIVT3 (offset isolado, só no fechamento, um único dia) tem assinatura diferente — não é compatível com evento societário (que afetaria o candle inteiro). Provável revisão pontual de preço entre as fontes; não bloqueia a Fase 2, mas fica registrado.
+
+## Fase 2 — pendências
 
 Antes de promover `rv_ativos_staging`/`rv_historico_staging` para `rv_ativos`/`rv_historico`:
 
-1. **Validação cruzada** — comparar COTAHIST vs. brapi nos tickers que ambos cobrem (preço, volume, negócios) por período; investigar a variação de contagem de ativos por dia.
+1. ~~**Validação cruzada**~~ — ✅ concluída (2026-07-06/07), ver seção acima. Abriu uma pendência nova (item 4).
 2. **Resolver `ETF_OU_FUNDO`** — critério definitivo antes do campo `tipo` virar fonte de verdade.
 3. **Decidir escopo do universo exposto** — manter curadoria de ~30 tickers ou expor o universo completo do COTAHIST (implica paginação/busca server-side na API e frontend).
-4. **Gaps de schema** — `setor`, `subsetor`, `market_cap`, `free_float` (hoje vêm do brapi `fundamental=true`) e `fechamento_adj` (ajustado por proventos — não existe no layout diário do COTAHIST) não têm fonte equivalente no COTAHIST. Decidir se ficam nulos para o universo novo ou se precisam de fonte complementar.
-5. **Mecanismo de corte** — script de promoção com regra de precedência por `fonte` (coluna já preparada nas migrations 007/008); rodar em paralelo por 1–2 semanas antes de aposentar `rv_historico.py`.
-6. **Simplificar `etl.yml`** — trocar as 6 janelas de descoberta por 1 cron único (mantendo fallback D-1), já que não existe horário fixo confiável.
-7. **QA** — cenário de sanity check para o universo ampliado (não só os 8 tickers do smoke test).
+4. **Ajuste por proventos (bloqueador confirmado)** — `setor`, `subsetor`, `market_cap`, `free_float` (hoje vêm do brapi `fundamental=true`) não têm fonte equivalente no COTAHIST. Mais crítico: `fechamento_adj` (ajustado por proventos) não existe no layout diário do COTAHIST, e a validação cruzada confirmou que isso **não é opcional** — sem uma camada de ajuste por eventos societários (bonificação, desdobramento, grupamento), qualquer ticker que passar por um desses eventos vai gerar um degrau artificial de preço na data em que o COTAHIST assumir como fonte. Precisa de uma base de eventos corporativos estruturada antes do corte (ver seção "Eventos corporativos" abaixo).
+5. **Investigar ELET3 e RBRF11** — sem overlap de datas mesmo com contagens parecidas nas duas fontes; checar se é delisting, rebatização de ticker ou gap de coleta.
+6. **Mecanismo de corte** — script de promoção com regra de precedência por `fonte` (coluna já preparada nas migrations 007/008); rodar em paralelo por 1–2 semanas antes de aposentar `rv_historico.py`.
+7. **Simplificar `etl.yml`** — trocar as 6 janelas de descoberta por 1 cron único (mantendo fallback D-1), já que não existe horário fixo confiável.
+8. **QA** — cenário de sanity check para o universo ampliado (não só os 8 tickers do smoke test).
+
+## Eventos corporativos — base de dados (proposta, não iniciada)
+
+Decorrente do achado da validação cruzada: para o COTAHIST virar fonte de preço ajustado (ou para o app calcular o próprio ajuste), é preciso uma base estruturada de eventos societários (bonificação, desdobramento, grupamento, dividendos). Duas linhas de fonte avaliadas:
+
+- **brapi.dev (`dividends=true`)** — `rv_historico.py` já passa `"dividends": "false"` no payload da brapi, ou seja, o parâmetro para pedir esse dado já existe na API que o projeto usa; só nunca foi ativado. Caminho mais direto: ETL estruturado, mesmo padrão `ETLRun`, sem depender de scraping ou de um agente de busca livre.
+- **Busca web (agente)** — usada nesta investigação pontual para confirmar as bonificações de ITUB4/MGLU3 via notícias (Money Times, Suno, Investidor10). Útil para achar o evento e a data, mas não é fonte estruturada/confiável o bastante para popular uma tabela de produção com números exatos (proporção, preço de referência) — risco de erro de extração em cima de texto de notícia.
+
+Decisão de arquitetura ainda não tomada — ver conversa da sessão de 2026-07-07.
 
 ## Referências
 
 - `etl/cotahist.py` — ETL diário (staging), smoke test, classificação
 - `etl/cotahist_backfill.py` — backfill anual (staging)
+- `etl/validar_cotahist.py` — validação cruzada COTAHIST × brapi (só leitura, OHLC completo)
 - `database/migrations/008_cotahist_staging.sql` — tabelas de staging + coluna `fonte`
 - `database/migrations/009_cleanup_indice_redundante.sql` — remoção de índice duplicado
-- `.github/workflows/etl.yml` — jobs `etl-cotahist-staging` (schedule) e `etl-cotahist-backfill` (manual)
+- `.github/workflows/etl.yml` — jobs `etl-cotahist-staging` (schedule), `etl-cotahist-backfill` e `etl-validar-cotahist` (manuais)
