@@ -81,6 +81,19 @@ def auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _marcar_status_parcial(run, job: str, n_erros: int, n_total: int, rows_total: int):
+    """Faz uma falha (total ou parcial) do loop aparecer em etl_runs em vez de
+    ser registrada como 'success'. Antes, um loop que capturava todas as
+    exceções internamente sempre fechava o ETLRun como 'success' — uma falha
+    sistemática (ex: 401 da ANBIMA) ficava invisível no monitoramento."""
+    if n_erros == 0:
+        return
+    if rows_total == 0:
+        run.set_status("error", f"{job}: todas as {n_erros}/{n_total} chamadas falharam (0 linhas)")
+    else:
+        run.set_status("partial", f"{job}: {n_erros}/{n_total} chamadas falharam")
+
+
 # ── ETL Índices IMA/IDA ───────────────────────────────────────────────────────
 def etl_indices(client: httpx.Client, token: str, data_ref: date | None = None) -> int:
     """Coleta valores diários dos índices IMA e IDA."""
@@ -90,6 +103,7 @@ def etl_indices(client: httpx.Client, token: str, data_ref: date | None = None) 
     data_str = data_ref.strftime("%Y-%m-%d")
     rows_total = 0
 
+    n_erros = 0
     with ETLRun("anbima_indices") as run:
         for indice in TODOS_INDICES:
             try:
@@ -132,9 +146,11 @@ def etl_indices(client: httpx.Client, token: str, data_ref: date | None = None) 
                     print(f"  {indice}: {len(registros)} registro(s)")
 
             except Exception as e:
+                n_erros += 1
                 print(f"  {indice}: ERRO — {e}")
 
         run.set_rows(rows_total)
+        _marcar_status_parcial(run, "anbima_indices", n_erros, len(TODOS_INDICES), rows_total)
 
     return rows_total
 
@@ -149,6 +165,7 @@ def etl_debentures(client: httpx.Client, token: str, data_ref: date | None = Non
     rows_total = 0
     page = 1
     page_size = 100
+    houve_erro = False
 
     with ETLRun("anbima_debentures") as run:
         while True:
@@ -216,10 +233,12 @@ def etl_debentures(client: httpx.Client, token: str, data_ref: date | None = Non
                 page += 1
 
             except Exception as e:
+                houve_erro = True
                 print(f"  Página {page}: ERRO — {e}")
                 break
 
         run.set_rows(rows_total)
+        _marcar_status_parcial(run, "anbima_debentures", int(houve_erro), page, rows_total)
 
     return rows_total
 
@@ -288,6 +307,7 @@ def _etl_credito_privado(
     rows_total = 0
     page = 1
     page_size = 100
+    houve_erro = False
 
     with ETLRun(f"anbima_{tipo}") as run:
         while True:
@@ -357,10 +377,12 @@ def _etl_credito_privado(
                 page += 1
 
             except Exception as e:
+                houve_erro = True
                 print(f"  Página {page}: ERRO — {e}")
                 break
 
         run.set_rows(rows_total)
+        _marcar_status_parcial(run, f"anbima_{tipo}", int(houve_erro), page, rows_total)
 
     return rows_total
 
