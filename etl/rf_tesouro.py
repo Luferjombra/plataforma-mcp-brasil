@@ -18,7 +18,7 @@ import sys
 import httpx
 import pandas as pd
 from io import StringIO
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import supabase
@@ -199,8 +199,11 @@ def run():
     supabase.table("rf_titulos").upsert(titulos_rows, on_conflict="codigo").execute()
     print(f"  ✓ {len(titulos_rows)} títulos")
 
-    # Marcar títulos com dados recentes como ativos
-    data_recente = date.today().replace(month=date.today().month - 1 if date.today().month > 1 else 12).isoformat()
+    # Marcar títulos com dados recentes (últimos 30 dias) como ativos.
+    # Antes usava date.replace(month=...), que quebra nos dias 29-31 quando o
+    # mês anterior é mais curto e, em janeiro, gerava data futura (dez do mesmo
+    # ano) — marcando todos os títulos como inativos.
+    data_recente = (date.today() - timedelta(days=30)).isoformat()
     df_recentes = df[df[col_base] >= data_recente]["codigo"].unique().tolist()
     if df_recentes:
         supabase.table("rf_titulos").update({"ativo": True}).in_("codigo", df_recentes).execute()

@@ -93,9 +93,12 @@ def etl_indices(client: httpx.Client, token: str, data_ref: date | None = None) 
     with ETLRun("anbima_indices") as run:
         for indice in TODOS_INDICES:
             try:
+                # Índices IDA usam o endpoint /idas; IMA e IRF-M usam /imas.
+                # Antes tudo batia em /imas — os índices IDA retornavam vazio.
+                sufixo = "idas" if indice in INDICES_IDA else "imas"
                 resp = retry_request(
                     client,
-                    f"{BASE_URL}/feed/precos-indices/v1/indices-mais/imas",
+                    f"{BASE_URL}/feed/precos-indices/v1/indices-mais/{sufixo}",
                     params={"data": data_str, "indice": indice},
                     **{"headers": auth_headers(token)},
                 )

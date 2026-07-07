@@ -108,17 +108,23 @@ def get_debentures(
 
     ultima_data = res_last.data[0]["data"]
 
+    # !inner só quando há filtro por indexador — evita descartar debêntures
+    # sem cadastro correspondente quando nenhum filtro é aplicado (comportamento padrão).
+    cad_embed = "anbima_debentures_cadastro(nome_emissor,indexador,data_vencimento,rating_nota,setor)"
+    if indexador:
+        cad_embed = cad_embed.replace("anbima_debentures_cadastro(", "anbima_debentures_cadastro!inner(")
+
     query = (
         supabase.table("anbima_debentures_historico")
         .select("codigo,data,pu_mercado,taxa_indicativa,spread_ipca,spread_cdi,duration,volume_negociado,"
-                "anbima_debentures_cadastro(nome_emissor,indexador,data_vencimento,rating_nota,setor)")
+                + cad_embed)
         .eq("data", ultima_data)
         .order("volume_negociado", desc=True)
         .limit(limit)
     )
 
     if indexador:
-        pass
+        query = query.eq("anbima_debentures_cadastro.indexador", indexador.upper())
 
     res = query.execute()
 
@@ -224,7 +230,9 @@ def _get_credito_privado_lista(tipo: str, indexador: str | None, limit: int):
 
     ultima_data = res_last.data[0]["data"]
 
-    join_col = f"{tabela_c}(cedente,securitizadora,indexador,data_vencimento,rating_nota,serie)"
+    # !inner só quando há filtro por indexador (ver comentário em get_debentures).
+    embed = "(cedente,securitizadora,indexador,data_vencimento,rating_nota,serie)"
+    join_col = f"{tabela_c}!inner{embed}" if indexador else f"{tabela_c}{embed}"
     query = (
         supabase.table(tabela_h)
         .select(f"codigo,data,pu_mercado,taxa_indicativa,spread_ipca,spread_cdi,duration,volume_negociado,{join_col}")
@@ -232,6 +240,8 @@ def _get_credito_privado_lista(tipo: str, indexador: str | None, limit: int):
         .order("volume_negociado", desc=True)
         .limit(limit)
     )
+    if indexador:
+        query = query.eq(f"{tabela_c}.indexador", indexador.upper())
     res = query.execute()
     return {"data": res.data or [], "total": len(res.data or []), "data_referencia": ultima_data}
 
