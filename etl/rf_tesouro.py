@@ -31,6 +31,12 @@ CSV_URL = (
     "796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
 )
 
+# Upsert incremental de rf_historico: re-envia só os últimos N dias (overlap
+# para capturar correções do Tesouro em datas já carregadas). Antes o ETL
+# re-upsertava o CSV inteiro (2020→hoje, centenas de milhares de linhas) a
+# cada execução diária.
+OVERLAP_DIAS = 10
+
 # ── Mapeamento de tipo de título ──────────────────────────────────────────────
 # Ordem importa: prefixos mais longos primeiro para evitar match parcial errado
 TYPE_MAP = [
@@ -213,10 +219,31 @@ def run():
     if codigos_inativos:
         supabase.table("rf_titulos").update({"ativo": False}).in_("codigo", codigos_inativos).execute()
 
-    # ── 4. Upsert — rf_historico ──────────────────────────────
+    # ── 4. Upsert — rf_historico (incremental) ────────────────
     print("\n[4/4] Atualizando rf_historico...")
+
+    # Só faz upsert das datas novas (+ overlap). O CSV vem sempre completo,
+    # mas re-enviar 2020→hoje todo dia era o maior desperdício do pipeline.
+    df_hist = df
+    try:
+        res_ult = (
+            supabase.table("rf_historico")
+            .select("data").order("data", desc=True).limit(1).execute()
+        )
+        if res_ult.data:
+            ultima = datetime.strptime(res_ult.data[0]["data"], "%Y-%m-%d").date()
+            corte = ultima - timedelta(days=OVERLAP_DIAS)
+            df_hist = df[df[col_base] >= pd.Timestamp(corte)].copy()
+            print(f"  incremental: última data no banco={ultima}, "
+                  f"processando desde {corte} ({len(df_hist):,} de {len(df):,} linhas)")
+        else:
+            print(f"  carga inicial: banco vazio, processando tudo ({len(df):,} linhas)")
+    except Exception as e:
+        print(f"  [aviso] não foi possível apurar última data ({e}); processando tudo")
+        df_hist = df
+
     hist_rows = []
-    for _, row in df.iterrows():
+    for _, row in df_hist.iterrows():
         t_vend = safe_float(row.get(col_tvend)) if col_tvend in df.columns else None
         t_comp = safe_float(row.get(col_tcomp)) if col_tcomp in df.columns else None
         p_vend = safe_float(row.get(col_pvend)) if col_pvend in df.columns else None
