@@ -1,7 +1,7 @@
 # ADR-001 — Migração da fonte de Renda Variável para o COTAHIST (B3)
 
-**Status:** Fase 1 concluída (2026-07-03) · Validação cruzada concluída (2026-07-07), achou bloqueador de ajuste por proventos · Fase 2 em andamento
-**Referenciado em:** `etl/cotahist.py`, `etl/cotahist_backfill.py`, `etl/validar_cotahist.py`, `database/migrations/008_cotahist_staging.sql`, `.github/workflows/etl.yml`
+**Status:** Fase 1 concluída (2026-07-03) · Validação cruzada concluída (2026-07-07) · Fonte de eventos corporativos resolvida (2026-07-07) · Fase 2 em andamento
+**Referenciado em:** `etl/cotahist.py`, `etl/cotahist_backfill.py`, `etl/validar_cotahist.py`, `etl/eventos_corporativos.py`, `database/migrations/008_cotahist_staging.sql`, `database/migrations/010_eventos_corporativos.sql`, `.github/workflows/etl.yml`
 
 ---
 
@@ -82,26 +82,40 @@ Antes de promover `rv_ativos_staging`/`rv_historico_staging` para `rv_ativos`/`r
 1. ~~**Validação cruzada**~~ — ✅ concluída (2026-07-06/07), ver seção acima. Abriu uma pendência nova (item 4).
 2. **Resolver `ETF_OU_FUNDO`** — critério definitivo antes do campo `tipo` virar fonte de verdade.
 3. **Decidir escopo do universo exposto** — manter curadoria de ~30 tickers ou expor o universo completo do COTAHIST (implica paginação/busca server-side na API e frontend).
-4. **Ajuste por proventos (bloqueador confirmado)** — `setor`, `subsetor`, `market_cap`, `free_float` (hoje vêm do brapi `fundamental=true`) não têm fonte equivalente no COTAHIST. Mais crítico: `fechamento_adj` (ajustado por proventos) não existe no layout diário do COTAHIST, e a validação cruzada confirmou que isso **não é opcional** — sem uma camada de ajuste por eventos societários (bonificação, desdobramento, grupamento), qualquer ticker que passar por um desses eventos vai gerar um degrau artificial de preço na data em que o COTAHIST assumir como fonte. Precisa de uma base de eventos corporativos estruturada antes do corte (ver seção "Eventos corporativos" abaixo).
+4. **Ajuste por proventos (fonte resolvida 2026-07-07; lógica de ajuste ainda pendente)** — `setor`, `subsetor`, `market_cap`, `free_float` (hoje vêm do brapi `fundamental=true`) continuam sem fonte equivalente no COTAHIST. O gap de `fechamento_adj` (ajustado por proventos) — confirmado como bloqueador real pela validação cruzada — já tem fonte de dados estruturada em `rv_eventos_societarios` (ver seção "Eventos corporativos" abaixo). Falta escrever a lógica que aplica `preco_ajustado = preco_bruto / fator` no `rv_historico_staging` antes do corte para produção.
 5. **Investigar ELET3 e RBRF11** — sem overlap de datas mesmo com contagens parecidas nas duas fontes; checar se é delisting, rebatização de ticker ou gap de coleta.
 6. **Mecanismo de corte** — script de promoção com regra de precedência por `fonte` (coluna já preparada nas migrations 007/008); rodar em paralelo por 1–2 semanas antes de aposentar `rv_historico.py`.
 7. **Simplificar `etl.yml`** — trocar as 6 janelas de descoberta por 1 cron único (mantendo fallback D-1), já que não existe horário fixo confiável.
 8. **QA** — cenário de sanity check para o universo ampliado (não só os 8 tickers do smoke test).
 
-## Eventos corporativos — base de dados (proposta, não iniciada)
+## Eventos corporativos — base de dados (implementado 2026-07-07)
 
-Decorrente do achado da validação cruzada: para o COTAHIST virar fonte de preço ajustado (ou para o app calcular o próprio ajuste), é preciso uma base estruturada de eventos societários (bonificação, desdobramento, grupamento, dividendos). Duas linhas de fonte avaliadas:
+Decorrente do achado da validação cruzada: para o COTAHIST virar fonte de preço ajustado (ou para o app calcular o próprio ajuste), era preciso uma base estruturada de eventos societários (bonificação, desdobramento, grupamento, dividendos). Duas linhas de fonte avaliadas:
 
-- **brapi.dev (`dividends=true`)** — `rv_historico.py` já passa `"dividends": "false"` no payload da brapi, ou seja, o parâmetro para pedir esse dado já existe na API que o projeto usa; só nunca foi ativado. Caminho mais direto: ETL estruturado, mesmo padrão `ETLRun`, sem depender de scraping ou de um agente de busca livre.
-- **Busca web (agente)** — usada nesta investigação pontual para confirmar as bonificações de ITUB4/MGLU3 via notícias (Money Times, Suno, Investidor10). Útil para achar o evento e a data, mas não é fonte estruturada/confiável o bastante para popular uma tabela de produção com números exatos (proporção, preço de referência) — risco de erro de extração em cima de texto de notícia.
+- **brapi.dev (`dividends=true`)** — `rv_historico.py` já passava `"dividends": "false"` no payload da brapi, ou seja, o parâmetro para pedir esse dado já existia na API que o projeto usa; só nunca tinha sido ativado.
+- **Busca web (agente)** — usada nesta investigação pontual para confirmar as bonificações de ITUB4/MGLU3 via notícias (Money Times, Suno, Investidor10). Útil para achar o evento e a data, mas descartada como fonte de produção — risco de erro de extração em cima de texto de notícia, sem número exato.
 
-Decisão de arquitetura ainda não tomada — ver conversa da sessão de 2026-07-07.
+**Decisão: brapi.dev confirmada como fonte, via teste real na API (GitHub Actions, já que este ambiente não alcança `brapi.dev` diretamente).** `dividends=true` respondeu **200 OK** sem bloqueio de plano, com `dividendsData` trazendo 3 arrays: `cashDividends` (dividendo/JCP), `stockDividends` (bonificação/desdobramento/grupamento, com `factor` numérico), `subscriptions`. Os fatores bateram exatamente com o offset medido na validação cruzada:
+
+| Ticker | `factor` (API) | Offset teórico (1 − 1/factor) | Offset medido |
+|---|---|---|---|
+| ITUB4 | 1,03 | -2,91% | ~3,0% |
+| MGLU3 | 1,05 | -4,76% | ~5,0% |
+
+**Implementação:**
+- `database/migrations/010_eventos_corporativos.sql` — duas tabelas: `rv_eventos_societarios` (bonificação/desdobramento/grupamento, `CHECK` no `tipo` com fallback `OUTROS` para rótulos não mapeados — a API já devolveu um rótulo inesperado, `"CIS RED CAP"`, para ITUB4) e `rv_proventos` (dividendo/JCP, base para futura funcionalidade de calendário/yield).
+- `etl/eventos_corporativos.py` — popula as duas tabelas a partir do `dividendsData`, mesma lista de tickers (`ATIVOS`) e mesmo padrão `ETLRun`/rate-limit de `rv_historico.py`.
+- Disparo manual via `workflow_dispatch` (`eventos_corporativos`) — vira cron só depois de validar o volume real de dados.
+
+**O que ainda falta (não faz parte desta etapa):** o cálculo de `preco_ajustado = preco_bruto / fator` para as datas anteriores a `data_com` — `rv_eventos_societarios` fornece o dado, mas a lógica de ajuste em si ainda não foi escrita. Fica como próximo passo antes de fechar o item 4 da Fase 2.
 
 ## Referências
 
 - `etl/cotahist.py` — ETL diário (staging), smoke test, classificação
 - `etl/cotahist_backfill.py` — backfill anual (staging)
 - `etl/validar_cotahist.py` — validação cruzada COTAHIST × brapi (só leitura, OHLC completo)
+- `etl/eventos_corporativos.py` — bonificação/desdobramento/grupamento/proventos (brapi dividendsData)
 - `database/migrations/008_cotahist_staging.sql` — tabelas de staging + coluna `fonte`
 - `database/migrations/009_cleanup_indice_redundante.sql` — remoção de índice duplicado
-- `.github/workflows/etl.yml` — jobs `etl-cotahist-staging` (schedule), `etl-cotahist-backfill` e `etl-validar-cotahist` (manuais)
+- `database/migrations/010_eventos_corporativos.sql` — `rv_eventos_societarios` + `rv_proventos`
+- `.github/workflows/etl.yml` — jobs `etl-cotahist-staging` (schedule); `etl-cotahist-backfill`, `etl-validar-cotahist` e `etl-eventos-corporativos` (manuais)

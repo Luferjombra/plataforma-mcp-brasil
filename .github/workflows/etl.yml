@@ -49,7 +49,7 @@ on:
           - cotahist_staging
           - cotahist_backfill
           - validar_cotahist
-          - testar_brapi_dividends
+          - eventos_corporativos
 
 jobs:
   # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
@@ -225,13 +225,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
-  # ── Teste descartável — brapi dividends=true no free tier? ───────────────
-  # Não escreve em nenhuma tabela. Ver docs/adr/001-cotahist-migracao-rv.md
-  # (seção "Eventos corporativos") — apagar depois de decidir a fonte.
-  etl-testar-brapi-dividends:
-    name: Teste — brapi dividends=true
+  # ── Eventos Corporativos (brapi dividendsData) — só manual por enquanto ───
+  # Popula rv_eventos_societarios + rv_proventos. Ver ADR-001. Manual até
+  # validar volume real de dados; depois vira cron (mesma cadência de RV).
+  etl-eventos-corporativos:
+    name: ETL Eventos Corporativos (bonificação/desdobramento/proventos)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'testar_brapi_dividends'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'eventos_corporativos'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -241,10 +241,12 @@ jobs:
           cache-dependency-path: etl/requirements.txt
       - name: Instalar dependências
         run: pip install -r etl/requirements.txt
-      - name: Testar brapi dividends
+      - name: Rodar ETL Eventos Corporativos
         working-directory: etl
-        run: python testar_brapi_dividends.py
+        run: python eventos_corporativos.py
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
 
   # ── Notícias RSS ──────────────────────────────────────────────────────────
