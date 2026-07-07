@@ -50,6 +50,7 @@ on:
           - cotahist_backfill
           - validar_cotahist
           - eventos_corporativos
+          - ajuste_proventos
 
 jobs:
   # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
@@ -248,6 +249,30 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
+
+  # ── Ajuste por proventos (fechamento_adj em rv_historico_staging) — manual ─
+  # Aplica preco_ajustado = preco_bruto / fator nos tickers com evento
+  # societário cadastrado (rv_eventos_societarios). Fase 2, ver ADR-001.
+  # Requer migration 011 executada antes (adiciona a coluna fechamento_adj).
+  etl-ajuste-proventos:
+    name: ETL Ajuste por Proventos (fechamento_adj staging)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'ajuste_proventos'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+      - name: Rodar ETL Ajuste por Proventos
+        working-directory: etl
+        run: python aplicar_ajuste_proventos.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
   # ── Notícias RSS ──────────────────────────────────────────────────────────
   etl-noticias:

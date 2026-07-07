@@ -88,8 +88,8 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 Não promover fonte nova por cima de bugs conhecidos, especialmente F1 (carteira) que consome `rv_historico`.
 
 ### Passo 2 — Ajuste por proventos — ~3h
-- [ ] Script `etl/aplicar_ajuste_proventos.py`: lê `rv_eventos_societarios`, aplica `preco_ajustado = preco_bruto / fator` (cumulativo, para datas < `data_com` de cada evento) e grava `fechamento_adj` em `rv_historico_staging`
-- [ ] Validar: rodar `validar_cotahist.py` comparando `fechamento_adj` (staging) × `fechamento` (brapi) — as 244 divergências de ITUB4/MGLU3 devem zerar
+- [x] Script `etl/aplicar_ajuste_proventos.py`: lê `rv_eventos_societarios`, aplica `preco_ajustado = preco_bruto / fator` (cumulativo, para eventos com `data_com` >= data do pregão) e grava `fechamento_adj` em `rv_historico_staging` — ✅ CONCLUÍDO (2026-07-07). Migration `011_fechamento_adj_staging.sql` adiciona a coluna; job `ajuste_proventos` no `etl.yml`. **Pendente: usuário rodar a migration 011 no Supabase antes do primeiro disparo.**
+- [ ] Validar: rodar `validar_cotahist.py --usar-ajustado` (flag já implementada) comparando `fechamento_adj` (staging) × `fechamento` (brapi) — as 244 divergências de ITUB4/MGLU3 devem zerar. Falta executar após a migration + o disparo do ETL de ajuste.
 - [ ] Completar `rv_eventos_societarios` para os tickers que faltaram (cota: rodar o ETL de eventos 1×/dia até cobrir — F11 torna isso automático)
 
 ### Passo 3 — Investigações pendentes — ~2h
