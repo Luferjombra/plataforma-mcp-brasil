@@ -202,12 +202,16 @@ def get_analise(
 
     tickers = list({p["ticker"] for p in posicoes})
 
-    # Histórico de preços para reconstruir série da carteira
+    # Histórico de preços para reconstruir série da carteira.
+    # desc=True para pegar os pregões MAIS RECENTES (com asc, o limit trazia
+    # as linhas mais antigas da tabela — série da carteira ficava defasada
+    # conforme rv_historico acumulava histórico). A reordenação para o
+    # cálculo é feita via sorted() logo abaixo, então a ordem aqui não afeta.
     res_hist = (
         supabase.table("rv_historico")
         .select("ticker,data,fechamento_adj,fechamento")
         .in_("ticker", tickers)
-        .order("data", desc=False)
+        .order("data", desc=True)
         .limit(periodo_dias * len(tickers))
         .execute()
     )

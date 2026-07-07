@@ -10,11 +10,11 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 
 > Bugs confirmados. F1–F4 pioram com o tempo ou disparam por calendário — são os urgentes.
 
-### Sprint de correção imediata (F1–F4, ~2h)
-- [ ] **F1** `backend/routes/carteira.py:206-213` — trocar `.order("data", desc=False).limit(N)` por `desc=True` + reordenar asc em Python (ou filtrar `gte(data, hoje-periodo)`). Hoje a análise usa as linhas mais **antigas** da tabela; o erro cresce conforme o histórico acumula. `30min`
-- [ ] **F2** `backend/routes/anbima.py:120` — implementar o filtro `indexador` (é `if indexador: pass` hoje) nas rotas de debêntures/CRI/CRA, ou remover o parâmetro. `30min`
-- [ ] **F3** `etl/anbima.py:98` — rotear índices IDA para o endpoint próprio (hoje IMA e IDA batem ambos em `/indices-mais/imas`). `30min`
-- [ ] **F4** `etl/rf_tesouro.py:205` — trocar `date.today().replace(month=...)` por `date.today() - timedelta(days=30)`. O atual quebra nos dias 29/30/31 e, em janeiro, gera data futura (marcaria todos os títulos como inativos). `15min`
+### Sprint de correção imediata (F1–F4, ~2h) ✅ CONCLUÍDO (2026-07-07)
+- [x] **F1** `backend/routes/carteira.py:206-213` — `desc=False` → `desc=True` (reordenação já era feita via `sorted()` downstream). A análise agora usa os pregões mais recentes.
+- [x] **F2** `backend/routes/anbima.py` — filtro `indexador` implementado em debêntures/CRI/CRA via `!inner` + `.eq(cadastro.indexador)`, aplicado só quando há filtro (comportamento padrão preservado).
+- [x] **F3** `etl/anbima.py` — índices IDA roteados para `/indices-mais/idas`, IMA/IRF-M seguem em `/imas`.
+- [x] **F4** `etl/rf_tesouro.py` — `date.replace(month=...)` → `date.today() - timedelta(days=30)`. Sanity-check confirmou: retrocede seguro em jan→dez e dias 29-31.
 
 ### Robustez (F5–F12, ~5h)
 - [ ] **F5** Race conditions no frontend (`/rv`, `/fundos`) — resolvido pelo hook `useApi` da Proposta 2 (R1); não corrigir separado para não fazer o trabalho duas vezes.
