@@ -61,8 +61,26 @@ def testar(ticker: str, client: httpx.Client):
     dividends_data = result.get("dividendsData")
     if dividends_data is None:
         print("  ⚠ Campo 'dividendsData' ausente — dividends=true pode não ter tido efeito (plano free?)")
-    else:
-        print(f"  ✓ dividendsData presente: {json.dumps(dividends_data, indent=2, ensure_ascii=False)[:2000]}")
+        return
+
+    print(f"  ✓ dividendsData presente — chaves: {list(dividends_data.keys())}")
+
+    for chave, valor in dividends_data.items():
+        if not isinstance(valor, list):
+            print(f"    {chave}: {valor}")
+            continue
+
+        labels = sorted({item.get("label") for item in valor if isinstance(item, dict) and "label" in item})
+        print(f"    {chave}: {len(valor)} registro(s) — labels distintos: {labels}")
+
+        # Eventos com data (approvedOn ou paymentDate) em nov/dez de 2025 — janela da
+        # bonificação confirmada por notícia (ex-direito 26/12 ITUB4, 30/12 MGLU3)
+        for item in valor:
+            if not isinstance(item, dict):
+                continue
+            datas = [str(item.get("approvedOn") or ""), str(item.get("paymentDate") or "")]
+            if any(d.startswith("2025-11") or d.startswith("2025-12") for d in datas):
+                print(f"      [candidato dez/2025] {json.dumps(item, ensure_ascii=False)}")
 
 
 def run():
