@@ -65,36 +65,189 @@ on:
           - promover_cotahist
 
 jobs:
-  # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
-  etl-rf:
-    name: ETL Renda Fixa (Tesouro Direto)
+  # R7 (backlog): os ~16 jobs eram quase idênticos (checkout, setup-python,
+  # install, 1 run, mesmos secrets) diferindo só em qual script/args rodar e
+  # quando disparar. Consolidados num único job com strategy.matrix.include
+  # -- cada item abaixo define o que antes era 1 job inteiro. `crons: []` +
+  # `in_all: false` = só roda via workflow_dispatch com o `id` exato (nunca
+  # em `all` nem em schedule); isso preserva a mesma classe de jobs
+  # "manuais" que existia antes (backfill, promoção, validação ajustada,
+  # ajuste de proventos, ANBIMA CRI/CRA dedicados).
+  etl:
+    name: ${{ matrix.label }}
     runs-on: ubuntu-latest
+    # Default 360 (o mesmo default do GitHub Actions) -- preserva o comportamento
+    # original, onde só cotahist_backfill tinha timeout-minutes explícito (30).
+    # Achado de revisão: um fallback de 15min aqui cortaria silenciosamente 15
+    # jobs que nunca tiveram timeout (incl. promover_cotahist, que escreve em
+    # produção, e rv_historico, que pode acumular retries da brapi).
+    timeout-minutes: ${{ matrix.timeout || 360 }}
     if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'rf_tesouro' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && github.event.schedule == '0 13 * * 1-5'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL Renda Fixa
-        working-directory: etl
-        run: python rf_tesouro.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.etl == matrix.id ||
+        (github.event.inputs.etl == 'all' && matrix.in_all)
+      ) ||
+      github.event_name == 'schedule' && contains(matrix.crons, github.event.schedule)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Tesouro Direto (RF) ──────────────────────────────────────
+          - id: rf_tesouro
+            label: 'ETL Renda Fixa (Tesouro Direto)'
+            script: rf_tesouro.py
+            args: ''
+            crons: ['0 13 * * 1-5']
+            in_all: true
 
-  # ── Renda Variável (B3) ───────────────────────────────────────────────────
-  etl-rv:
-    name: ETL Renda Variável (B3)
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'rv_historico' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && github.event.schedule == '30 20 * * 1-5'
+          # ── Renda Variável (B3) ──────────────────────────────────────
+          - id: rv_historico
+            label: 'ETL Renda Variável (B3)'
+            script: rv_historico.py
+            args: ''
+            crons: ['30 20 * * 1-5']
+            in_all: true
+
+          # ── Fundos de Investimento (CVM) ─────────────────────────────
+          - id: fundos
+            label: 'ETL Fundos de Investimento (CVM)'
+            script: fundos.py
+            args: ''
+            crons: ['0 21 * * 1-5']
+            in_all: true
+
+          # ── Indicadores Macro ─────────────────────────────────────────
+          - id: indicadores
+            label: 'ETL Indicadores Macro (BACEN/IBGE)'
+            script: indicadores.py
+            args: ''
+            crons: ['0 12 * * 1-5']
+            in_all: true
+
+          # ── COTAHIST Staging (B3) — ver ADR-001, Passo 6 (operação
+          # paralela). 1 cron principal à noite + 1 fallback de manhã
+          # (simplificado da Fase 1, que rodava 6x/dia pra descobrir a
+          # janela de publicação da B3). Continua escrevendo só em staging
+          # (rv_ativos_staging / rv_historico_staging) — nunca em produção;
+          # a promoção é feita por etl/promover_cotahist.py.
+          - id: cotahist_staging
+            label: 'ETL COTAHIST Staging (B3)'
+            script: cotahist.py
+            args: ''
+            crons: ['10 0 * * 2-6', '10 10 * * 2-6']
+            in_all: true
+
+          # ── COTAHIST Backfill histórico (staging) — só manual. Baixa
+          # arquivos ANUAIS do COTAHIST pra reconstituir histórico
+          # retroativo. Sem schedule — roda sob demanda. Padrão: 1 ano.
+          - id: cotahist_backfill
+            label: 'ETL COTAHIST Backfill (staging)'
+            script: cotahist_backfill.py
+            args: '--anos 1'
+            crons: []
+            in_all: false
+            timeout: 30
+
+          # ── Validação cruzada COTAHIST vs brapi — diária + manual.
+          # Compara staging (COTAHIST) com produção (brapi) nos tickers já
+          # cobertos. Só leitura — não escreve em nenhuma tabela. Cron
+          # diário durante a operação paralela (ADR-001, Passo 6) —
+          # qualquer divergência nova > 1% aparece no log deste job.
+          # NÃO entra em 'all' (mesmo comportamento de sempre).
+          - id: validar_cotahist
+            label: 'Validação cruzada COTAHIST vs brapi'
+            script: validar_cotahist.py
+            args: ''
+            crons: ['15 11 * * 2-6']
+            in_all: false
+
+          # ── Validação cruzada (fechamento_adj) — só manual. Mesma
+          # comparação, mas fechamento (brapi) x fechamento_adj (staging)
+          # — usar depois de rodar aplicar_ajuste_proventos.py.
+          - id: validar_cotahist_ajustado
+            label: 'Validação cruzada COTAHIST vs brapi (ajustado)'
+            script: validar_cotahist.py
+            args: '--usar-ajustado'
+            crons: []
+            in_all: false
+
+          # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) —
+          # dry-run. Só leitura, não precisa da migration 012.
+          - id: promover_cotahist_dry_run
+            label: 'Promoção COTAHIST -> produção (dry-run)'
+            script: promover_cotahist.py
+            args: '--dry-run'
+            crons: []
+            in_all: false
+
+          # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) —
+          # real. ESCREVE em rv_ativos/rv_historico (produção). Requer
+          # migration 012_widen_ticker_producao.sql executada antes. Só
+          # disparar depois do dry-run revisado e aprovado.
+          - id: promover_cotahist
+            label: 'Promoção COTAHIST -> produção'
+            script: promover_cotahist.py
+            args: ''
+            crons: []
+            in_all: false
+
+          # ── Eventos Corporativos (brapi dividendsData) — cron diário +
+          # manual. Popula rv_eventos_societarios + rv_proventos. Volume
+          # real já validado (cota diária da brapi ~13 tickers) — script
+          # resumível converge sozinho no cron. NÃO entra em 'all' (mesmo
+          # comportamento de sempre).
+          - id: eventos_corporativos
+            label: 'ETL Eventos Corporativos (bonificação/desdobramento/proventos)'
+            script: eventos_corporativos.py
+            args: ''
+            crons: ['0 19 * * 1-5']
+            in_all: false
+
+          # ── Ajuste por proventos (fechamento_adj em
+          # rv_historico_staging) — manual. Aplica preco_ajustado =
+          # preco_bruto / fator nos tickers com evento societário
+          # cadastrado. Requer migration 011 executada antes.
+          - id: ajuste_proventos
+            label: 'ETL Ajuste por Proventos (fechamento_adj staging)'
+            script: aplicar_ajuste_proventos.py
+            args: ''
+            crons: []
+            in_all: false
+
+          # ── Notícias RSS ──────────────────────────────────────────────
+          - id: noticias
+            label: 'ETL Notícias RSS'
+            script: noticias.py
+            args: ''
+            crons: ['0 11 * * *', '0 22 * * *']
+            in_all: true
+
+          # ── ANBIMA (Índices IMA/IDA + Debêntures + VNA) ──────────────
+          - id: anbima
+            label: 'ETL ANBIMA (Índices + Debêntures + VNA)'
+            script: anbima.py
+            args: ''
+            crons: ['0 17 * * 1-5']
+            in_all: true
+
+          # ── ANBIMA CRI — só no dispatch dedicado. No schedule e no
+          # 'all', o job 'anbima' (feed 'all') já coleta CRI/CRA — antes
+          # rodava em dobro.
+          - id: anbima_cri
+            label: 'ETL ANBIMA CRI'
+            script: anbima.py
+            args: '--feed cri'
+            crons: []
+            in_all: false
+
+          # ── ANBIMA CRA — só no dispatch dedicado (ver comentário acima).
+          - id: anbima_cra
+            label: 'ETL ANBIMA CRA'
+            script: anbima.py
+            args: '--feed cra'
+            crons: []
+            in_all: false
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -104,355 +257,12 @@ jobs:
           cache-dependency-path: etl/requirements.txt
       - name: Instalar dependências
         run: pip install -r etl/requirements.txt
-      - name: Rodar ETL Renda Variável
+      - name: Rodar ${{ matrix.label }}
         working-directory: etl
-        run: python rv_historico.py
+        run: python ${{ matrix.script }} ${{ matrix.args }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
-
-  # ── Fundos de Investimento (CVM) ──────────────────────────────────────────
-  etl-fundos:
-    name: ETL Fundos de Investimento (CVM)
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'fundos' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && github.event.schedule == '0 21 * * 1-5'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL Fundos
-        working-directory: etl
-        run: python fundos.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── Indicadores Macro ─────────────────────────────────────────────────────
-  etl-indicadores:
-    name: ETL Indicadores Macro (BACEN/IBGE)
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'indicadores' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && github.event.schedule == '0 12 * * 1-5'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL Indicadores
-        working-directory: etl
-        run: python indicadores.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── COTAHIST Staging (B3) — ver ADR-001, Passo 6 (operação paralela) ─────
-  # 1 cron principal à noite + 1 fallback de manhã (simplificado da Fase 1,
-  # que rodava 6x/dia para descobrir a janela de publicação da B3). Continua
-  # escrevendo só em staging (rv_ativos_staging / rv_historico_staging) —
-  # nunca em produção; a promoção é feita por etl/promover_cotahist.py.
-  etl-cotahist-staging:
-    name: ETL COTAHIST Staging (B3)
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'cotahist_staging' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && (
-        github.event.schedule == '10 0 * * 2-6'  ||
-        github.event.schedule == '10 10 * * 2-6'
-      )
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL COTAHIST (staging)
-        working-directory: etl
-        run: python cotahist.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── COTAHIST Backfill histórico (staging) — só manual ────────────────────
-  # Baixa arquivos ANUAIS do COTAHIST para reconstituir histórico retroativo.
-  # Não tem schedule — roda sob demanda via workflow_dispatch. Padrão: 1 ano.
-  etl-cotahist-backfill:
-    name: ETL COTAHIST Backfill (staging)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'cotahist_backfill'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL COTAHIST Backfill
-        working-directory: etl
-        run: python cotahist_backfill.py --anos 1
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── Validação cruzada COTAHIST vs brapi — diária + manual ─────────────────
-  # Compara staging (COTAHIST) com produção (brapi) nos tickers já cobertos.
-  # Só leitura — não escreve em nenhuma tabela. Cron diário durante a
-  # operação paralela (ADR-001, Passo 6) — qualquer divergência nova > 1%
-  # aparece no log deste job.
-  etl-validar-cotahist:
-    name: Validação cruzada COTAHIST vs brapi
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'validar_cotahist' ||
-      github.event_name == 'schedule' && github.event.schedule == '15 11 * * 2-6'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar validação cruzada
-        working-directory: etl
-        run: python validar_cotahist.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── Validação cruzada (fechamento_adj) — só manual ────────────────────────
-  # Mesma comparação, mas fechamento (brapi) x fechamento_adj (staging) — usar
-  # depois de rodar aplicar_ajuste_proventos.py. Ver ADR-001.
-  etl-validar-cotahist-ajustado:
-    name: Validação cruzada COTAHIST vs brapi (ajustado)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'validar_cotahist_ajustado'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar validação cruzada (ajustado)
-        working-directory: etl
-        run: python validar_cotahist.py --usar-ajustado
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) — dry-run ────
-  # Só leitura, não precisa da migration 012 (dry-run só lê ticker/data, não
-  # escreve). A promoção real (job abaixo) sim precisa da 012 executada.
-  etl-promover-cotahist-dry-run:
-    name: Promoção COTAHIST -> produção (dry-run)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'promover_cotahist_dry_run'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar dry-run
-        working-directory: etl
-        run: python promover_cotahist.py --dry-run
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) — real ───────
-  # ESCREVE em rv_ativos/rv_historico (produção). Requer migration
-  # 012_widen_ticker_producao.sql executada antes. Só disparar depois do
-  # dry-run revisado e aprovado.
-  etl-promover-cotahist:
-    name: Promoção COTAHIST -> produção
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'promover_cotahist'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar promoção
-        working-directory: etl
-        run: python promover_cotahist.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── Eventos Corporativos (brapi dividendsData) — cron diário + manual ─────
-  # Popula rv_eventos_societarios + rv_proventos. Ver ADR-001. Volume real já
-  # validado (cota diária da brapi ~13 tickers) — script resumível converge
-  # sozinho no cron; workflow_dispatch continua disponível para forçar.
-  etl-eventos-corporativos:
-    name: ETL Eventos Corporativos (bonificação/desdobramento/proventos)
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'eventos_corporativos' ||
-      github.event_name == 'schedule' && github.event.schedule == '0 19 * * 1-5'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL Eventos Corporativos
-        working-directory: etl
-        run: python eventos_corporativos.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
-
-  # ── Ajuste por proventos (fechamento_adj em rv_historico_staging) — manual ─
-  # Aplica preco_ajustado = preco_bruto / fator nos tickers com evento
-  # societário cadastrado (rv_eventos_societarios). Fase 2, ver ADR-001.
-  # Requer migration 011 executada antes (adiciona a coluna fechamento_adj).
-  etl-ajuste-proventos:
-    name: ETL Ajuste por Proventos (fechamento_adj staging)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'ajuste_proventos'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL Ajuste por Proventos
-        working-directory: etl
-        run: python aplicar_ajuste_proventos.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── Notícias RSS ──────────────────────────────────────────────────────────
-  etl-noticias:
-    name: ETL Notícias RSS
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'noticias' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && (github.event.schedule == '0 11 * * *' || github.event.schedule == '0 22 * * *')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL Notícias
-        working-directory: etl
-        run: python noticias.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── ANBIMA (Índices IMA/IDA + Debêntures + VNA) ───────────────────────────
-  etl-anbima:
-    name: ETL ANBIMA (Índices + Debêntures + VNA)
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'anbima' || github.event.inputs.etl == 'all') ||
-      github.event_name == 'schedule' && github.event.schedule == '0 17 * * 1-5'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL ANBIMA
-        working-directory: etl
-        run: python anbima.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          ANBIMA_CLIENT_ID: ${{ secrets.ANBIMA_CLIENT_ID }}
-          ANBIMA_CLIENT_SECRET: ${{ secrets.ANBIMA_CLIENT_SECRET }}
-
-  # ── ANBIMA CRI (Certificados de Recebíveis Imobiliários) ──────────────────
-  # Só no dispatch dedicado 'anbima_cri'. No schedule e no 'all', o job
-  # etl-anbima (feed 'all') já coleta CRI/CRA — antes rodava em dobro.
-  etl-anbima-cri:
-    name: ETL ANBIMA CRI
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'anbima_cri'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL CRI
-        working-directory: etl
-        run: python anbima.py --feed cri
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          ANBIMA_CLIENT_ID: ${{ secrets.ANBIMA_CLIENT_ID }}
-          ANBIMA_CLIENT_SECRET: ${{ secrets.ANBIMA_CLIENT_SECRET }}
-
-  # ── ANBIMA CRA (Certificados de Recebíveis do Agronegócio) ────────────────
-  # Só no dispatch dedicado 'anbima_cra' (ver comentário em etl-anbima-cri).
-  etl-anbima-cra:
-    name: ETL ANBIMA CRA
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'anbima_cra'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar ETL CRA
-        working-directory: etl
-        run: python anbima.py --feed cra
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ANBIMA_CLIENT_ID: ${{ secrets.ANBIMA_CLIENT_ID }}
           ANBIMA_CLIENT_SECRET: ${{ secrets.ANBIMA_CLIENT_SECRET }}
