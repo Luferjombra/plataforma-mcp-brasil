@@ -18,6 +18,14 @@ preco_ajustado = preco_bruto / fator para datas anteriores a data_com.
 Mesma lista de tickers de rv_historico.py (ATIVOS) — reaproveita
 BRAPI_BASE/BRAPI_TOKEN/brapi_headers de lá para não duplicar config.
 
+A brapi tem um limite diário real para `dividends=true` (confirmado
+empiricamente: 403 Forbidden após ~13 tickers na mesma execução). Por
+isso o job é resumível: só processa tickers que ainda não tiveram um
+run `eventos_<TICKER>` com status='success' em etl_runs, e para no
+primeiro 403 em vez de insistir nos tickers seguintes (que vão falhar
+do mesmo jeito na mesma janela de rate limit). Rodar de novo (mesmo
+comando) continua de onde parou; repetir 1x/dia até cobrir todos.
+
 Uso:
     python etl/eventos_corporativos.py
 """
@@ -105,6 +113,22 @@ def parse_proventos(ticker: str, cash_dividends: list) -> list[dict]:
     return registros
 
 
+# ── Resumo de progresso ──────────────────────────────────────────────────────
+
+def buscar_tickers_cobertos(tickers: list[str]) -> set[str]:
+    """Tickers que já tiveram um run 'eventos_<TICKER>' com sucesso — não
+    precisam ser refeitos (eventos societários são histórico, não mudam)."""
+    jobs_esperados = [f"eventos_{t}" for t in tickers]
+    res = (
+        supabase.table("etl_runs")
+        .select("job")
+        .in_("job", jobs_esperados)
+        .eq("status", "success")
+        .execute()
+    )
+    return {r["job"].removeprefix("eventos_") for r in res.data}
+
+
 # ── Busca ─────────────────────────────────────────────────────────────────────
 
 def buscar_dividendos(ticker: str, client: httpx.Client) -> tuple[list, list]:
@@ -148,8 +172,19 @@ def upsert_proventos(registros: list[dict]) -> int:
 def run():
     print("=== ETL Eventos Corporativos (brapi dividendsData) ===\n")
 
-    tickers = [a["ticker"] for a in ATIVOS]
+    todos_tickers = [a["ticker"] for a in ATIVOS]
+    cobertos = buscar_tickers_cobertos(todos_tickers)
+    tickers = [t for t in todos_tickers if t not in cobertos]
+
+    print(f"{len(cobertos)}/{len(todos_tickers)} já cobertos anteriormente — "
+          f"processando {len(tickers)} pendente(s): {tickers}\n")
+
+    if not tickers:
+        print("=== Nada a fazer — todos os tickers já cobertos ===")
+        return
+
     erros = []
+    parou_por_rate_limit = False
 
     with ETLRun("eventos_corporativos_batch") as batch_run:
         total_eventos = total_proventos = 0
@@ -174,6 +209,15 @@ def run():
 
                         print(f"  ✓ {n_eventos} evento(s) societário(s), {n_proventos} provento(s)\n")
 
+                except httpx.HTTPStatusError as e:
+                    erros.append(f"{ticker}: {e}")
+                    if e.response is not None and e.response.status_code == 403:
+                        print(f"  ⚠ 403 Forbidden em {ticker} — rate limit diário da brapi. "
+                              f"Parando aqui; rodar de novo (mesmo comando) retoma a partir daqui.\n")
+                        parou_por_rate_limit = True
+                        break
+                    print(f"  ✗ Erro: {e}\n")
+
                 except Exception as e:
                     erros.append(f"{ticker}: {e}")
                     print(f"  ✗ Erro: {e}\n")
@@ -188,7 +232,9 @@ def run():
         for e in erros:
             print(f"  - {e}")
 
-    print(f"\n=== Concluído — {total_eventos} eventos societários, {total_proventos} proventos ===")
+    restantes = len(tickers) - (tickers.index(ticker) + 1) if parou_por_rate_limit else 0
+    print(f"\n=== Concluído — {total_eventos} eventos societários, {total_proventos} proventos "
+          f"({restantes} ticker(s) ainda pendente(s) por rate limit) ===")
 
 
 if __name__ == "__main__":
