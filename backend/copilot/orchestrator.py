@@ -76,8 +76,11 @@ async def _gerar_resposta(user_content: str) -> str:
 
 
 async def processar_pergunta(pergunta: str, contexto_extra: str | None = None) -> dict:
-    # Verifica cache
-    hash_key = hashlib.sha256(pergunta.strip().lower().encode()).hexdigest()
+    # Verifica cache -- hash inclui contexto_extra: sem isso, a mesma
+    # pergunta textual com contextos diferentes colidia na mesma chave e
+    # podia devolver uma resposta calculada para o contexto errado.
+    chave_cache = f"{pergunta.strip().lower()}|{(contexto_extra or '').strip().lower()}"
+    hash_key = hashlib.sha256(chave_cache.encode()).hexdigest()
     cache = supabase.table("copilot_cache").select("*").eq("hash_pergunta", hash_key).execute()
 
     if cache.data:

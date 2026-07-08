@@ -21,7 +21,7 @@ import argparse
 import datetime
 
 from config import supabase
-from log_etl import ETLRun
+from log_etl import ETLRun, hoje_brt
 from rv_historico import ATIVOS
 
 LIMIAR_PADRAO = 1.0  # % de divergência no fechamento para marcar como suspeito
@@ -102,7 +102,7 @@ def comparar_ticker(ticker: str, limiar: float, cutoff: str, usar_ajustado: bool
 def run(limiar: float = LIMIAR_PADRAO, janela_dias: int = JANELA_DIAS_PADRAO, usar_ajustado: bool = False):
     print("=== Validação cruzada — COTAHIST (staging) vs brapi (produção) ===\n")
 
-    cutoff = (datetime.date.today() - datetime.timedelta(days=janela_dias)).isoformat()
+    cutoff = (hoje_brt() - datetime.timedelta(days=janela_dias)).isoformat()
     tickers = [a["ticker"] for a in ATIVOS]
     print(f"Comparando {len(tickers)} tickers (famílias pré-definidas de rv_historico.py)")
     print(f"Janela: últimos {janela_dias} dias (desde {cutoff}) — limiar de divergência: {limiar}%")
@@ -155,6 +155,21 @@ def run(limiar: float = LIMIAR_PADRAO, janela_dias: int = JANELA_DIAS_PADRAO, us
         print(f"Total de divergências:         {total_divergencias}")
 
         run_ctx.set_rows(total_datas_comuns)
+
+        # F15: antes disso, uma divergência real só aparecia no log do job --
+        # monitorar exigia checar o GitHub Actions manualmente todo dia
+        # durante a janela paralela. `set_status("partial", ...)` (mesmo
+        # mecanismo do F7/F11) marca o run em etl_runs, o que já aparece em
+        # `/health/etl` (Status ETL no frontend) sem precisar ler log.
+        # "Sem overlap" não entra aqui de propósito -- é esperado e já
+        # investigado para ELET3/RBRF11 (ADR-001, item 5); tratar como
+        # alerta criaria ruído permanente para um caso já resolvido.
+        if total_divergencias > 0:
+            run_ctx.set_status(
+                "partial",
+                f"{total_divergencias} divergência(s) > {limiar}% em "
+                f"{len(tickers_com_divergencia)} ticker(s): {', '.join(tickers_com_divergencia)}",
+            )
 
     print("\n=== Concluído ===")
 

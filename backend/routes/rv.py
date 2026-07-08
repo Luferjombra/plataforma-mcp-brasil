@@ -1,5 +1,4 @@
 import logging
-from typing import Union
 
 from fastapi import APIRouter, Query, HTTPException
 from db import supabase
@@ -68,19 +67,40 @@ def get_ativos(
     return {"data": data, "total": result.count or 0, "page": page, "per_page": per_page}
 
 
+TAMANHO_PAGINA_HISTORICO = 1000
+
+
+def _buscar_historico(ticker: str, limit: int) -> list[dict]:
+    """Busca histórico de um ticker em blocos de até 1000 linhas via
+    `.range()`. `limit` aceita até 2000 (F14), mas um único `.limit()`
+    fica sujeito ao teto padrão de 1000 linhas do PostgREST -- mesma
+    classe de bug do F13/E2 em `/rv/ativos`, aqui não observada hoje só
+    porque nenhum ticker do universo tem mais de 1000 candles."""
+    registros: list[dict] = []
+    inicio = 0
+    while len(registros) < limit:
+        fim = min(inicio + TAMANHO_PAGINA_HISTORICO, limit) - 1
+        pagina = (
+            supabase.table("rv_historico")
+            .select("*")
+            .eq("ticker", ticker)
+            .order("data", desc=True)
+            .range(inicio, fim)
+            .execute()
+        )
+        lote = pagina.data or []
+        registros.extend(lote)
+        if len(lote) < (fim - inicio + 1):
+            break  # acabou o histórico antes de atingir `limit`
+        inicio += TAMANHO_PAGINA_HISTORICO
+    return registros
+
+
 @router.get("/historico/{ticker}")
-def get_historico(ticker: str, limit: Union[int, str] = Query(252, description="Número de registros de pregão (inteiro). Padrão: 252 (≈1 ano útil). Máx: 2000.")):
+def get_historico(ticker: str, limit: int = Query(252, ge=1, le=2000, description="Número de registros de pregão. Padrão: 252 (≈1 ano útil). Máx: 2000.")):
     """Retorna historico de pregao de um ativo."""
     ticker = ticker.upper()
-    limit = max(1, min(int(limit), 2000))
-    result = (
-        supabase.table("rv_historico")
-        .select("*")
-        .eq("ticker", ticker)
-        .order("data", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    if not result.data:
+    dados = _buscar_historico(ticker, limit)
+    if not dados:
         raise HTTPException(status_code=404, detail=f"Ticker {ticker} nao encontrado.")
-    return {"ticker": ticker, "data": result.data}
+    return {"ticker": ticker, "data": dados}

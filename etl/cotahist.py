@@ -37,7 +37,7 @@ import zipfile
 import datetime
 import httpx
 from config import supabase
-from log_etl import ETLRun
+from log_etl import ETLRun, hoje_brt
 
 BASE_URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist"
 
@@ -266,7 +266,7 @@ def upsert_staging(registros: list[dict]) -> tuple[int, int]:
 def run():
     print("=== ETL COTAHIST (B3) — Fase 1: staging ===\n")
 
-    hoje = proximo_dia_util(datetime.date.today())
+    hoje = proximo_dia_util(hoje_brt())
 
     with ETLRun("cotahist_staging") as run_ctx:
         with httpx.Client() as client:

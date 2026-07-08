@@ -17,8 +17,21 @@ Uso básico:
 
 import time
 import httpx
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 from config import supabase
+
+TZ_BRT = ZoneInfo("America/Sao_Paulo")
+
+
+def hoje_brt() -> date:
+    """Data de hoje em horário de Brasília (America/Sao_Paulo).
+
+    Os runners do GitHub Actions rodam em UTC -- usar `date.today()` puro
+    pega o dia errado perto da meia-noite BRT (ex: um job às 21h10 BRT já
+    é 00h10 UTC do dia seguinte). Usado nos ETLs que decidem "qual pregão
+    buscar" ou "quantos dias atrás" com base no dia corrente."""
+    return datetime.now(TZ_BRT).date()
 
 
 # ── Retry ─────────────────────────────────────────────────────────────────────

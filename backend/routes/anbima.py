@@ -11,7 +11,6 @@ GET /anbima/cra/{codigo}        → histórico de preços de um CRA
 GET /anbima/vna/{tipo}          → histórico VNA de NTN-B, LFT ou NTN-C
 """
 
-from typing import Union
 from fastapi import APIRouter, Query, HTTPException
 from db import supabase
 
@@ -58,11 +57,9 @@ def get_indices_resumo():
 @router.get("/indices/{serie}")
 def get_historico_indice(
     serie: str,
-    limit: Union[int, str] = Query(252, description="Número de registros. Padrão: 252 (≈1 ano útil). Máx: 2000."),
+    limit: int = Query(252, ge=1, le=2000, description="Número de registros. Padrão: 252 (≈1 ano útil). Máx: 2000."),
 ):
     """Retorna histórico de um índice ANBIMA (IMA-B, IDA-DI, etc.)."""
-    limit = max(1, min(int(limit), 2000))
-
     serie_decoded = serie.replace("-", " ").upper() if "+" not in serie else serie.upper()
     serie_options = [serie, serie_decoded, serie.upper()]
 
@@ -91,11 +88,9 @@ def get_historico_indice(
 @router.get("/debentures")
 def get_debentures(
     indexador: str = Query(None, description="Filtrar por indexador: CDI, IPCA, PRE"),
-    limit: Union[int, str] = Query(50, description="Número de debêntures. Padrão: 50. Máx: 500."),
+    limit: int = Query(50, ge=1, le=500, description="Número de debêntures. Padrão: 50. Máx: 500."),
 ):
     """Lista debêntures com preço indicativo mais recente."""
-    limit = max(1, min(int(limit), 500))
-
     res_last = (
         supabase.table("anbima_debentures_historico")
         .select("data")
@@ -182,11 +177,9 @@ def get_debentures_sparklines(
 @router.get("/debentures/{codigo}")
 def get_historico_debenture(
     codigo: str,
-    limit: Union[int, str] = Query(252, description="Número de registros. Padrão: 252. Máx: 2000."),
+    limit: int = Query(252, ge=1, le=2000, description="Número de registros. Padrão: 252. Máx: 2000."),
 ):
     """Retorna histórico de preços e taxas de uma debênture."""
-    limit = max(1, min(int(limit), 2000))
-
     cadastro = (
         supabase.table("anbima_debentures_cadastro")
         .select("*")
@@ -283,19 +276,19 @@ def get_cri_sparklines(
 @router.get("/cri")
 def get_cri(
     indexador: str = Query(None, description="Filtrar por indexador: CDI, IPCA, PRE, TR"),
-    limit: Union[int, str] = Query(50, description="Número de CRIs. Padrão: 50. Máx: 500."),
+    limit: int = Query(50, ge=1, le=500, description="Número de CRIs. Padrão: 50. Máx: 500."),
 ):
     """Lista CRI (Certificados de Recebíveis Imobiliários) com preço indicativo mais recente."""
-    return _get_credito_privado_lista("cri", indexador, max(1, min(int(limit), 500)))
+    return _get_credito_privado_lista("cri", indexador, limit)
 
 
 @router.get("/cri/{codigo}")
 def get_historico_cri(
     codigo: str,
-    limit: Union[int, str] = Query(252, description="Número de registros. Padrão: 252. Máx: 2000."),
+    limit: int = Query(252, ge=1, le=2000, description="Número de registros. Padrão: 252. Máx: 2000."),
 ):
     """Retorna histórico de preços e taxas de um CRI."""
-    return _get_credito_privado_historico("cri", codigo, max(1, min(int(limit), 2000)))
+    return _get_credito_privado_historico("cri", codigo, limit)
 
 
 @router.get("/cra/sparklines")
@@ -309,29 +302,27 @@ def get_cra_sparklines(
 @router.get("/cra")
 def get_cra(
     indexador: str = Query(None, description="Filtrar por indexador: CDI, IPCA, PRE, IGPM"),
-    limit: Union[int, str] = Query(50, description="Número de CRAs. Padrão: 50. Máx: 500."),
+    limit: int = Query(50, ge=1, le=500, description="Número de CRAs. Padrão: 50. Máx: 500."),
 ):
     """Lista CRA (Certificados de Recebíveis do Agronegócio) com preço indicativo mais recente."""
-    return _get_credito_privado_lista("cra", indexador, max(1, min(int(limit), 500)))
+    return _get_credito_privado_lista("cra", indexador, limit)
 
 
 @router.get("/cra/{codigo}")
 def get_historico_cra(
     codigo: str,
-    limit: Union[int, str] = Query(252, description="Número de registros. Padrão: 252. Máx: 2000."),
+    limit: int = Query(252, ge=1, le=2000, description="Número de registros. Padrão: 252. Máx: 2000."),
 ):
     """Retorna histórico de preços e taxas de um CRA."""
-    return _get_credito_privado_historico("cra", codigo, max(1, min(int(limit), 2000)))
+    return _get_credito_privado_historico("cra", codigo, limit)
 
 
 @router.get("/vna/{tipo}")
 def get_vna(
     tipo: str,
-    limit: Union[int, str] = Query(252, description="Número de registros. Padrão: 252. Máx: 2000."),
+    limit: int = Query(252, ge=1, le=2000, description="Número de registros. Padrão: 252. Máx: 2000."),
 ):
     """Retorna histórico do VNA (Valor Nominal de Atualização) de NTN-B, LFT ou NTN-C."""
-    limit = max(1, min(int(limit), 2000))
-
     tipo_up = tipo.upper()
     if tipo_up not in ("NTN-B", "LFT", "NTN-C"):
         raise HTTPException(

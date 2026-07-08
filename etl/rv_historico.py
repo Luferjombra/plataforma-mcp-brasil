@@ -15,7 +15,7 @@ import time
 import httpx
 import os
 from config import supabase
-from log_etl import ETLRun, log_partial, retry_request
+from log_etl import ETLRun, hoje_brt, log_partial, retry_request
 
 BRAPI_BASE = "https://brapi.dev/api"
 BRAPI_TOKEN = os.getenv("BRAPI_TOKEN", "")  # opcional
@@ -107,7 +107,7 @@ def buscar_historico(ticker: str, client: httpx.Client) -> list[dict]:
     - Se vazio: carga inicial de 5 anos
     Retorna lista de dicts com keys: date(unix ts), open, high, low, close, volume, adjustedClose.
     """
-    today = datetime.date.today()
+    today = hoje_brt()
     ultima = ultima_data_no_banco(ticker)
 
     if ultima is None:
@@ -244,7 +244,7 @@ def run():
                         # Determina status pelo candle mais recente
                         ultimo_ts = candles[-1].get("date", 0)
                         ultimo_dia = datetime.datetime.fromtimestamp(ultimo_ts, tz=datetime.timezone.utc).date()
-                        dias_atraso = (datetime.date.today() - ultimo_dia).days
+                        dias_atraso = (hoje_brt() - ultimo_dia).days
                         status = "delisted" if dias_atraso > 30 else "ativo"
 
                         info = buscar_info(ticker, client)
