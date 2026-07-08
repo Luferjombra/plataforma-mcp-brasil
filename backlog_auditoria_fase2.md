@@ -88,9 +88,9 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 Não promover fonte nova por cima de bugs conhecidos, especialmente F1 (carteira) que consome `rv_historico`.
 
 ### Passo 2 — Ajuste por proventos — ~3h
-- [x] Script `etl/aplicar_ajuste_proventos.py`: lê `rv_eventos_societarios`, aplica `preco_ajustado = preco_bruto / fator` (cumulativo, para eventos com `data_com` >= data do pregão) e grava `fechamento_adj` em `rv_historico_staging` — ✅ CONCLUÍDO (2026-07-07). Migration `011_fechamento_adj_staging.sql` adiciona a coluna; job `ajuste_proventos` no `etl.yml`. **Pendente: usuário rodar a migration 011 no Supabase antes do primeiro disparo.**
-- [ ] Validar: rodar `validar_cotahist.py --usar-ajustado` (flag já implementada) comparando `fechamento_adj` (staging) × `fechamento` (brapi) — as 244 divergências de ITUB4/MGLU3 devem zerar. Falta executar após a migration + o disparo do ETL de ajuste.
-- [ ] Completar `rv_eventos_societarios` para os tickers que faltaram (cota: rodar o ETL de eventos 1×/dia até cobrir — F11 torna isso automático)
+- [x] Script `etl/aplicar_ajuste_proventos.py`: lê `rv_eventos_societarios`, aplica `preco_ajustado = preco_bruto / fator` (cumulativo, para eventos com `data_com` >= data do pregão) e grava `fechamento_adj` em `rv_historico_staging` — ✅ CONCLUÍDO (2026-07-07). Migration `011_fechamento_adj_staging.sql` executada; job `ajuste_proventos` rodou: 1.000 candles ajustados (ITUB4/MGLU3/PETR4/VALE3, 250 cada).
+- [x] Validar: rodar `validar_cotahist.py --usar-ajustado` comparando `fechamento_adj` (staging) × `fechamento` (brapi) — ✅ CONCLUÍDO (2026-07-07). **0 divergências em 4.785 datas comparadas** (era 244 em ITUB4/MGLU3 + 1 em VIVT3). Job `validar_cotahist_ajustado` no `etl.yml`.
+- [ ] Completar `rv_eventos_societarios` para os tickers que faltaram (hoje só 4/31 cobertos; cota: rodar o ETL de eventos 1×/dia até cobrir — F11 torna isso automático)
 
 ### Passo 3 — Investigações pendentes — ~2h
 - [ ] `ELET3`/`RBRF11`: por que zero overlap de datas entre fontes (delisting? rebatização? gap de coleta?)

@@ -1,6 +1,6 @@
 # ADR-001 — Migração da fonte de Renda Variável para o COTAHIST (B3)
 
-**Status:** Fase 1 concluída (2026-07-03) · Validação cruzada concluída (2026-07-07) · Fonte de eventos corporativos resolvida (2026-07-07) · Ajuste por proventos implementado (2026-07-07) · Fase 2 em andamento
+**Status:** Fase 1 concluída (2026-07-03) · Validação cruzada concluída (2026-07-07) · Fonte de eventos corporativos resolvida (2026-07-07) · Ajuste por proventos implementado e validado (2026-07-07) · Fase 2 em andamento
 **Referenciado em:** `etl/cotahist.py`, `etl/cotahist_backfill.py`, `etl/validar_cotahist.py`, `etl/eventos_corporativos.py`, `etl/aplicar_ajuste_proventos.py`, `database/migrations/008_cotahist_staging.sql`, `database/migrations/010_eventos_corporativos.sql`, `database/migrations/011_fechamento_adj_staging.sql`, `.github/workflows/etl.yml`
 
 ---
@@ -75,6 +75,8 @@ Item 1 da Fase 2 executado via `etl/validar_cotahist.py` (só leitura, compara `
 
 O caso VIVT3 (offset isolado, só no fechamento, um único dia) tem assinatura diferente — não é compatível com evento societário (que afetaria o candle inteiro). Provável revisão pontual de preço entre as fontes; não bloqueia a Fase 2, mas fica registrado.
 
+**Confirmação pós-ajuste (2026-07-07):** depois de rodar `aplicar_ajuste_proventos.py` (ver seção "Ajuste por proventos" abaixo), `validar_cotahist.py --usar-ajustado` repetiu a mesma comparação usando `fechamento_adj` no lado staging: **0 divergências em 4.785 datas comparadas** (31 tickers). ITUB4 e MGLU3 foram a 0% (eram ~121/249 e ~123/249 divergências); o caso isolado de VIVT3 também zerou. Único achado remanescente: `ELET3`/`RBRF11` continuam sem overlap de datas (item 5 da Fase 2, não relacionado a preço ajustado).
+
 ## Fase 2 — pendências
 
 Antes de promover `rv_ativos_staging`/`rv_historico_staging` para `rv_ativos`/`rv_historico`:
@@ -82,7 +84,7 @@ Antes de promover `rv_ativos_staging`/`rv_historico_staging` para `rv_ativos`/`r
 1. ~~**Validação cruzada**~~ — ✅ concluída (2026-07-06/07), ver seção acima. Abriu uma pendência nova (item 4).
 2. **Resolver `ETF_OU_FUNDO`** — critério definitivo antes do campo `tipo` virar fonte de verdade.
 3. **Decidir escopo do universo exposto** — manter curadoria de ~30 tickers ou expor o universo completo do COTAHIST (implica paginação/busca server-side na API e frontend).
-4. **Ajuste por proventos (implementado 2026-07-07; pendente validar após população completa de eventos)** — `setor`, `subsetor`, `market_cap`, `free_float` (hoje vêm do brapi `fundamental=true`) continuam sem fonte equivalente no COTAHIST. O gap de `fechamento_adj` (ajustado por proventos) — confirmado como bloqueador real pela validação cruzada — está resolvido para os tickers com evento cadastrado: `database/migrations/011_fechamento_adj_staging.sql` adiciona a coluna e `etl/aplicar_ajuste_proventos.py` calcula `preco_ajustado = preco_bruto / fator_acumulado` (ver seção "Ajuste por proventos" abaixo). Falta rodar o ETL de eventos até cobrir todo o universo (hoje ~13/31 tickers, por causa do rate limit da brapi) e reconfirmar via `validar_cotahist.py --usar-ajustado`.
+4. ~~**Ajuste por proventos**~~ — ✅ concluído e validado (2026-07-07). `preco_ajustado = preco_bruto / fator_acumulado` aplicado via `aplicar_ajuste_proventos.py`, confirmado por `validar_cotahist.py --usar-ajustado` (0 divergências, ver seção acima). `setor`, `subsetor`, `market_cap`, `free_float` (hoje vêm do brapi `fundamental=true`) continuam sem fonte equivalente no COTAHIST — não bloqueiam a promoção de preço/OHLC, mas ficam como gap conhecido. **Ainda pendente:** o ajuste só cobre os 4 tickers com evento cadastrado hoje (ITUB4, MGLU3, PETR4, VALE3) — rodar `eventos_corporativos.py` recorrentemente até cobrir o restante do universo (rate limit da brapi, ver F11 do backlog de auditoria) e reaplicar o ajuste conforme a base crescer.
 5. **Investigar ELET3 e RBRF11** — sem overlap de datas mesmo com contagens parecidas nas duas fontes; checar se é delisting, rebatização de ticker ou gap de coleta.
 6. **Mecanismo de corte** — script de promoção com regra de precedência por `fonte` (coluna já preparada nas migrations 007/008); rodar em paralelo por 1–2 semanas antes de aposentar `rv_historico.py`.
 7. **Simplificar `etl.yml`** — trocar as 6 janelas de descoberta por 1 cron único (mantendo fallback D-1), já que não existe horário fixo confiável.
@@ -114,10 +116,10 @@ Com `rv_eventos_societarios` populada, dá para calcular o mesmo retroajuste que
 `fator_acumulado(data_pregao) = produto de fator de todo evento do ticker com data_com >= data_pregao` (eventos ainda "à frente" daquele pregão). `fechamento_adj = fechamento / fator_acumulado`.
 
 **Implementação:**
-- `database/migrations/011_fechamento_adj_staging.sql` — adiciona `fechamento_adj NUMERIC(14,4)` em `rv_historico_staging` (produção já tinha essa coluna; staging não).
-- `etl/aplicar_ajuste_proventos.py` — só processa tickers já presentes em `rv_eventos_societarios` (hoje ~13/31, limitado pelo rate limit da brapi em `eventos_corporativos.py`); recalcula e faz upsert de `fechamento_adj` em `rv_historico_staging`. Payload do upsert inclui `ticker`/`data`/`fechamento` (não só `fechamento_adj`) porque `ON CONFLICT DO UPDATE` no PostgREST valida as constraints `NOT NULL` da tabela mesmo no ramo de conflito.
+- `database/migrations/011_fechamento_adj_staging.sql` — adiciona `fechamento_adj NUMERIC(14,4)` em `rv_historico_staging` (produção já tinha essa coluna; staging não). Executada em produção 2026-07-07.
+- `etl/aplicar_ajuste_proventos.py` — só processa tickers já presentes em `rv_eventos_societarios` (hoje 4: ITUB4, MGLU3, PETR4, VALE3 — limitado pelo rate limit da brapi em `eventos_corporativos.py`); recalcula e faz upsert de `fechamento_adj` em `rv_historico_staging`. Payload do upsert inclui `ticker`/`data`/`fechamento` (não só `fechamento_adj`) porque `ON CONFLICT DO UPDATE` no PostgREST valida as constraints `NOT NULL` da tabela mesmo no ramo de conflito. Primeira execução (2026-07-07): 1.000 candles ajustados (250 por ticker).
 - Disparo manual via `workflow_dispatch` (`ajuste_proventos`).
-- Validação: `etl/validar_cotahist.py --usar-ajustado` compara `fechamento` (brapi, já ajustado) contra `fechamento_adj` (staging) em vez do `fechamento` bruto — usar depois de rodar o ajuste para confirmar que as divergências de ITUB4/MGLU3 caem a ~0%.
+- **Validação confirmada (2026-07-07):** `etl/validar_cotahist.py --usar-ajustado` (job `validar_cotahist_ajustado` no `etl.yml`) compara `fechamento` (brapi, já ajustado) contra `fechamento_adj` (staging) — resultado: **0 divergências em 4.785 datas comparadas**, incluindo ITUB4 e MGLU3 (ver seção "Validação cruzada — resultado" acima).
 - **Pendente:** cobrir o restante do universo de eventos (o ajuste só vale para tickers com evento cadastrado) e rodar `eventos_corporativos.py` recorrentemente até fechar a lacuna (ver F11 do backlog de auditoria — tratar 403 como sinal de parada, não erro).
 
 **O que ainda falta (não faz parte desta etapa):** o cálculo de `preco_ajustado = preco_bruto / fator` para as datas anteriores a `data_com` — `rv_eventos_societarios` fornece o dado, mas a lógica de ajuste em si ainda não foi escrita. Fica como próximo passo antes de fechar o item 4 da Fase 2.
