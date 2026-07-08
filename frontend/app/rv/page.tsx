@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { getAtivos, getHistoricoRV, type Ativo, type Historico } from '@/lib/api'
 import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { formatBRL, formatCap } from '@/lib/format'
@@ -112,6 +113,17 @@ function RVInner() {
     return b.var_dia_pct - a.var_dia_pct
   }), [ativos])
 
+  // Virtualização da lista -- POR_PAGINA é 50 hoje, mas isso prepara a
+  // lista para quando per_page crescer (ou a paginação for removida em
+  // favor de scroll infinito) sem precisar revisitar este componente.
+  const listParentRef = useRef<HTMLDivElement>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: ativosFiltrados.length,
+    getScrollElement: () => listParentRef.current,
+    estimateSize: () => 46,
+    overscan: 8,
+  })
+
   const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA))
 
   const isFII = ativoSel?.tipo === 'FII'
@@ -202,7 +214,7 @@ function RVInner() {
             ))}
           </div>
 
-          <div className="cl-rv-list" style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
+          <div ref={listParentRef} className="cl-rv-list" style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
             {loadingAtivos ? (
               <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {Array.from({ length: 8 }).map((_, i) => <SkeletonShimmer key={i} h={44} />)}
@@ -210,19 +222,27 @@ function RVInner() {
             ) : ativosFiltrados.length === 0 ? (
               <EmptyState msg="Nenhum ativo encontrado" />
             ) : (
-              <div>
-                {ativosFiltrados.map(a => {
+              <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+                {rowVirtualizer.getVirtualItems().map(vRow => {
+                  const a = ativosFiltrados[vRow.index]
                   const active = selecionado === a.ticker
                   const pos    = (a.var_dia_pct ?? 0) >= 0
                   return (
-                    <button key={a.ticker} onClick={() => selecionarAtivo(a)} style={{
-                      width: '100%', display: 'grid', gridTemplateColumns: '1fr auto auto',
-                      gap: 8, alignItems: 'center', padding: '10px 14px', textAlign: 'left',
-                      background: active ? 'var(--cl-accent-soft)' : 'transparent',
-                      borderLeft: active ? '3px solid var(--cl-accent)' : '3px solid transparent',
-                      borderBottom: '1px solid var(--cl-line2)',
-                      cursor: 'pointer', transition: 'all 0.1s',
-                    }}>
+                    <button
+                      key={a.ticker}
+                      data-index={vRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      onClick={() => selecionarAtivo(a)}
+                      style={{
+                        position: 'absolute', top: 0, left: 0, width: '100%',
+                        transform: `translateY(${vRow.start}px)`,
+                        display: 'grid', gridTemplateColumns: '1fr auto auto',
+                        gap: 8, alignItems: 'center', padding: '10px 14px', textAlign: 'left',
+                        background: active ? 'var(--cl-accent-soft)' : 'transparent',
+                        borderLeft: active ? '3px solid var(--cl-accent)' : '3px solid transparent',
+                        borderBottom: '1px solid var(--cl-line2)',
+                        cursor: 'pointer', transition: 'background 0.1s',
+                      }}>
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: active ? 'var(--cl-accent)' : 'var(--cl-ink)', lineHeight: 1.2 }}>{a.ticker}</div>
                         <div style={{ fontSize: 10, color: 'var(--cl-ink3)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>

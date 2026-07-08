@@ -166,7 +166,18 @@ Revisão de pair-programming (2 rodadas) encontrou e corrigiu 3 problemas reais 
 
 Ao implementar E3, `GET /carteira/analise` (linha ~215) mostrou ter uma heurística DIFERENTE e mais complexa (`limit(periodo_dias * len(tickers))`, reconstrução de série histórica completa, não só o último preço) — fora do escopo literal de E3, registrada como novo item **E3b** no backlog (precisa de função SQL própria com forward-fill por ticker/data).
 
-**Pendente:** P6 (virtualização das listas `/rv`, `/fundos`, `/renda-fixa`).
+**P6 — Virtualização das listas (concluído 2026-07-08):** antes de implementar, medimos o volume real de dados (`fundos_cadastro`=8, `/renda-fixa` capado em 100/aba, `/rv` já pagina 50/página via E2) — nenhum justificava virtualização hoje. Decisão do usuário: implementar mesmo assim, como preparação para quando o volume crescer (ex: universo COTAHIST completo em `/rv`, ou expansão de `fundos_cadastro`). Usa `@tanstack/react-virtual` nas 3 páginas:
+
+- `/rv/page.tsx`: lista de ativos (coluna única) via `useVirtualizer`, container já tinha `maxHeight` fixo (`.cl-rv-list`).
+- `/renda-fixa/page.tsx`: lista de títulos via `useVirtualizer`.
+- `/fundos/page.tsx`: grid de cards (`auto-fill`, nº de colunas variável) — virtualizado por linha, com nº de colunas recalculado via `ResizeObserver` na largura do container.
+
+Testado com dados mockados via Playwright (backend real não disponível no ambiente de execução) simulando 200/1000/150 itens — confirmado que só uma fração das linhas é montada no DOM a qualquer momento e que o conteúdo renderizado acompanha a posição do scroll corretamente. 3 bugs reais encontrados e corrigidos durante essa verificação (nenhum pego pelo build/typecheck, só testando de fato):
+1. `/fundos` e `/renda-fixa` não tinham altura de container limitada (`minHeight` em vez de `height`, e um `1fr` implícito de grid row sem `minmax(0, 1fr)`) — sem isso o container cresce para caber todo o conteúdo e a virtualização não tem "janela" para recortar, renderizando tudo mesmo assim. `/renda-fixa` também precisou de `minHeight: 0` nos itens flex intermediários (gotcha clássico de flexbox/grid com overflow).
+2. `/fundos`: o `ResizeObserver` que mede a largura do grid (pra calcular nº de colunas) estava num `useEffect` com deps vazias lendo `ref.current` — como o grid só monta depois do skeleton de loading sair da árvore, o efeito rodava com o ref ainda `null` e nunca mais reobservava. Corrigido com callback ref (`useState<HTMLDivElement|null>` + `useCallback`) para que o efeito rode de novo quando o elemento real monta.
+3. (menor) inicialmente usamos `useWindowVirtualizer` em `/fundos` com `scrollMargin` calculado a partir de `offsetTop` — nunca atualizava a janela visível ao rolar. Trocado por `useVirtualizer` com container próprio (`maxHeight` + `overflowY: auto`), mesmo padrão das outras duas páginas.
+
+Revisão de pair-programming (1 rodada, "aprovado com ressalvas") encontrou mais 2 pontos não-bloqueantes, ambos corrigidos: `height: 560` fixo em `/renda-fixa` sem fallback pra viewport curta (trocado por `height: 'min(560px, calc(100vh - 220px))'`) e um flash cosmético de 1 coluna em `/fundos` antes do primeiro measure do `ResizeObserver` (corrigido mostrando o skeleton de loading enquanto `gridWidth === 0`). Um terceiro ponto (espaço vazio abaixo da lista quando a busca filtra para poucos itens, inerente a ter altura de scroll fixa) foi registrado como trade-off aceito, não corrigido.
 
 ## Referências
 

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   getDebentures, getCRI, getCRA, getAnbimaSparklines,
   AnbimaDebenture, AnbimaCRI, AnbimaCRA,
@@ -358,6 +359,16 @@ export default function RendaFixaPage() {
 
   const counts = { debentures: debs.length, cri: cris.length, cra: cras.length }
 
+  // Virtualização da lista -- hoje limitada a 100 itens/aba (getDebentures/
+  // getCRI/getCRA), mas prepara o componente para quando o limite subir.
+  const listParentRef = useRef<HTMLDivElement>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => listParentRef.current,
+    estimateSize: () => 62,
+    overscan: 8,
+  })
+
   if (loading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -459,15 +470,24 @@ export default function RendaFixaPage() {
         <div style={{ flex: 1, borderBottom: '1px solid var(--cl-line)' }} />
       </div>
 
-      {/* ── Split layout ── */}
+      {/* ── Split layout ──
+          `height` (não `minHeight`) é necessário para o painel de lista
+          poder usar `overflowY: auto` de verdade -- sem uma altura definida
+          aqui, o grid cresce para caber todo o conteúdo e a virtualização
+          da lista nunca teria uma janela visível menor que o total.
+          `min(560px, ...)` evita que os 560px fixos estourem em viewports
+          curtas (achado de revisão -- diferente de `/rv`, que usa
+          `maxHeight` sem limite superior porque a lista lá é só uma
+          coluna que pode crescer livremente; aqui preferimos não
+          redesenhar o grid 2 colunas para mobile agora). */}
       <div style={{
-        display: 'grid', gridTemplateColumns: '310px 1fr', gap: 0,
+        display: 'grid', gridTemplateColumns: '310px 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: 0,
         border: '1px solid var(--cl-line)', borderTop: 'none',
         borderRadius: '0 0 var(--cl-radius-sm) var(--cl-radius-sm)',
-        overflow: 'hidden', minHeight: 560,
+        overflow: 'hidden', height: 'min(560px, calc(100vh - 220px))',
       }}>
         {/* List panel */}
-        <div style={{ borderRight: '1px solid var(--cl-line)', background: 'var(--cl-card)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ borderRight: '1px solid var(--cl-line)', background: 'var(--cl-card)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <div style={{ padding: 10, borderBottom: '1px solid var(--cl-line)' }}>
             <input
               value={search}
@@ -481,50 +501,57 @@ export default function RendaFixaPage() {
             />
           </div>
 
-          <div style={{ overflowY: 'auto', flex: 1 }}>
+          <div ref={listParentRef} style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
             {filtered.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--cl-ink3)' }}>
                 Nenhum ativo encontrado
               </div>
             ) : (
-              filtered.map(bond => {
-                const isActive = selected?.codigo === bond.codigo
-                const sp = sparklines[bond.codigo] ?? []
-                const { text: spColor } = idxColor(bond.indexador)
-                return (
-                  <div
-                    key={bond.codigo}
-                    onClick={() => setSelected(bond)}
-                    style={{
-                      padding: '11px 13px', borderBottom: '1px solid var(--cl-line)',
-                      cursor: 'pointer', transition: 'background .1s',
-                      background: isActive ? 'var(--cl-accent-soft)' : 'transparent',
-                      borderLeft: isActive ? '3px solid var(--cl-accent)' : '3px solid transparent',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: 'var(--cl-navy)' }}>
-                        {bond.codigo}
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: spColor }}>
-                        {fmtRate(bond.taxa_indicativa, bond.indexador)}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{
-                        fontSize: 11, color: 'var(--cl-ink3)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150,
-                      }}>
-                        {bond.emissor}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {sp.length >= 2 && <MiniLine values={sp} color={spColor} />}
-                        <IdxTag idx={bond.indexador} />
+              <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+                {rowVirtualizer.getVirtualItems().map(vRow => {
+                  const bond = filtered[vRow.index]
+                  const isActive = selected?.codigo === bond.codigo
+                  const sp = sparklines[bond.codigo] ?? []
+                  const { text: spColor } = idxColor(bond.indexador)
+                  return (
+                    <div
+                      key={bond.codigo}
+                      data-index={vRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      onClick={() => setSelected(bond)}
+                      style={{
+                        position: 'absolute', top: 0, left: 0, width: '100%',
+                        transform: `translateY(${vRow.start}px)`,
+                        padding: '11px 13px', borderBottom: '1px solid var(--cl-line)',
+                        cursor: 'pointer', transition: 'background .1s',
+                        background: isActive ? 'var(--cl-accent-soft)' : 'transparent',
+                        borderLeft: isActive ? '3px solid var(--cl-accent)' : '3px solid transparent',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: 'var(--cl-navy)' }}>
+                          {bond.codigo}
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: spColor }}>
+                          {fmtRate(bond.taxa_indicativa, bond.indexador)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{
+                          fontSize: 11, color: 'var(--cl-ink3)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150,
+                        }}>
+                          {bond.emissor}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {sp.length >= 2 && <MiniLine values={sp} color={spColor} />}
+                          <IdxTag idx={bond.indexador} />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )
-              })
+                  )
+                })}
+              </div>
             )}
           </div>
 
@@ -534,7 +561,7 @@ export default function RendaFixaPage() {
         </div>
 
         {/* Detail panel */}
-        <div style={{ background: 'var(--cl-card)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ background: 'var(--cl-card)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {selected ? (
             <BondDetail bond={selected} sparkline={sparklines[selected.codigo] ?? []} />
           ) : (

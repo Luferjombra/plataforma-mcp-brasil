@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo, Suspense } from 'react'
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { getFundos, getHistoricoFundo, type Fundo, type HistoricoFundo } from '@/lib/api'
 import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { formatCota, formatMilhoes } from '@/lib/format'
@@ -20,6 +21,12 @@ const TIPO_COLORS: Record<string, { color: string; bg: string }> = {
 }
 
 const DEFAULT_TIPO = { color: 'var(--cl-ink3)', bg: 'var(--cl-line2)' }
+
+// Deve bater com `minmax(220px, 1fr)` + `gap: 12` do grid de cards abaixo --
+// usado para calcular quantas colunas cabem por linha na virtualização.
+const CARD_MIN_WIDTH = 220
+const GRID_GAP = 12
+const CARD_ROW_HEIGHT = 112 // altura estimada do card + gap vertical
 
 function getNome(f: Fundo): string {
   return f.nome_abreviado ?? f.nome
@@ -75,6 +82,38 @@ function FundosInner() {
   const fundosFiltrados = useMemo(() =>
     filtro ? fundos.filter(f => f.tipo_fundo === filtro) : fundos
   , [fundos, filtro])
+
+  // Virtualização do grid de cards -- hoje `fundos_cadastro` tem só 8
+  // linhas, mas isso prepara o componente para quando o universo de fundos
+  // crescer. O grid usa `auto-fill`, então o nº de colunas por linha
+  // depende da largura do container (medida via ResizeObserver). A
+  // virtualização exige uma área de scroll com altura limitada -- por isso
+  // o container abaixo tem `maxHeight` + `overflowY: auto` em vez de deixar
+  // o grid crescer com o resto da página (sem isso o virtualizador não tem
+  // como saber quais linhas estão "fora da tela").
+  // Ref via callback (não `useRef` + `useEffect([])`): a área do grid só
+  // monta depois do loading skeleton sair da árvore, então um efeito com
+  // deps vazias rodaria antes do elemento existir e nunca mais reobservaria.
+  const [gridScrollEl, setGridScrollEl] = useState<HTMLDivElement | null>(null)
+  const gridScrollRef = useCallback((node: HTMLDivElement | null) => setGridScrollEl(node), [])
+  const [gridWidth, setGridWidth] = useState(0)
+
+  useEffect(() => {
+    if (!gridScrollEl) return
+    const ro = new ResizeObserver(entries => setGridWidth(entries[0].contentRect.width))
+    ro.observe(gridScrollEl)
+    return () => ro.disconnect()
+  }, [gridScrollEl])
+
+  const colunas = Math.max(1, Math.floor((gridWidth + GRID_GAP) / (CARD_MIN_WIDTH + GRID_GAP)))
+  const linhasGrid = Math.ceil(fundosFiltrados.length / colunas)
+
+  const rowVirtualizer = useVirtualizer({
+    count: linhasGrid,
+    getScrollElement: () => gridScrollEl,
+    estimateSize: () => CARD_ROW_HEIGHT,
+    overscan: 4,
+  })
 
   const dadosGrafico = useMemo(() =>
     [...historico].reverse().map(d => ({
@@ -143,41 +182,70 @@ function FundosInner() {
           <EmptyState msg="Nenhum fundo encontrado" hint="Tente remover os filtros de tipo" />
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-          {fundosFiltrados.map(f => {
-            const c      = getTipoColor(f.tipo_fundo ?? null)
-            const active = selecionado?.cnpj === f.cnpj
+        <div ref={gridScrollRef} style={{ maxHeight: 640, overflowY: 'auto' }}>
+        {gridWidth === 0 ? (
+          // Evita 1 frame com `colunas=1` (grid em coluna única) antes do
+          // ResizeObserver medir a largura real do container -- achado de
+          // revisão (P6).
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+            {Array.from({ length: 6 }).map((_, i) => <SkeletonShimmer key={i} h={100} />)}
+          </div>
+        ) : (
+        <div style={{ position: 'relative', height: rowVirtualizer.getTotalSize() }}>
+          {rowVirtualizer.getVirtualItems().map(vRow => {
+            const inicio = vRow.index * colunas
+            const itensLinha = fundosFiltrados.slice(inicio, inicio + colunas)
             return (
-              <button key={f.cnpj} onClick={() => setSelecionado(f)} style={{
-                textAlign: 'left', cursor: 'pointer',
-                background: 'var(--cl-card)',
-                border: `1px solid ${active ? c.color : 'var(--cl-line)'}`,
-                borderTop: `3px solid ${c.color}`,
-                borderRadius: 'var(--cl-radius)',
-                padding: 'var(--cl-card-pad)',
-                boxShadow: active ? 'var(--cl-shadow-hover)' : 'var(--cl-shadow)',
-                transform: active ? 'translateY(-1px)' : 'none',
-                transition: 'all 0.15s',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                  {f.tipo_fundo && (
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-                      color: c.color, background: c.bg, borderRadius: 4, padding: '2px 7px',
-                    }}>{f.tipo_fundo}</span>
-                  )}
-                  {active && <span style={{ fontSize: 11, color: c.color }}>●</span>}
-                </div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--cl-ink)', lineHeight: 1.3, marginBottom: 6 }}>{getNome(f)}</p>
-                <p style={{ fontSize: 10, color: 'var(--cl-ink3)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {f.gestor ?? f.administrador ?? '—'}
-                </p>
-                <p style={{ fontSize: 9, color: 'var(--cl-ink3)', fontFamily: 'monospace', letterSpacing: '0.04em' }}>
-                  {f.cnpj}
-                </p>
-              </button>
+              <div
+                key={vRow.key}
+                data-index={vRow.index}
+                ref={rowVirtualizer.measureElement}
+                style={{
+                  position: 'absolute', top: 0, left: 0, width: '100%',
+                  transform: `translateY(${vRow.start}px)`,
+                  display: 'grid', gridTemplateColumns: `repeat(${colunas}, 1fr)`, gap: GRID_GAP,
+                  paddingBottom: GRID_GAP,
+                }}
+              >
+                {itensLinha.map(f => {
+                  const c      = getTipoColor(f.tipo_fundo ?? null)
+                  const active = selecionado?.cnpj === f.cnpj
+                  return (
+                    <button key={f.cnpj} onClick={() => setSelecionado(f)} style={{
+                      textAlign: 'left', cursor: 'pointer',
+                      background: 'var(--cl-card)',
+                      border: `1px solid ${active ? c.color : 'var(--cl-line)'}`,
+                      borderTop: `3px solid ${c.color}`,
+                      borderRadius: 'var(--cl-radius)',
+                      padding: 'var(--cl-card-pad)',
+                      boxShadow: active ? 'var(--cl-shadow-hover)' : 'var(--cl-shadow)',
+                      transform: active ? 'translateY(-1px)' : 'none',
+                      transition: 'all 0.15s',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        {f.tipo_fundo && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                            color: c.color, background: c.bg, borderRadius: 4, padding: '2px 7px',
+                          }}>{f.tipo_fundo}</span>
+                        )}
+                        {active && <span style={{ fontSize: 11, color: c.color }}>●</span>}
+                      </div>
+                      <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--cl-ink)', lineHeight: 1.3, marginBottom: 6 }}>{getNome(f)}</p>
+                      <p style={{ fontSize: 10, color: 'var(--cl-ink3)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {f.gestor ?? f.administrador ?? '—'}
+                      </p>
+                      <p style={{ fontSize: 9, color: 'var(--cl-ink3)', fontFamily: 'monospace', letterSpacing: '0.04em' }}>
+                        {f.cnpj}
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
             )
           })}
+        </div>
+        )}
         </div>
       )}
 

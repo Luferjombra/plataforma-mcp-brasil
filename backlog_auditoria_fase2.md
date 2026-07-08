@@ -60,7 +60,7 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 - [ ] **P3** `backend/routes/indicadores.py:24` — `/series` carrega a tabela inteira p/ extrair distintos em Python. Criar RPC `SELECT DISTINCT serie`. `1h`
 - [ ] **P4** `etl/fundos.py` — pular arquivos CVM já ingeridos (comparar max data por arquivo antes de reprocessar). `1h`
 - [ ] **P5** brapi batch — usar `/quote/T1,T2,...` onde o plano permitir + `sleep` condicional ao token (hoje 4s fixos ≈ 130s de espera por run). `2h`
-- [ ] **P6** Virtualização das listas `/rv`, `/fundos`, `/renda-fixa` (`@tanstack/react-virtual`) — **pré-requisito dos 2.000 tickers**, mas já beneficia os "40k fundos". `4h`
+- [x] **P6** ✅ (2026-07-08) Virtualização das listas `/rv`, `/fundos`, `/renda-fixa` (`@tanstack/react-virtual`) implementada como preparação (volumes reais hoje — fundos=8, renda-fixa≤100, rv já paginado a 50 — não justificavam por si só). Testado com dados mockados (200/1000/150 itens) via Playwright; 3 bugs reais corrigidos: container sem altura limitada em `/fundos`/`/renda-fixa` (virtualização não tinha janela pra recortar), `ResizeObserver` de `/fundos` preso a um ref nulo por rodar antes do elemento montar (corrigido com callback ref), e `useWindowVirtualizer` trocado por `useVirtualizer` com container próprio em `/fundos` (scrollMargin não atualizava a janela visível). Ver ADR-001, Passo 7.
 - [ ] **P7** _(condicional — quando houver tráfego)_ Rotas async nos hot paths + cache TTL em memória p/ dados que mudam 1×/dia. `3h`
 
 **Critério de aceite:** run diário do `rf_tesouro` < 1min; cron 17h UTC sem jobs duplicados; `/rv` fluido com 2.000 itens (medir com staging).
