@@ -69,6 +69,7 @@ on:
           - promover_cotahist_dry_run
           - promover_cotahist
           - sortear_fundos
+          - investigar_cvm_175
 
 jobs:
   # R7 (backlog): os ~16 jobs eram quase idênticos (checkout, setup-python,
@@ -255,6 +256,17 @@ jobs:
           - id: sortear_fundos
             label: 'Sorteio de Novos Fundos (CVM)'
             script: sortear_fundos.py
+            args: ''
+            crons: []
+            in_all: false
+
+          # ── Investigação pontual CVM Resolução 175 -- só manual, só
+          # leitura. Descartável depois de decidir a migração de
+          # fundos.py/sortear_fundos.py pro cadastro novo (registro_fundo/
+          # registro_classe/registro_subclasse).
+          - id: investigar_cvm_175
+            label: 'Investigação CVM Resolução 175'
+            script: investigar_cvm_175.py
             args: ''
             crons: []
             in_all: false
