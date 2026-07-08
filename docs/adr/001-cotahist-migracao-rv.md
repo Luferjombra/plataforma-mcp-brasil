@@ -137,6 +137,7 @@ Item 6 da Fase 2 — promove `rv_ativos_staging`/`rv_historico_staging` (univers
 - `etl/promover_cotahist.py` — dois modos: `--dry-run` (só leitura, relatório de quantas linhas/tickers seriam afetados, reusa paginação segura contra o limite de 1000 do PostgREST) e promoção real (upsert em lotes de 500, ativos antes de histórico por causa da FK). Precedência por `fonte` é implícita: upsert por `(ticker, data)` sobrescreve produção onde o COTAHIST tem dado; onde não tem (ex.: ELET3/RBRF11, ver item 5), a linha antiga da brapi não é tocada.
 - Jobs `promover_cotahist_dry_run` e `promover_cotahist` no `etl.yml` (`workflow_dispatch`).
 - **Pendente:** rodar o dry-run, revisar o relatório com o usuário, só então rodar a promoção real. Depois, iniciar a janela de operação paralela (item 6 original) antes de aposentar `rv_historico.py` para preço.
+- **Risco conhecido, não bloqueante (apontado na revisão):** `abertura`/`maxima`/`minima` são nullable nas duas tabelas e `parse_linha` (`etl/cotahist.py`) pode gerar `None` para esses campos quando o COTAHIST não traz o valor. Em tese o mesmo problema do `fechamento_adj` acima se aplicaria — sobrescrever OHLC válido da brapi com `NULL` numa data de overlap. A validação cruzada já documentada (0% de divergência em todos os campos OHLC nos 31 tickers testados) sugere que isso não ocorre na prática hoje, mas não há garantia estrutural para o universo completo (2.366 tickers). Resolver direito exigiria agrupar o upsert por combinação de campos nulos (até 8 grupos) — desproporcional a um risco ainda não observado. Ficar de olho depois do corte; se aparecer, aplicar o mesmo padrão do `fechamento_adj`.
 
 ## Referências
 
@@ -144,7 +145,11 @@ Item 6 da Fase 2 — promove `rv_ativos_staging`/`rv_historico_staging` (univers
 - `etl/cotahist_backfill.py` — backfill anual (staging)
 - `etl/validar_cotahist.py` — validação cruzada COTAHIST × brapi (só leitura, OHLC completo)
 - `etl/eventos_corporativos.py` — bonificação/desdobramento/grupamento/proventos (brapi dividendsData)
-- `database/migrations/008_cotahist_staging.sql` — tabelas de staging + coluna `fonte`
+- `etl/aplicar_ajuste_proventos.py` — calcula `fechamento_adj` em `rv_historico_staging`
+- `etl/promover_cotahist.py` — promoção staging → produção (Passo 5), `--dry-run` e real
+- `database/migrations/008_cotahist_staging.sql` — tabelas de staging + coluna `fonte` (produção e staging)
 - `database/migrations/009_cleanup_indice_redundante.sql` — remoção de índice duplicado
 - `database/migrations/010_eventos_corporativos.sql` — `rv_eventos_societarios` + `rv_proventos`
-- `.github/workflows/etl.yml` — jobs `etl-cotahist-staging` (schedule); `etl-cotahist-backfill`, `etl-validar-cotahist` e `etl-eventos-corporativos` (manuais)
+- `database/migrations/011_fechamento_adj_staging.sql` — coluna `fechamento_adj` em staging
+- `database/migrations/012_widen_ticker_producao.sql` — `ticker` VARCHAR(12) em produção
+- `.github/workflows/etl.yml` — jobs `etl-cotahist-staging` (schedule); `etl-cotahist-backfill`, `etl-validar-cotahist`, `etl-eventos-corporativos`, `etl-promover-cotahist-dry-run` e `etl-promover-cotahist` (manuais)
