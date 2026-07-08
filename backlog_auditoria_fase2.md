@@ -101,9 +101,9 @@ Não promover fonte nova por cima de bugs conhecidos, especialmente F1 (carteira
 - [x] Escopo do universo — ✅ DECIDIDO (2026-07-08): **Opção C, universo completo do COTAHIST** (2.366 tickers medidos, ~348 mil linhas/ano). Cabe no free tier com 1 ano de retenção (52–87MB).
 - [ ] Upgrade Supabase Pro (E1) — não é mais bloqueador do corte (ver E1 revisado); só decidir quando definirmos retenção multi-ano.
 
-### Passo 5 — Mecanismo de corte — ~3h
-- [x] `etl/promover_cotahist.py` — ✅ IMPLEMENTADO (2026-07-08). Copia **staging inteiro** (universo completo, 2.366 tickers) → produção com `fonte='cotahist'`, preservando linhas brapi onde COTAHIST não cobre. Revisado por pair-programming (agent `.claude/agents/pair-reviewer.md`): pegou bug crítico (fechamento_adj sobrescrevendo com NULL) e um erro factual meu sobre a migration 008 — ambos corrigidos, ver ADR-001 "Mecanismo de corte".
-- [ ] Rodar em modo dry-run, revisar relatório com o usuário, então rodar a promoção real (`migration 012_widen_ticker_producao.sql` precisa ser executada no Supabase antes da promoção real — dry-run não precisa)
+### Passo 5 — Mecanismo de corte — ~3h — ✅ CONCLUÍDO (2026-07-08)
+- [x] `etl/promover_cotahist.py` — implementado. Copia **staging inteiro** (universo completo) → produção com `fonte='cotahist'`, preservando linhas brapi onde COTAHIST não cobre. Revisado por pair-programming (agent `.claude/agents/pair-reviewer.md`): pegou bug crítico (fechamento_adj sobrescrevendo com NULL) e um erro factual meu sobre a migration 008 — ambos corrigidos, ver ADR-001 "Mecanismo de corte".
+- [x] Dry-run rodado e revisado com o usuário (2.335 tickers novos, ~4.785 linhas sobrescritas estimadas), migration 012 executada, promoção real aprovada e executada: **2.368 tickers + 349.452 linhas de histórico promovidos** para `rv_ativos`/`rv_historico`.
 
 ### Passo 6 — Operação paralela (1–2 semanas)
 - [ ] Simplificar `etl.yml`: 6 janelas de descoberta → 1 cron ~21h BRT + fallback manhã (mantendo fallback D-1 no script — não há horário fixo da B3, comprovado na Fase 1)
