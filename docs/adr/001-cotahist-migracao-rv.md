@@ -1,6 +1,6 @@
 # ADR-001 — Migração da fonte de Renda Variável para o COTAHIST (B3)
 
-**Status:** Fase 1 concluída (2026-07-03) · Validação cruzada concluída (2026-07-07) · Fonte de eventos corporativos resolvida (2026-07-07) · Ajuste por proventos implementado e validado (2026-07-07) · Fase 2 em andamento
+**Status:** Fase 1 concluída (2026-07-03) · Validação cruzada concluída (2026-07-07) · Fonte de eventos corporativos resolvida (2026-07-07) · Ajuste por proventos implementado e validado (2026-07-07) · **Corte staging → produção concluído (2026-07-08)** · Fase 2 em andamento (operação paralela)
 **Referenciado em:** `etl/cotahist.py`, `etl/cotahist_backfill.py`, `etl/validar_cotahist.py`, `etl/eventos_corporativos.py`, `etl/aplicar_ajuste_proventos.py`, `etl/promover_cotahist.py`, `database/migrations/008_cotahist_staging.sql`, `database/migrations/010_eventos_corporativos.sql`, `database/migrations/011_fechamento_adj_staging.sql`, `database/migrations/012_widen_ticker_producao.sql`, `.github/workflows/etl.yml`
 
 ---
@@ -88,7 +88,7 @@ Antes de promover `rv_ativos_staging`/`rv_historico_staging` para `rv_ativos`/`r
 5. ~~**Investigar ELET3 e RBRF11**~~ — ✅ diagnosticado e fechado (2026-07-08), não bloqueia a Fase 2. `validar_cotahist.py` passou a reportar o range de datas de cada fonte quando não há overlap, o que revelou o padrão real: as janelas são **completamente disjuntas no tempo**, não uma diferença de cobertura. ELET3: produção (brapi) cobre 2026-03-18→2026-07-07, staging (COTAHIST) cobre 2025-07-07→**2025-11-07** — nenhuma linha depois disso. RBRF11: produção 2026-03-18→2026-07-06, staging 2025-07-07→**2025-10-02**. Gap de 4-5,5 meses sem registro em nenhuma das duas fontes, apesar do cron diário do staging rodando continuamente — ou seja, não é falta de coleta.
    Um script de diagnóstico pontual (`etl/diagnosticar_ticker_sucessor.py`, descartado após uso) buscou candidatos a sucessor no universo completo do `rv_ativos_staging`. Achado-chave: **ELET6** (mesma empresa, classe PN de ELETROBRAS) tem a **mesma janela exata** que ELET3 (90 dias, 2025-07-07→2025-11-07) — ou seja, as duas classes de ação pararam de negociar no mesmo dia. Isso descarta rebatização de um único código isolado e aponta para algo que afetou a empresa inteira (suspensão de negociação/reestruturação societária), não um bug de ETL. Para RBRF11 (FII, nome truncado `'FII RBRALPHA'`), uma primeira busca pelo termo genérico "FII" não foi útil (bateria em centenas de fundos); repetindo com o termo distintivo "RBRALPHA" em todo o universo (1000 ativos), **zero candidatos** — nenhum outro ticker com nome parecido, ou seja, sem sucessor visível na base. Diferente de ELET3 (que tem irmã), RBRF11 não tem nenhum ticker relacionado — o padrão é consistente com suspensão de negociação do próprio fundo sob o mesmo código, não uma troca de código.
    **Resolução:** o mecanismo de corte já planejado no item 6 (precedência por `fonte`) resolve isso naturalmente — se o COTAHIST não tem dado recente para um ticker, o corte preserva o dado de produção (brapi) em vez de sobrescrever com COTAHIST desatualizado. Não é um bloqueador novo, é uma confirmação de que o design do corte já contemplava esse caso. Vale reconferir em alguns dias se o cron diário do COTAHIST volta a captar ELET3/ELET6/RBRF11 (já que o brapi os mostra ativamente negociados agora) — se não voltar, aí sim investigar um possível bug de parsing específico desses 2 papéis.
-6. 🚧 **Mecanismo de corte (em andamento, 2026-07-08)** — script de promoção com regra de precedência por `fonte` (coluna já existente em produção desde a migration 008 — ver seção dedicada abaixo). Dry-run implementado, aguardando aprovação antes da promoção real; rodar em paralelo por 1–2 semanas antes de aposentar `rv_historico.py`.
+6. ~~**Mecanismo de corte**~~ — ✅ **executado (2026-07-08)**: **2.368 tickers** e **349.452 linhas de histórico** promovidos para `rv_ativos`/`rv_historico` (ver seção dedicada abaixo para números completos e o dry-run que precedeu). Falta a janela de operação paralela (1–2 semanas) antes de aposentar `rv_historico.py` para preço.
 7. **Simplificar `etl.yml`** — trocar as 6 janelas de descoberta por 1 cron único (mantendo fallback D-1), já que não existe horário fixo confiável.
 8. **QA** — cenário de sanity check para o universo ampliado (não só os 8 tickers do smoke test).
 
@@ -124,7 +124,7 @@ Com `rv_eventos_societarios` populada, dá para calcular o mesmo retroajuste que
 - **Validação confirmada (2026-07-07):** `etl/validar_cotahist.py --usar-ajustado` (job `validar_cotahist_ajustado` no `etl.yml`) compara `fechamento` (brapi, já ajustado) contra `fechamento_adj` (staging) — resultado: **0 divergências em 4.785 datas comparadas**, incluindo ITUB4 e MGLU3 (ver seção "Validação cruzada — resultado" acima).
 - **Pendente:** cobrir o restante do universo de eventos (o ajuste só vale para tickers com evento cadastrado) e rodar `eventos_corporativos.py` recorrentemente até fechar a lacuna (ver F11 do backlog de auditoria — tratar 403 como sinal de parada, não erro).
 
-## Mecanismo de corte (em andamento, 2026-07-08)
+## Mecanismo de corte (executado 2026-07-08)
 
 Item 6 da Fase 2 — promove `rv_ativos_staging`/`rv_historico_staging` (universo completo) para `rv_ativos`/`rv_historico` (produção).
 
@@ -136,7 +136,22 @@ Item 6 da Fase 2 — promove `rv_ativos_staging`/`rv_historico_staging` (univers
 - `database/migrations/012_widen_ticker_producao.sql` — alarga `ticker` para VARCHAR(12) em `rv_ativos`/`rv_historico`.
 - `etl/promover_cotahist.py` — dois modos: `--dry-run` (só leitura, relatório de quantas linhas/tickers seriam afetados, reusa paginação segura contra o limite de 1000 do PostgREST) e promoção real (upsert em lotes de 500, ativos antes de histórico por causa da FK). Precedência por `fonte` é implícita: upsert por `(ticker, data)` sobrescreve produção onde o COTAHIST tem dado; onde não tem (ex.: ELET3/RBRF11, ver item 5), a linha antiga da brapi não é tocada.
 - Jobs `promover_cotahist_dry_run` e `promover_cotahist` no `etl.yml` (`workflow_dispatch`).
-- **Pendente:** rodar o dry-run, revisar o relatório com o usuário, só então rodar a promoção real. Depois, iniciar a janela de operação paralela (item 6 original) antes de aposentar `rv_historico.py` para preço.
+
+**Dry-run (2026-07-08):** 2.335 tickers novos + 31 já existentes (metadata atualizada), ~4.785 linhas de histórico sobrescritas (0 divergências já validadas), ~343.241 linhas novas estimadas.
+
+**Promoção real (2026-07-08, aprovada após dry-run + migration 012 executada):**
+
+| Métrica | Resultado |
+|---|---|
+| Tickers promovidos em `rv_ativos` | **2.368** |
+| Linhas de histórico promovidas em `rv_historico` | **349.452** |
+| — com `fechamento_adj` calculado | 1.000 |
+| — sem (payload omitiu a coluna, preservando o valor já existente) | 348.452 |
+
+Números batem com a estimativa do dry-run (pequena diferença por causa do universo ter crescido entre a medição e a execução). `rv_ativos`/`rv_historico` agora cobrem o universo completo do COTAHIST.
+
+**Pendente:** iniciar a janela de operação paralela (1–2 semanas, item 6 original) — `validar_cotahist.py` diário monitorando divergências novas — antes de aposentar `rv_historico.py` para preço.
+
 - **Risco conhecido, não bloqueante (apontado na revisão):** `abertura`/`maxima`/`minima` são nullable nas duas tabelas e `parse_linha` (`etl/cotahist.py`) pode gerar `None` para esses campos quando o COTAHIST não traz o valor. Em tese o mesmo problema do `fechamento_adj` acima se aplicaria — sobrescrever OHLC válido da brapi com `NULL` numa data de overlap. A validação cruzada já documentada (0% de divergência em todos os campos OHLC nos 31 tickers testados) sugere que isso não ocorre na prática hoje, mas não há garantia estrutural para o universo completo (2.366 tickers). Resolver direito exigiria agrupar o upsert por combinação de campos nulos (até 8 grupos) — desproporcional a um risco ainda não observado. Ficar de olho depois do corte; se aparecer, aplicar o mesmo padrão do `fechamento_adj`.
 
 ## Referências
