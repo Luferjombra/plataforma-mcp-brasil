@@ -58,7 +58,6 @@ on:
           - validar_cotahist_ajustado
           - eventos_corporativos
           - ajuste_proventos
-          - medir_universo_storage
 
 jobs:
   # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
@@ -253,28 +252,6 @@ jobs:
       - name: Rodar validação cruzada (ajustado)
         working-directory: etl
         run: python validar_cotahist.py --usar-ajustado
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-  # ── Diagnóstico pontual — dimensionar universo (ADR-001, Passo 4) ─────────
-  # Só leitura. Descartável — remover job + script depois de usar os números.
-  etl-medir-universo-storage:
-    name: Diagnóstico — dimensionar universo COTAHIST vs produção
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'medir_universo_storage'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: etl/requirements.txt
-      - name: Instalar dependências
-        run: pip install -r etl/requirements.txt
-      - name: Rodar diagnóstico
-        working-directory: etl
-        run: python medir_universo_storage.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
