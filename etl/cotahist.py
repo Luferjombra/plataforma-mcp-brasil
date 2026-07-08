@@ -37,7 +37,7 @@ import zipfile
 import datetime
 import httpx
 from config import supabase
-from log_etl import ETLRun, baixar_arquivo_b3, hoje_brt
+from log_etl import ETLRun, baixar_arquivo_http, hoje_brt
 
 BASE_URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist"
 
@@ -89,7 +89,7 @@ def baixar_arquivo(data: datetime.date, client: httpx.Client) -> bytes | None:
     tentativas apenas para falhas transitórias de rede/servidor.
     """
     url = f"{BASE_URL}/{nome_arquivo(data)}"
-    return baixar_arquivo_b3(
+    return baixar_arquivo_http(
         url, client,
         user_agent="plataforma-mcp-brasil/1.0 (etl staging)",
         max_attempts=2, timeout=60,

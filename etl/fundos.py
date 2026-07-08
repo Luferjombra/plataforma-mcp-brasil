@@ -1,15 +1,15 @@
 """
 ETL — Fundos de Investimento
-Fonte: CVM (Comissão de Valores Mobiliários) — arquivos locais
+Fonte: CVM (Comissão de Valores Mobiliários), portal de dados abertos.
 
-Como usar:
-1. Acesse no navegador: https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/
-2. Baixe os arquivos mensais desejados (ex: inf_diario_fi_202401.csv ... inf_diario_fi_202506.csv)
-3. Salve todos em: etl/data/cvm/
-4. (Opcional) Para atualizar cadastro: baixe cad_fi.csv do link
-   https://dados.cvm.gov.br/dados/FI/CAD/DADOS/cad_fi.csv
-   e salve como: etl/data/cvm/cad_fi.csv
-5. Execute: python fundos.py
+O cadastro (cad_fi.csv) e os informes diários (inf_diario_fi_AAAAMM.csv) são
+baixados automaticamente a cada execução -- necessário porque o runner do
+GitHub Actions começa de um checkout limpo (etl/data/cvm/ só tem .gitkeep,
+os CSVs estão no .gitignore por serem grandes demais para o repo). Rodar
+localmente com os arquivos já em etl/data/cvm/ pula o download (usa o que
+já está no disco).
+
+Uso: python fundos.py
 """
 
 import os
@@ -18,15 +18,20 @@ import time
 import zipfile
 import io
 import datetime
+import httpx
 import pandas as pd
 from config import supabase
-from log_etl import ETLRun, log_partial
+from log_etl import ETLRun, log_partial, hoje_brt, baixar_arquivo_http, DEFAULT_USER_AGENT
 from log_etl import safe_float as _safe_float_base
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "cvm")
+URL_CADASTRO = "https://dados.cvm.gov.br/dados/FI/CAD/DADOS/cad_fi.csv"
+URL_HISTORICO_BASE = "https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS"
 
 # Fundos de referência — CNPJs validados no cadastro CVM
 # Preferência por feeders (o que o cotista acessa diretamente)
+# ATENÇÃO: duplicado em backend/routes/fundos.py::CNPJS_ALVO (backend e ETL
+# são deploys separados, sem import cruzado) -- atualizar as duas listas.
 CNPJS_ALVO = [
     "04.222.368/0001-55",  # Verde PVT Multimercado FI Financeiro (CIC)
     "04.311.271/0001-19",  # PS Verde D1 FI Financeiro em Cotas
@@ -68,6 +73,66 @@ def parse_date(value) -> str | None:
         except ValueError:
             continue
     return None
+
+
+# ---------------------------------------------------------------------------
+# Download (CVM)
+# ---------------------------------------------------------------------------
+
+def meses_a_baixar() -> list[str]:
+    """Mês corrente + anterior (formato AAAAMM). Cobre o caso do informe do
+    mês corrente ainda não ter sido publicado pela CVM sem depender de
+    estado entre execuções (CI é stateless -- não há como saber qual foi o
+    último mês baixado)."""
+    ref = hoje_brt().replace(day=1)
+    meses = [ref.strftime("%Y%m")]
+    ref_anterior = ref - datetime.timedelta(days=1)
+    meses.append(ref_anterior.replace(day=1).strftime("%Y%m"))
+    return meses
+
+
+def garantir_cadastro_local(client: httpx.Client) -> None:
+    """Baixa cad_fi.csv se ainda não existir localmente."""
+    caminho = os.path.join(DATA_DIR, "cad_fi.csv")
+    if os.path.exists(caminho):
+        return
+    print("→ Baixando cadastro CVM (cad_fi.csv)...")
+    conteudo = baixar_arquivo_http(
+        URL_CADASTRO, client,
+        # cad_fi.csv cobre TODOS os fundos da CVM (dezenas de milhares de
+        # linhas) -- dezenas de MB, timeout maior que os outros downloads.
+        user_agent=DEFAULT_USER_AGENT, max_attempts=3, timeout=180,
+        msg_falha="  ✗ Falha ao baixar cad_fi.csv após 3 tentativas — cadastro não será atualizado nesta execução.",
+    )
+    if conteudo:
+        with open(caminho, "wb") as f:
+            f.write(conteudo)
+        print(f"  ✓ cad_fi.csv salvo ({len(conteudo)} bytes)\n")
+
+
+def garantir_historico_local(client: httpx.Client) -> None:
+    """Baixa os informes diários (mês corrente + anterior) se ainda não
+    existirem localmente."""
+    for aaaamm in meses_a_baixar():
+        nome = f"inf_diario_fi_{aaaamm}.csv"
+        caminho = os.path.join(DATA_DIR, nome)
+        if os.path.exists(caminho):
+            continue
+        url = f"{URL_HISTORICO_BASE}/{nome}"
+        print(f"→ Baixando {nome}...", end=" ")
+        conteudo = baixar_arquivo_http(
+            url, client,
+            # 1 linha por fundo por pregão, todos os fundos da CVM --
+            # também pode chegar a dezenas/centenas de MB por mês.
+            user_agent=DEFAULT_USER_AGENT, max_attempts=2, timeout=180,
+            msg_404="ainda não publicado (404)",
+        )
+        if conteudo:
+            with open(caminho, "wb") as f:
+                f.write(conteudo)
+            print(f"{len(conteudo)} bytes salvos")
+        else:
+            print("pulando")
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +288,7 @@ def upsert_historico(df: pd.DataFrame) -> int:
 # ---------------------------------------------------------------------------
 
 def run():
-    print("=== ETL Fundos de Investimento (arquivos CVM locais) ===\n")
+    print("=== ETL Fundos de Investimento (CVM) ===\n")
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -231,7 +296,11 @@ def run():
     total = 0
 
     with ETLRun("fundos_historico") as batch_run:
-        # 1. Cadastro (opcional — depende do cad_fi.csv estar baixado)
+        with httpx.Client() as client:
+            garantir_cadastro_local(client)
+            garantir_historico_local(client)
+
+        # 1. Cadastro (opcional — segue sem se o download falhar)
         df_cad = carregar_cadastro()
         if df_cad is not None:
             upsert_cadastro(df_cad)
@@ -241,11 +310,8 @@ def run():
         arquivos = listar_arquivos_historico()
 
         if not arquivos:
-            print("⚠ Nenhum arquivo inf_diario_fi_*.csv encontrado em etl/data/cvm/")
-            print("  Baixe os arquivos mensais em:")
-            print("  https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/")
-            print("  e salve nessa pasta.\n")
-            batch_run.set_rows(0)
+            print("⚠ Nenhum arquivo inf_diario_fi_*.csv disponível (download falhou e nada em cache local).\n")
+            batch_run.set_status("error", "Download de inf_diario_fi_*.csv falhou e não há arquivo local em cache.")
             return
 
         print(f"→ {len(arquivos)} arquivo(s) encontrado(s) em etl/data/cvm/\n")

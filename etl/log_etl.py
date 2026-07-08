@@ -90,7 +90,7 @@ def ultima_data(tabela: str, coluna_filtro: str, valor_filtro: str) -> str | Non
     return None
 
 
-def baixar_arquivo_b3(
+def baixar_arquivo_http(
     url: str,
     client: httpx.Client,
     *,
@@ -100,12 +100,12 @@ def baixar_arquivo_b3(
     msg_404: str | None = None,
     msg_falha: str | None = None,
 ) -> bytes | None:
-    """Baixa um arquivo público da B3 (COTAHIST diário ou anual), tratando
-    404 como "ainda não publicado" -- não é erro, ao contrário de
+    """Baixa um arquivo público (COTAHIST da B3, CSVs da CVM), tratando 404
+    como "ainda não publicado" -- não é erro, ao contrário de
     `retry_request()` (que trataria 404 como falha definitiva via
     `raise_for_status()`). Repete em falha de rede/5xx; desiste depois de
-    `max_attempts`. Base compartilhada por `cotahist.py` e
-    `cotahist_backfill.py`, que tinham o mesmo loop de retry duplicado
+    `max_attempts`. Base compartilhada por `cotahist.py`, `cotahist_backfill.py`
+    e `fundos.py`, que tinham (ou precisavam d)o mesmo loop de retry
     diferindo só em tentativas/timeout/mensagens."""
     headers = {"User-Agent": user_agent}
     for tentativa in range(1, max_attempts + 1):

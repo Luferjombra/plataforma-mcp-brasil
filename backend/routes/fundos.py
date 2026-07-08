@@ -4,6 +4,10 @@ from db import supabase
 router = APIRouter()
 
 # CNPJs dos fundos monitorados pela plataforma
+# ATENÇÃO: duplicado de etl/fundos.py::CNPJS_ALVO (backend e ETL são deploys
+# separados, sem import cruzado) -- ao adicionar/remover um fundo, atualizar
+# as duas listas. Achado de revisão: esquecer aqui faz o ETL gravar dado
+# certinho no banco enquanto o fundo simplesmente não aparece no site.
 CNPJS_ALVO = [
     "04.222.368/0001-55",  # Verde PVT Multimercado
     "04.311.271/0001-19",  # PS Verde D1

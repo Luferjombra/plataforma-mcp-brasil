@@ -23,7 +23,7 @@ import datetime
 
 import httpx
 
-from log_etl import ETLRun, baixar_arquivo_b3
+from log_etl import ETLRun, baixar_arquivo_http
 from cotahist import (
     BASE_URL,
     extrair_linhas,
@@ -45,7 +45,7 @@ def baixar_arquivo_anual(ano: int, client: httpx.Client) -> bytes | None:
     não interrompe o backfill dos demais anos.
     """
     url = f"{BASE_URL}/{nome_arquivo_anual(ano)}"
-    return baixar_arquivo_b3(
+    return baixar_arquivo_http(
         url, client,
         user_agent="plataforma-mcp-brasil/1.0 (etl backfill)",
         max_attempts=3, timeout=180,

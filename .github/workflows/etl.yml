@@ -8,6 +8,10 @@ on:
     - cron: '30 20 * * 1-5'
     # Fundos CVM: 18h BRT (21h UTC) — CVM publica D-1 à tarde
     - cron: '0 21 * * 1-5'
+    # Métricas analíticas de fundos: 19h BRT (22h UTC), 1h depois de 'fundos'
+    # (folga pra terminar o download+processamento do CVM antes de calcular
+    # em cima do fundos_historico do dia — ver comentário no job na matrix).
+    - cron: '0 22 * * 1-5'
     # Indicadores macro (BACEN/IBGE): dias úteis 9h BRT (12h UTC).
     # SELIC e CDI são diários — semanal deixava dashboard defasado.
     # IPCA (mensal) e PIB (trimestral) só atualizam quando há nova publicação,
@@ -50,6 +54,7 @@ on:
           - rf_tesouro
           - rv_historico
           - fundos
+          - fund_analytics
           - indicadores
           - noticias
           - anbima
@@ -63,6 +68,7 @@ on:
           - ajuste_proventos
           - promover_cotahist_dry_run
           - promover_cotahist
+          - sortear_fundos
 
 jobs:
   # R7 (backlog): os ~16 jobs eram quase idênticos (checkout, setup-python,
@@ -115,6 +121,24 @@ jobs:
             args: ''
             crons: ['0 21 * * 1-5']
             in_all: true
+
+          # ── Métricas analíticas de fundos (Sharpe/vol/drawdown/%CDI) --
+          # roda 1h depois de 'fundos' (19h BRT) pra calcular em cima do
+          # fundos_historico do dia. Não entra em 'all': é uma camada
+          # derivada, mesmo padrão de eventos_corporativos/ajuste_proventos.
+          # Folga de 1h (não 15min) por decisão explícita, achado de revisão:
+          # os dois são jobs de matrix independentes, sem `needs:` entre
+          # eles, e 'fundos' agora baixa cad_fi.csv (dezenas de MB) + 2
+          # meses de inf_diario_fi do zero a cada run, sem cache -- pode não
+          # terminar em 15min. Se 'fundos' atrasar além de 1h, este job só
+          # calcula sobre fundos_historico de ontem (1 dia desatualizado,
+          # inofensivo) -- risco aceito, não um bug a esconder.
+          - id: fund_analytics
+            label: 'ETL Métricas Analíticas de Fundos'
+            script: fund_analytics.py
+            args: ''
+            crons: ['0 22 * * 1-5']
+            in_all: false
 
           # ── Indicadores Macro ─────────────────────────────────────────
           - id: indicadores
@@ -210,6 +234,18 @@ jobs:
           - id: ajuste_proventos
             label: 'ETL Ajuste por Proventos (fechamento_adj staging)'
             script: aplicar_ajuste_proventos.py
+            args: ''
+            crons: []
+            in_all: false
+
+          # ── Sorteio de novos fundos (CVM) — só manual, só leitura. Não
+          # grava nada; imprime candidatos sorteados (Cambial + reforço de
+          # Ações/Multimercado/Renda Fixa/Crédito Privado) para revisão
+          # humana antes de entrarem em CNPJS_ALVO. Descartável depois de
+          # decidir a expansão da Fase 1 do backlog de fundos.
+          - id: sortear_fundos
+            label: 'Sorteio de Novos Fundos (CVM)'
+            script: sortear_fundos.py
             args: ''
             crons: []
             in_all: false
