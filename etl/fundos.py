@@ -101,11 +101,14 @@ def garantir_cadastro_local(client: httpx.Client) -> None:
         URL_CADASTRO, client,
         # cad_fi.csv cobre TODOS os fundos da CVM (dezenas de milhares de
         # linhas) -- dezenas de MB, timeout maior que os outros downloads.
-        # not_found_status inclui 403: a CVM serve esses arquivos de um
-        # bucket sem permissão de listagem -- chave inexistente responde
-        # 403, não 404 (achado rodando contra a CVM de verdade).
+        # not_found_status fica no default (404,), de propósito -- achado de
+        # revisão: diferente de inf_diario_fi (arquivo datado, "ainda não
+        # publicado" é um estado real), cad_fi.csv é o cadastro único e
+        # canônico, sempre deveria existir. Um 403 aqui é provavelmente
+        # WAF/rate-limit real, não "não publicado" -- tratar como
+        # not-found silencioso mascararia isso sem nem esgotar as
+        # tentativas de retry.
         user_agent=DEFAULT_USER_AGENT, max_attempts=3, timeout=180,
-        not_found_status=(404, 403),
         msg_falha="  ✗ Falha ao baixar cad_fi.csv após 3 tentativas — cadastro não será atualizado nesta execução.",
     )
     if conteudo:

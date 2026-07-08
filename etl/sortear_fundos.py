@@ -76,6 +76,7 @@ def carregar_pl_recente() -> dict[str, float]:
         return {}
 
     todos = pd.concat(frames, ignore_index=True)
+    todos["cnpj"] = todos["cnpj"].str.strip()
     todos["pl"] = pd.to_numeric(todos["VL_PATRIM_LIQ"].str.replace(",", ".", regex=False), errors="coerce")
     todos = todos.dropna(subset=["cnpj", "pl", "DT_COMPTC"])
     todos = todos.sort_values("DT_COMPTC")
