@@ -23,7 +23,7 @@ import datetime
 
 import httpx
 
-from log_etl import ETLRun
+from log_etl import ETLRun, baixar_arquivo_b3
 from cotahist import (
     BASE_URL,
     extrair_linhas,
@@ -45,27 +45,13 @@ def baixar_arquivo_anual(ano: int, client: httpx.Client) -> bytes | None:
     não interrompe o backfill dos demais anos.
     """
     url = f"{BASE_URL}/{nome_arquivo_anual(ano)}"
-    headers = {"User-Agent": "plataforma-mcp-brasil/1.0 (etl backfill)"}
-
-    for tentativa in range(1, 4):
-        try:
-            resp = client.get(url, timeout=180, headers=headers)
-        except (httpx.TimeoutException, httpx.ConnectError) as e:
-            print(f"  [aviso] tentativa {tentativa}/3 — falha de conexão em {url}: {e}")
-            continue
-
-        if resp.status_code == 404:
-            print(f"  [aviso] {nome_arquivo_anual(ano)} não encontrado (404) — pulando ano {ano}")
-            return None
-        if resp.status_code in (500, 502, 503, 504):
-            print(f"  [aviso] tentativa {tentativa}/3 — HTTP {resp.status_code} em {url}")
-            continue
-
-        resp.raise_for_status()
-        return resp.content
-
-    print(f"  ✗ Falhou ao baixar {nome_arquivo_anual(ano)} após 3 tentativas — pulando ano {ano}")
-    return None
+    return baixar_arquivo_b3(
+        url, client,
+        user_agent="plataforma-mcp-brasil/1.0 (etl backfill)",
+        max_attempts=3, timeout=180,
+        msg_404=f"  [aviso] {nome_arquivo_anual(ano)} não encontrado (404) — pulando ano {ano}",
+        msg_falha=f"  ✗ Falhou ao baixar {nome_arquivo_anual(ano)} após 3 tentativas — pulando ano {ano}",
+    )
 
 
 def processar_ano(ano: int, data_corte: datetime.date, client: httpx.Client, run_id: int | None) -> int:

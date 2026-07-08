@@ -7,7 +7,7 @@ Séries: IPCA (433), SELIC meta (432), CDI diário (12), PIB var% trimestral (73
 import httpx
 import datetime
 from config import supabase
-from log_etl import ETLRun, retry_request
+from log_etl import DEFAULT_USER_AGENT, ETLRun, retry_request, ultima_data
 
 # Mapeamento: nome interno → código BCB
 SERIES = {
@@ -18,7 +18,7 @@ SERIES = {
 }
 
 BCB_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados"
-HEADERS = {"User-Agent": "plataforma-mcp-brasil/1.0 (github.com/lufer-jom)"}
+HEADERS = {"User-Agent": DEFAULT_USER_AGENT}
 
 
 def ultima_data_no_banco(serie: str) -> str:
@@ -27,21 +27,10 @@ def ultima_data_no_banco(serie: str) -> str:
     Retorna 5 dias antes (sobreposição para publicações atrasadas como IPCA/PIB).
     Fallback: '01/01/2020' se sem dados.
     """
-    try:
-        result = (
-            supabase.table("indicadores_economicos")
-            .select("data")
-            .eq("serie", serie)
-            .order("data", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if result.data:
-            ultima = datetime.date.fromisoformat(result.data[0]["data"])
-            inicio = ultima - datetime.timedelta(days=5)
-            return inicio.strftime("%d/%m/%Y")
-    except Exception as e:
-        print(f"  [aviso] não conseguiu última data para '{serie}': {e}")
+    data_iso = ultima_data("indicadores_economicos", "serie", serie)
+    if data_iso:
+        inicio = datetime.date.fromisoformat(data_iso) - datetime.timedelta(days=5)
+        return inicio.strftime("%d/%m/%Y")
     return "01/01/2020"
 
 

@@ -9,13 +9,20 @@ Variáveis de ambiente (opcionais):
 Sem token: funciona com limite menor (~15 req/min).
 """
 
-import math
 import datetime
 import time
 import httpx
 import os
 from config import supabase
-from log_etl import ETLRun, hoje_brt, log_partial, retry_request
+from log_etl import (
+    DEFAULT_USER_AGENT,
+    ETLRun,
+    hoje_brt,
+    log_partial,
+    retry_request,
+    safe_float as _safe_float_base,
+    ultima_data,
+)
 
 BRAPI_BASE = "https://brapi.dev/api"
 BRAPI_TOKEN = os.getenv("BRAPI_TOKEN", "")  # opcional
@@ -68,15 +75,11 @@ ATIVOS = [
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def safe_float(value) -> float | None:
-    try:
-        f = float(value)
-        return None if math.isnan(f) or math.isinf(f) else round(f, 4)
-    except (TypeError, ValueError):
-        return None
+    return _safe_float_base(value, round_digits=4)
 
 
 def brapi_headers() -> dict:
-    headers = {"User-Agent": "plataforma-mcp-brasil/1.0 (github.com/lufer-jom)"}
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
     if BRAPI_TOKEN:
         headers["Authorization"] = f"Bearer {BRAPI_TOKEN}"
     return headers
@@ -84,20 +87,8 @@ def brapi_headers() -> dict:
 
 def ultima_data_no_banco(ticker: str) -> datetime.date | None:
     """Retorna a data do pregão mais recente já armazenado para o ticker."""
-    try:
-        result = (
-            supabase.table("rv_historico")
-            .select("data")
-            .eq("ticker", ticker)
-            .order("data", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if result.data:
-            return datetime.date.fromisoformat(result.data[0]["data"])
-    except Exception as e:
-        print(f"  [aviso] última data para '{ticker}': {e}")
-    return None
+    data_iso = ultima_data("rv_historico", "ticker", ticker)
+    return datetime.date.fromisoformat(data_iso) if data_iso else None
 
 
 def buscar_historico(ticker: str, client: httpx.Client) -> list[dict]:

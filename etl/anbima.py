@@ -156,91 +156,9 @@ def etl_indices(client: httpx.Client, token: str, data_ref: date | None = None) 
 
 
 # ── ETL Debêntures ────────────────────────────────────────────────────────────
-def etl_debentures(client: httpx.Client, token: str, data_ref: date | None = None) -> int:
-    """Coleta preços indicativos de debêntures e atualiza cadastro."""
-    if data_ref is None:
-        data_ref = date.today() - timedelta(days=1)
-
-    data_str = data_ref.strftime("%Y-%m-%d")
-    rows_total = 0
-    page = 1
-    page_size = 100
-    houve_erro = False
-
-    with ETLRun("anbima_debentures") as run:
-        while True:
-            try:
-                resp = retry_request(
-                    client,
-                    f"{BASE_URL}/feed/precos-indices/v1/debentures/mercado-secundario",
-                    params={"data": data_str, "page": page, "pageSize": page_size},
-                    **{"headers": auth_headers(token)},
-                )
-                itens = resp.json()
-
-                if not itens:
-                    break
-
-                cadastros, historicos = [], []
-
-                for item in itens:
-                    codigo = item.get("codigo_ativo") or item.get("codigo")
-                    if not codigo:
-                        continue
-
-                    cadastros.append({
-                        "codigo":           codigo,
-                        "nome_emissor":     item.get("emissor") or item.get("nome_emissor"),
-                        "cnpj_emissor":     item.get("cnpj"),
-                        "indexador":        item.get("indexador"),
-                        "taxa_emissao":     item.get("taxa_emissao"),
-                        "data_emissao":     item.get("data_emissao"),
-                        "data_vencimento":  item.get("data_vencimento"),
-                        "percentual_index": item.get("percentual_indexador"),
-                        "rating_nota":      item.get("rating"),
-                        "setor":            item.get("setor"),
-                        "ativo":            True,
-                    })
-
-                    historicos.append({
-                        "codigo":           codigo,
-                        "data":             data_str,
-                        "pu_par":           item.get("pu_par"),
-                        "pu_mercado":       item.get("pu_mercado"),
-                        "taxa_indicativa":  item.get("taxa_indicativa"),
-                        "spread_ipca":      item.get("spread_ipca"),
-                        "spread_cdi":       item.get("spread_cdi"),
-                        "duration":         item.get("duration"),
-                        "percentual_pu":    item.get("percentual_pu"),
-                        "volume_negociado": item.get("volume"),
-                    })
-
-                if cadastros:
-                    supabase.table("anbima_debentures_cadastro").upsert(
-                        cadastros, on_conflict="codigo"
-                    ).execute()
-
-                if historicos:
-                    supabase.table("anbima_debentures_historico").upsert(
-                        historicos, on_conflict="codigo,data"
-                    ).execute()
-                    rows_total += len(historicos)
-
-                print(f"  Página {page}: {len(historicos)} debêntures")
-
-                if len(itens) < page_size:
-                    break
-                page += 1
-
-            except Exception as e:
-                houve_erro = True
-                print(f"  Página {page}: ERRO — {e}")
-                break
-
-        run.set_rows(rows_total)
-        _marcar_status_parcial(run, "anbima_debentures", int(houve_erro), page, rows_total)
-
-    return rows_total
+# ETL Debêntures -- via _etl_credito_privado(tipo="debentures"), definida
+# mais abaixo junto com CRI/CRA (mesmo endpoint/paginação/histórico; só o
+# cadastro tem esquema diferente, tratado em _montar_cadastro_credito).
 
 
 # ── ETL VNA ───────────────────────────────────────────────────────────────────
@@ -290,14 +208,53 @@ def etl_vna(client: httpx.Client, token: str, data_ref: date | None = None) -> i
     return rows_total
 
 
-# ── ETL CRI ───────────────────────────────────────────────────────────────────
+LABEL_CREDITO = {"debentures": "debêntures", "cri": "CRIs", "cra": "CRAs"}
+
+
+def _montar_cadastro_credito(tipo: str, codigo: str, item: dict) -> dict:
+    """Monta o dict de cadastro no esquema certo pro tipo -- debêntures
+    (emissor único + setor) e CRI/CRA (cedente/securitizadora + série) têm
+    colunas de cadastro diferentes; só o histórico é idêntico nos 3."""
+    base = {
+        "codigo":           codigo,
+        "indexador":        item.get("indexador"),
+        "taxa_emissao":     item.get("taxa_emissao"),
+        "data_emissao":     item.get("data_emissao"),
+        "data_vencimento":  item.get("data_vencimento"),
+        "percentual_index": item.get("percentual_indexador"),
+        "rating_nota":      item.get("rating"),
+        "ativo":            True,
+    }
+    if tipo == "debentures":
+        base.update({
+            "nome_emissor": item.get("emissor") or item.get("nome_emissor"),
+            "cnpj_emissor": item.get("cnpj"),
+            "setor":        item.get("setor"),
+        })
+    else:
+        base.update({
+            "cedente":             item.get("cedente") or item.get("emissor"),
+            "cnpj_cedente":        item.get("cnpj_cedente") or item.get("cnpj"),
+            "securitizadora":      item.get("securitizadora"),
+            "cnpj_securitizadora": item.get("cnpj_securitizadora"),
+            "serie":               item.get("serie") or item.get("numero_serie"),
+        })
+    return base
+
+
+# ── ETL Debêntures / CRI / CRA ─────────────────────────────────────────────────
 def _etl_credito_privado(
     client: httpx.Client,
     token: str,
-    tipo: str,         # "cri" ou "cra"
+    tipo: str,         # "debentures", "cri" ou "cra"
     data_ref: date | None = None,
 ) -> int:
-    """Coleta preços indicativos de CRI ou CRA e atualiza cadastro."""
+    """Coleta preços indicativos de debêntures, CRI ou CRA e atualiza cadastro.
+
+    O histórico é idêntico nos 3 tipos; só o cadastro difere (debêntures tem
+    emissor único + setor, CRI/CRA tem cedente/securitizadora + série) --
+    ver `_montar_cadastro_credito`.
+    """
     if data_ref is None:
         data_ref = date.today() - timedelta(days=1)
 
@@ -330,21 +287,7 @@ def _etl_credito_privado(
                     if not codigo:
                         continue
 
-                    cadastros.append({
-                        "codigo":               codigo,
-                        "cedente":              item.get("cedente") or item.get("emissor"),
-                        "cnpj_cedente":         item.get("cnpj_cedente") or item.get("cnpj"),
-                        "securitizadora":       item.get("securitizadora"),
-                        "cnpj_securitizadora":  item.get("cnpj_securitizadora"),
-                        "indexador":            item.get("indexador"),
-                        "taxa_emissao":         item.get("taxa_emissao"),
-                        "data_emissao":         item.get("data_emissao"),
-                        "data_vencimento":      item.get("data_vencimento"),
-                        "percentual_index":     item.get("percentual_indexador"),
-                        "rating_nota":          item.get("rating"),
-                        "serie":                item.get("serie") or item.get("numero_serie"),
-                        "ativo":                True,
-                    })
+                    cadastros.append(_montar_cadastro_credito(tipo, codigo, item))
 
                     historicos.append({
                         "codigo":           codigo,
@@ -370,7 +313,7 @@ def _etl_credito_privado(
                     ).execute()
                     rows_total += len(historicos)
 
-                print(f"  Página {page}: {len(historicos)} {tipo.upper()}s")
+                print(f"  Página {page}: {len(historicos)} {LABEL_CREDITO.get(tipo, tipo.upper())}")
 
                 if len(itens) < page_size:
                     break
@@ -385,6 +328,10 @@ def _etl_credito_privado(
         _marcar_status_parcial(run, f"anbima_{tipo}", int(houve_erro), page, rows_total)
 
     return rows_total
+
+
+def etl_debentures(client: httpx.Client, token: str, data_ref: date | None = None) -> int:
+    return _etl_credito_privado(client, token, "debentures", data_ref)
 
 
 def etl_cri(client: httpx.Client, token: str, data_ref: date | None = None) -> int:

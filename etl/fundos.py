@@ -14,7 +14,6 @@ Como usar:
 
 import os
 import glob
-import math
 import time
 import zipfile
 import io
@@ -22,6 +21,7 @@ import datetime
 import pandas as pd
 from config import supabase
 from log_etl import ETLRun, log_partial
+from log_etl import safe_float as _safe_float_base
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "cvm")
 
@@ -55,11 +55,7 @@ def safe_str(value, max_len: int = None) -> str | None:
 
 def safe_numeric(value) -> float | None:
     """Converte valor numérico, retornando None se inválido/NaN."""
-    try:
-        v = float(str(value).replace(",", "."))
-        return None if math.isnan(v) or math.isinf(v) else v
-    except (ValueError, TypeError):
-        return None
+    return _safe_float_base(value, replace_comma=True)
 
 
 def parse_date(value) -> str | None:

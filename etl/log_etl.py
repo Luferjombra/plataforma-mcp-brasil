@@ -15,6 +15,7 @@ Uso básico:
         run.set_rows(len(data))
 """
 
+import math
 import time
 import httpx
 from datetime import date, datetime, timezone
@@ -22,6 +23,12 @@ from zoneinfo import ZoneInfo
 from config import supabase
 
 TZ_BRT = ZoneInfo("America/Sao_Paulo")
+
+# User-Agent que identifica o projeto para APIs públicas (BCB, brapi.dev) --
+# NÃO usar para fontes que bloqueiam clientes não-navegador (RSS, Tesouro
+# Transparente); essas têm um UA de navegador próprio, propositalmente
+# diferente deste.
+DEFAULT_USER_AGENT = "plataforma-mcp-brasil/1.0 (github.com/lufer-jom)"
 
 
 def hoje_brt() -> date:
@@ -32,6 +39,95 @@ def hoje_brt() -> date:
     é 00h10 UTC do dia seguinte). Usado nos ETLs que decidem "qual pregão
     buscar" ou "quantos dias atrás" com base no dia corrente."""
     return datetime.now(TZ_BRT).date()
+
+
+def safe_float(
+    value,
+    *,
+    replace_comma: bool = False,
+    zero_as_none: bool = False,
+    round_digits: int | None = None,
+) -> float | None:
+    """Converte `value` para float, tratando NaN/Inf/erro como None.
+
+    Parametrizado porque as 3 versões que existiam em `rf_tesouro.py`,
+    `rv_historico.py` e `fundos.py` tinham semânticas ligeiramente
+    diferentes (arredondamento, 0 tratado como inválido, vírgula decimal)
+    -- os flags replicam exatamente o comportamento de cada uma."""
+    try:
+        if replace_comma:
+            value = str(value).replace(",", ".")
+        v = float(value)
+        if math.isnan(v) or math.isinf(v):
+            return None
+        if zero_as_none and v == 0:
+            return None
+        return round(v, round_digits) if round_digits is not None else v
+    except (TypeError, ValueError):
+        return None
+
+
+def ultima_data(tabela: str, coluna_filtro: str, valor_filtro: str) -> str | None:
+    """Retorna a data (ISO, string) mais recente de `tabela` filtrando
+    `coluna_filtro=valor_filtro`, ou None se não houver registro ou a
+    consulta falhar. Base compartilhada por `indicadores.py` e
+    `rv_historico.py`, que tinham a mesma consulta duplicada com
+    tabela/coluna diferentes e cada um decide seu próprio fallback/formato
+    de retorno em cima do valor ISO."""
+    try:
+        result = (
+            supabase.table(tabela)
+            .select("data")
+            .eq(coluna_filtro, valor_filtro)
+            .order("data", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]["data"]
+    except Exception as e:
+        print(f"  [aviso] última data em {tabela} ({coluna_filtro}={valor_filtro}): {e}")
+    return None
+
+
+def baixar_arquivo_b3(
+    url: str,
+    client: httpx.Client,
+    *,
+    user_agent: str,
+    max_attempts: int = 2,
+    timeout: float = 60.0,
+    msg_404: str | None = None,
+    msg_falha: str | None = None,
+) -> bytes | None:
+    """Baixa um arquivo público da B3 (COTAHIST diário ou anual), tratando
+    404 como "ainda não publicado" -- não é erro, ao contrário de
+    `retry_request()` (que trataria 404 como falha definitiva via
+    `raise_for_status()`). Repete em falha de rede/5xx; desiste depois de
+    `max_attempts`. Base compartilhada por `cotahist.py` e
+    `cotahist_backfill.py`, que tinham o mesmo loop de retry duplicado
+    diferindo só em tentativas/timeout/mensagens."""
+    headers = {"User-Agent": user_agent}
+    for tentativa in range(1, max_attempts + 1):
+        try:
+            resp = client.get(url, timeout=timeout, headers=headers)
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            print(f"  [aviso] tentativa {tentativa}/{max_attempts} — falha de conexão em {url}: {e}")
+            continue
+
+        if resp.status_code == 404:
+            print(msg_404 if msg_404 is not None else f"  [info] ainda não publicado: {url}")
+            return None
+        if resp.status_code in (500, 502, 503, 504):
+            print(f"  [aviso] tentativa {tentativa}/{max_attempts} — HTTP {resp.status_code} em {url}")
+            continue
+
+        resp.raise_for_status()
+        return resp.content
+
+    if msg_falha:
+        print(msg_falha)
+    return None
 
 
 # ── Retry ─────────────────────────────────────────────────────────────────────

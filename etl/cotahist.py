@@ -37,7 +37,7 @@ import zipfile
 import datetime
 import httpx
 from config import supabase
-from log_etl import ETLRun, hoje_brt
+from log_etl import ETLRun, baixar_arquivo_b3, hoje_brt
 
 BASE_URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist"
 
@@ -89,26 +89,12 @@ def baixar_arquivo(data: datetime.date, client: httpx.Client) -> bytes | None:
     tentativas apenas para falhas transitórias de rede/servidor.
     """
     url = f"{BASE_URL}/{nome_arquivo(data)}"
-    headers = {"User-Agent": "plataforma-mcp-brasil/1.0 (etl staging)"}
-
-    for tentativa in range(1, 3):
-        try:
-            resp = client.get(url, timeout=60, headers=headers)
-        except (httpx.TimeoutException, httpx.ConnectError) as e:
-            print(f"  [aviso] tentativa {tentativa}/2 — falha de conexão em {url}: {e}")
-            continue
-
-        if resp.status_code == 404:
-            print(f"  [info] ainda não publicado: {url}")
-            return None
-        if resp.status_code in (500, 502, 503, 504):
-            print(f"  [aviso] tentativa {tentativa}/2 — HTTP {resp.status_code} em {url}")
-            continue
-
-        resp.raise_for_status()
-        return resp.content
-
-    return None
+    return baixar_arquivo_b3(
+        url, client,
+        user_agent="plataforma-mcp-brasil/1.0 (etl staging)",
+        max_attempts=2, timeout=60,
+        msg_404=f"  [info] ainda não publicado: {url}",
+    )
 
 
 def extrair_linhas(zip_bytes: bytes) -> list[str]:

@@ -22,6 +22,8 @@ from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import supabase
+from log_etl import ETLRun
+from log_etl import safe_float as _safe_float_base
 
 # ── Fonte de dados ────────────────────────────────────────────────────────────
 # CSV com todo histórico (sem Cloudflare — acesso direto OK)
@@ -81,23 +83,7 @@ def safe_float(val) -> float | None:
     Nota: pandas já converte a vírgula decimal com decimal=',' no read_csv.
     Não fazer replace de '.' para não corromper casas decimais já parseadas.
     """
-    try:
-        if pd.isna(val):
-            return None
-        v = float(val)
-        return round(v, 6) if v != 0 else None
-    except Exception:
-        return None
-
-
-def registrar_log(status: str, novos: int, total: int, erro: str = None):
-    supabase.table("etl_log").insert({
-        "job_nome": "rf_tesouro",
-        "status": status,
-        "registros_novos": novos,
-        "registros_total": total,
-        "erro_msg": erro,
-    }).execute()
+    return _safe_float_base(val, zero_as_none=True, round_digits=6)
 
 
 def run():
@@ -105,173 +91,174 @@ def run():
     print("ETL Tesouro Direto")
     print("=" * 55)
 
-    # ── 1. Download do CSV ────────────────────────────────────
-    print("\n[1/4] Baixando CSV do Tesouro Transparente...")
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (compatible; plataforma-mcp-brasil/1.0; "
-            "+https://github.com/Luferjombra/plataforma-mcp-brasil)"
-        )
-    }
-    try:
-        with httpx.Client(timeout=120, follow_redirects=True) as client:
-            resp = client.get(CSV_URL, headers=headers)
-            resp.raise_for_status()
-        conteudo = resp.text
-    except Exception as e:
-        print(f"  ✗ Erro ao baixar CSV: {e}")
-        registrar_log("error", 0, 0, f"Download falhou: {e}")
-        return
-
-    print(f"  ✓ {len(conteudo) / 1024:.0f} KB baixados")
-
-    # ── 2. Parse do CSV ───────────────────────────────────────
-    print("\n[2/4] Processando CSV...")
-    try:
-        # O CSV usa separador ';', encoding UTF-8 com BOM, decimal ','
-        df = pd.read_csv(
-            StringIO(conteudo),
-            sep=";",
-            encoding="utf-8-sig",
-            decimal=",",
-            thousands=".",
-        )
-    except Exception:
-        # Fallback: latin-1
+    with ETLRun("rf_tesouro") as run_ctx:
+        # ── 1. Download do CSV ────────────────────────────────
+        print("\n[1/4] Baixando CSV do Tesouro Transparente...")
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; plataforma-mcp-brasil/1.0; "
+                "+https://github.com/Luferjombra/plataforma-mcp-brasil)"
+            )
+        }
         try:
+            with httpx.Client(timeout=120, follow_redirects=True) as client:
+                resp = client.get(CSV_URL, headers=headers)
+                resp.raise_for_status()
+            conteudo = resp.text
+        except Exception as e:
+            print(f"  ✗ Erro ao baixar CSV: {e}")
+            run_ctx.set_status("error", f"Download falhou: {e}")
+            return
+
+        print(f"  ✓ {len(conteudo) / 1024:.0f} KB baixados")
+
+        # ── 2. Parse do CSV ───────────────────────────────────
+        print("\n[2/4] Processando CSV...")
+        try:
+            # O CSV usa separador ';', encoding UTF-8 com BOM, decimal ','
             df = pd.read_csv(
                 StringIO(conteudo),
                 sep=";",
-                encoding="latin-1",
+                encoding="utf-8-sig",
                 decimal=",",
                 thousands=".",
             )
-        except Exception as e:
-            print(f"  ✗ Erro ao parsear CSV: {e}")
-            registrar_log("error", 0, 0, f"Parse falhou: {e}")
-            return
+        except Exception:
+            # Fallback: latin-1
+            try:
+                df = pd.read_csv(
+                    StringIO(conteudo),
+                    sep=";",
+                    encoding="latin-1",
+                    decimal=",",
+                    thousands=".",
+                )
+            except Exception as e:
+                print(f"  ✗ Erro ao parsear CSV: {e}")
+                run_ctx.set_status("error", f"Parse falhou: {e}")
+                return
 
-    print(f"  {len(df):,} linhas · colunas: {list(df.columns)}")
+        print(f"  {len(df):,} linhas · colunas: {list(df.columns)}")
 
-    # Normalizar nomes de colunas (remover espaços extras)
-    df.columns = [c.strip() for c in df.columns]
+        # Normalizar nomes de colunas (remover espaços extras)
+        df.columns = [c.strip() for c in df.columns]
 
-    # Colunas esperadas
-    col_tipo  = "Tipo Titulo"
-    col_venc  = "Data Vencimento"
-    col_base  = "Data Base"
-    col_tvend = "Taxa Venda Manha"
-    col_tcomp = "Taxa Compra Manha"
-    col_pvend = "PU Venda Manha"
-    col_pcomp = "PU Compra Manha"
+        # Colunas esperadas
+        col_tipo  = "Tipo Titulo"
+        col_venc  = "Data Vencimento"
+        col_base  = "Data Base"
+        col_tvend = "Taxa Venda Manha"
+        col_tcomp = "Taxa Compra Manha"
+        col_pvend = "PU Venda Manha"
+        col_pcomp = "PU Compra Manha"
 
-    # Verificar colunas mínimas
-    for col in [col_tipo, col_venc, col_base]:
-        if col not in df.columns:
-            msg = f"Coluna '{col}' não encontrada. Colunas disponíveis: {list(df.columns)}"
-            print(f"  ✗ {msg}")
-            registrar_log("error", 0, 0, msg)
-            return
+        # Verificar colunas mínimas
+        for col in [col_tipo, col_venc, col_base]:
+            if col not in df.columns:
+                msg = f"Coluna '{col}' não encontrada. Colunas disponíveis: {list(df.columns)}"
+                print(f"  ✗ {msg}")
+                run_ctx.set_status("error", msg)
+                return
 
-    # Parsear datas (formato DD/MM/YYYY)
-    df[col_venc] = pd.to_datetime(df[col_venc], dayfirst=True, errors="coerce")
-    df[col_base] = pd.to_datetime(df[col_base], dayfirst=True, errors="coerce")
-    df.dropna(subset=[col_base, col_venc, col_tipo], inplace=True)
+        # Parsear datas (formato DD/MM/YYYY)
+        df[col_venc] = pd.to_datetime(df[col_venc], dayfirst=True, errors="coerce")
+        df[col_base] = pd.to_datetime(df[col_base], dayfirst=True, errors="coerce")
+        df.dropna(subset=[col_base, col_venc, col_tipo], inplace=True)
 
-    # Filtrar: apenas 2020 em diante (reduz carga inicial)
-    df = df[df[col_base] >= "2020-01-01"].copy()
-    print(f"  {len(df):,} linhas após filtro 2020+")
+        # Filtrar: apenas 2020 em diante (reduz carga inicial)
+        df = df[df[col_base] >= "2020-01-01"].copy()
+        print(f"  {len(df):,} linhas após filtro 2020+")
 
-    # Gerar código único por título
-    df["codigo"] = df.apply(
-        lambda r: gerar_codigo(r[col_tipo], r[col_venc].date()), axis=1
-    )
-
-    # ── 3. Upsert — rf_titulos ────────────────────────────────
-    print("\n[3/4] Atualizando rf_titulos...")
-    titulos_df = df[[col_tipo, col_venc, "codigo"]].drop_duplicates("codigo").copy()
-    titulos_rows = []
-    for _, row in titulos_df.iterrows():
-        tipo, indexador = detectar_tipo(row[col_tipo].strip())
-        titulos_rows.append({
-            "codigo":          row["codigo"],
-            "nome":            row[col_tipo].strip(),
-            "emissor":         "Tesouro Nacional",
-            "tipo":            "Tesouro",
-            "indexador":       indexador,
-            "data_vencimento": row[col_venc].strftime("%Y-%m-%d"),
-        })
-
-    supabase.table("rf_titulos").upsert(titulos_rows, on_conflict="codigo").execute()
-    print(f"  ✓ {len(titulos_rows)} títulos")
-
-    # Marcar títulos com dados recentes (últimos 30 dias) como ativos.
-    # Antes usava date.replace(month=...), que quebra nos dias 29-31 quando o
-    # mês anterior é mais curto e, em janeiro, gerava data futura (dez do mesmo
-    # ano) — marcando todos os títulos como inativos.
-    data_recente = (date.today() - timedelta(days=30)).isoformat()
-    df_recentes = df[df[col_base] >= data_recente]["codigo"].unique().tolist()
-    if df_recentes:
-        supabase.table("rf_titulos").update({"ativo": True}).in_("codigo", df_recentes).execute()
-    # Marcar sem dados recentes como inativos
-    codigos_todos = [r["codigo"] for r in titulos_rows]
-    codigos_inativos = [c for c in codigos_todos if c not in df_recentes]
-    if codigos_inativos:
-        supabase.table("rf_titulos").update({"ativo": False}).in_("codigo", codigos_inativos).execute()
-
-    # ── 4. Upsert — rf_historico (incremental) ────────────────
-    print("\n[4/4] Atualizando rf_historico...")
-
-    # Só faz upsert das datas novas (+ overlap). O CSV vem sempre completo,
-    # mas re-enviar 2020→hoje todo dia era o maior desperdício do pipeline.
-    df_hist = df
-    try:
-        res_ult = (
-            supabase.table("rf_historico")
-            .select("data").order("data", desc=True).limit(1).execute()
+        # Gerar código único por título
+        df["codigo"] = df.apply(
+            lambda r: gerar_codigo(r[col_tipo], r[col_venc].date()), axis=1
         )
-        if res_ult.data:
-            ultima = datetime.strptime(res_ult.data[0]["data"], "%Y-%m-%d").date()
-            corte = ultima - timedelta(days=OVERLAP_DIAS)
-            df_hist = df[df[col_base] >= pd.Timestamp(corte)].copy()
-            print(f"  incremental: última data no banco={ultima}, "
-                  f"processando desde {corte} ({len(df_hist):,} de {len(df):,} linhas)")
-        else:
-            print(f"  carga inicial: banco vazio, processando tudo ({len(df):,} linhas)")
-    except Exception as e:
-        print(f"  [aviso] não foi possível apurar última data ({e}); processando tudo")
+
+        # ── 3. Upsert — rf_titulos ────────────────────────────
+        print("\n[3/4] Atualizando rf_titulos...")
+        titulos_df = df[[col_tipo, col_venc, "codigo"]].drop_duplicates("codigo").copy()
+        titulos_rows = []
+        for _, row in titulos_df.iterrows():
+            tipo, indexador = detectar_tipo(row[col_tipo].strip())
+            titulos_rows.append({
+                "codigo":          row["codigo"],
+                "nome":            row[col_tipo].strip(),
+                "emissor":         "Tesouro Nacional",
+                "tipo":            "Tesouro",
+                "indexador":       indexador,
+                "data_vencimento": row[col_venc].strftime("%Y-%m-%d"),
+            })
+
+        supabase.table("rf_titulos").upsert(titulos_rows, on_conflict="codigo").execute()
+        print(f"  ✓ {len(titulos_rows)} títulos")
+
+        # Marcar títulos com dados recentes (últimos 30 dias) como ativos.
+        # Antes usava date.replace(month=...), que quebra nos dias 29-31 quando o
+        # mês anterior é mais curto e, em janeiro, gerava data futura (dez do mesmo
+        # ano) — marcando todos os títulos como inativos.
+        data_recente = (date.today() - timedelta(days=30)).isoformat()
+        df_recentes = df[df[col_base] >= data_recente]["codigo"].unique().tolist()
+        if df_recentes:
+            supabase.table("rf_titulos").update({"ativo": True}).in_("codigo", df_recentes).execute()
+        # Marcar sem dados recentes como inativos
+        codigos_todos = [r["codigo"] for r in titulos_rows]
+        codigos_inativos = [c for c in codigos_todos if c not in df_recentes]
+        if codigos_inativos:
+            supabase.table("rf_titulos").update({"ativo": False}).in_("codigo", codigos_inativos).execute()
+
+        # ── 4. Upsert — rf_historico (incremental) ─────────────
+        print("\n[4/4] Atualizando rf_historico...")
+
+        # Só faz upsert das datas novas (+ overlap). O CSV vem sempre completo,
+        # mas re-enviar 2020→hoje todo dia era o maior desperdício do pipeline.
         df_hist = df
+        try:
+            res_ult = (
+                supabase.table("rf_historico")
+                .select("data").order("data", desc=True).limit(1).execute()
+            )
+            if res_ult.data:
+                ultima = datetime.strptime(res_ult.data[0]["data"], "%Y-%m-%d").date()
+                corte = ultima - timedelta(days=OVERLAP_DIAS)
+                df_hist = df[df[col_base] >= pd.Timestamp(corte)].copy()
+                print(f"  incremental: última data no banco={ultima}, "
+                      f"processando desde {corte} ({len(df_hist):,} de {len(df):,} linhas)")
+            else:
+                print(f"  carga inicial: banco vazio, processando tudo ({len(df):,} linhas)")
+        except Exception as e:
+            print(f"  [aviso] não foi possível apurar última data ({e}); processando tudo")
+            df_hist = df
 
-    hist_rows = []
-    for _, row in df_hist.iterrows():
-        t_vend = safe_float(row.get(col_tvend)) if col_tvend in df.columns else None
-        t_comp = safe_float(row.get(col_tcomp)) if col_tcomp in df.columns else None
-        p_vend = safe_float(row.get(col_pvend)) if col_pvend in df.columns else None
-        p_comp = safe_float(row.get(col_pcomp)) if col_pcomp in df.columns else None
+        hist_rows = []
+        for _, row in df_hist.iterrows():
+            t_vend = safe_float(row.get(col_tvend)) if col_tvend in df.columns else None
+            t_comp = safe_float(row.get(col_tcomp)) if col_tcomp in df.columns else None
+            p_vend = safe_float(row.get(col_pvend)) if col_pvend in df.columns else None
+            p_comp = safe_float(row.get(col_pcomp)) if col_pcomp in df.columns else None
 
-        if t_vend is None and p_vend is None:
-            continue
+            if t_vend is None and p_vend is None:
+                continue
 
-        hist_rows.append({
-            "codigo":       row["codigo"],
-            "data":         row[col_base].strftime("%Y-%m-%d"),
-            "taxa_mercado": t_vend,   # taxa venda = yield que o investidor recebe
-            "pu_mercado":   p_vend,   # PU venda = preço que o investidor paga
-            "taxa_compra":  t_comp,   # taxa compra = recompra pelo Tesouro
-            "pu_compra":    p_comp,   # PU compra = recompra pelo Tesouro
-        })
+            hist_rows.append({
+                "codigo":       row["codigo"],
+                "data":         row[col_base].strftime("%Y-%m-%d"),
+                "taxa_mercado": t_vend,   # taxa venda = yield que o investidor recebe
+                "pu_mercado":   p_vend,   # PU venda = preço que o investidor paga
+                "taxa_compra":  t_comp,   # taxa compra = recompra pelo Tesouro
+                "pu_compra":    p_comp,   # PU compra = recompra pelo Tesouro
+            })
 
-    print(f"  {len(hist_rows):,} registros para upsert...")
-    CHUNK = 500
-    for i in range(0, len(hist_rows), CHUNK):
-        batch = hist_rows[i : i + CHUNK]
-        supabase.table("rf_historico").upsert(batch, on_conflict="codigo,data").execute()
-        pct = (i + len(batch)) / len(hist_rows) * 100
-        print(f"  ...{i + len(batch):,}/{len(hist_rows):,} ({pct:.0f}%)", end="\r")
+        print(f"  {len(hist_rows):,} registros para upsert...")
+        CHUNK = 500
+        for i in range(0, len(hist_rows), CHUNK):
+            batch = hist_rows[i : i + CHUNK]
+            supabase.table("rf_historico").upsert(batch, on_conflict="codigo,data").execute()
+            pct = (i + len(batch)) / len(hist_rows) * 100
+            print(f"  ...{i + len(batch):,}/{len(hist_rows):,} ({pct:.0f}%)", end="\r")
 
-    print(f"\n  ✓ rf_historico — {len(hist_rows):,} registros")
+        print(f"\n  ✓ rf_historico — {len(hist_rows):,} registros")
+        run_ctx.set_rows(len(hist_rows))
 
-    registrar_log("success", len(hist_rows), len(hist_rows))
     print("\n=== ETL Tesouro Direto concluído ===")
 
 
