@@ -22,12 +22,14 @@ para descobrirmos empiricamente a que horas a B3 publica o arquivo do dia.
 Por isso "arquivo ainda não disponível" (404) é tratado como resultado
 esperado/informativo, não como falha do job.
 
-Limitação conhecida (não bloqueia a Fase 1, ver ADR-001):
-  ESPECI "CI" (fundo de investimento) cobre tanto ETFs quanto outros fundos
-  negociados em bolsa (FIAgro, FIDC listado etc.) — o layout público não
-  distingue os dois de forma inequívoca. Ativos nessa categoria são marcados
-  como tipo='ETF_OU_FUNDO' e reportados à parte (ver ETF_CANDIDATOS_OBSERVACAO),
-  sem bloquear o smoke test.
+Classificação ETF vs. fundo genérico (resolvido 2026-07-08, ver ADR-001,
+Fase 2 item 2): o layout público do COTAHIST não distingue ETF de outros
+fundos negociados em bolsa (FIAgro, FIDC listado etc.) só pela ESPECI "CI" —
+os dois usam o mesmo código. Por isso a classificação final usa uma lista
+curada de ETFs conhecidos (ETFS_CONHECIDOS, confirmados via B3/gestoras) e
+cai em 'FUNDO_LISTADO' para o resto do universo "CI". Não é um critério
+estrutural do arquivo, é curadoria — expandir ETFS_CONHECIDOS conforme
+novos ETFs forem confirmados.
 """
 
 import io
@@ -56,11 +58,14 @@ SMOKE_TEST_ESPERADO = {
     "HGLG11": "FII",
     "MXRF11": "FII",
     "KNRI11": "FII",
+    "BOVA11": "ETF",
 }
 
-# Candidatos a ETF cuja subclassificação exata (vs. "fundo genérico") ainda
-# não foi validada contra o layout público — ver limitação no docstring acima.
-ETF_CANDIDATOS_OBSERVACAO = {"BOVA11", "IVVB11", "SMAL11", "XFIX11"}
+# ETFs confirmados (curadoria manual — ver docstring do módulo). Fontes:
+# BOVA11/IVVB11/SMAL11 — iShares/BlackRock (replicam Ibovespa, S&P 500 e
+# Small Cap); XFIX11 — XP Vista Asset (ETF do IFIX, primeiro ETF imobiliário
+# do Brasil, confirmado pela própria B3).
+ETFS_CONHECIDOS = {"BOVA11", "IVVB11", "SMAL11", "XFIX11"}
 
 
 # ── Download ──────────────────────────────────────────────────────────────────
@@ -126,7 +131,7 @@ def _num(campo: str) -> int | None:
     return int(campo)
 
 
-def classificar(especi: str, codbdi: str) -> str:
+def classificar(ticker: str, especi: str, codbdi: str) -> str:
     especi = especi.strip()
     codbdi = codbdi.strip()
     if especi == "BDR":
@@ -139,7 +144,7 @@ def classificar(especi: str, codbdi: str) -> str:
         if especi.startswith("PN"):
             return "PN"
     if especi.startswith("CI"):
-        return "ETF_OU_FUNDO"  # ver limitação no docstring do módulo
+        return "ETF" if ticker in ETFS_CONHECIDOS else "FUNDO_LISTADO"
     return "OUTROS"
 
 
@@ -180,7 +185,7 @@ def parse_linha(linha: str) -> dict | None:
         "nome": linha[27:39].strip(),
         "especi_raw": linha[39:49].strip(),
         "codbdi": codbdi,
-        "tipo": classificar(linha[39:49], codbdi),
+        "tipo": classificar(ticker, linha[39:49], codbdi),
         "data": datetime.datetime.strptime(data_str, "%Y%m%d").date().isoformat(),
         "abertura": preco(56, 69),
         "maxima": preco(69, 82),
@@ -212,11 +217,6 @@ def rodar_smoke_test(por_ticker: dict, run_id: int | None) -> bool:
 
     if linhas:
         supabase.table("cotahist_smoke_test").insert(linhas).execute()
-
-    candidatos_etf = [t for t in ETF_CANDIDATOS_OBSERVACAO if t in por_ticker]
-    if candidatos_etf:
-        print(f"    [observação] {len(candidatos_etf)} candidato(s) ETF em ETF_OU_FUNDO "
-              f"(não bloqueia — pendente de validação, ver ADR-001): {candidatos_etf}")
 
     return tudo_ok
 
