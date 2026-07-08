@@ -162,7 +162,11 @@ Números batem com a estimativa do dry-run (pequena diferença por causa do univ
 
 Revisão de pair-programming (2 rodadas) encontrou e corrigiu 3 problemas reais no frontend (`frontend/app/rv/page.tsx`): (1) deep-link vindo da busca global (`/rv?ticker=X`) quebrava silenciosamente para qualquer ticker fora da primeira página em ordem alfabética — corrigido inicializando a busca com o `tickerParam` da URL; (2) o painel de detalhe do ativo selecionado ficava inconsistente ao trocar de página (dependia de `ativos.find()` sobre a página atual) — corrigido com estado `ativoSel` próprio, desacoplado da paginação; (3) troca rápida de filtro/busca podia disparar 2 requisições fora de ordem sem guard — corrigido com um `requestIdRef` que descarta respostas obsoletas.
 
-**Pendente:** E3 (RPC/view de último preço por ticker, substituindo a heurística frágil de `backend/routes/carteira.py`) e P6 (virtualização das listas `/rv`, `/fundos`, `/renda-fixa`).
+**E3 — RPC de último preço em `carteira.py` (concluído 2026-07-08):** `GET /carteira/posicoes` trocou a heurística frágil `limit(len(tickers)*5)` (cobertura desigual entre tickers) pela mesma RPC `rv_variacao_diaria()` já usada em `/rv/ativos`. Revisão de pair-programming (1 rodada, "aprovado com ressalvas") encontrou 2 pontos: (1) faltava `try/except` em volta da chamada RPC, inconsistente com o padrão já aprovado em `rv.py` — corrigido com `logger.warning` e degradação graciosa; (2) a janela de 10 dias embutida em `rv_variacao_diaria()` (pensada para "variação diária" de ativos líquidos) fazia tickers ilíquidos/suspensos (padrão ELET3/RBRF11, item 5) desaparecerem do "último preço conhecido" mesmo tendo histórico válido mais antigo — corrigido com uma busca pontual por ticker (fallback, não é o LIMIT global frágil) para qualquer ticker que a RPC não cobriu. Segunda rodada de revisão: ✅ aprovado sem novos achados (N+1 do fallback anotado como não-bloqueante, carteira pessoal tem poucas dezenas de tickers).
+
+Ao implementar E3, `GET /carteira/analise` (linha ~215) mostrou ter uma heurística DIFERENTE e mais complexa (`limit(periodo_dias * len(tickers))`, reconstrução de série histórica completa, não só o último preço) — fora do escopo literal de E3, registrada como novo item **E3b** no backlog (precisa de função SQL própria com forward-fill por ticker/data).
+
+**Pendente:** P6 (virtualização das listas `/rv`, `/fundos`, `/renda-fixa`).
 
 ## Referências
 

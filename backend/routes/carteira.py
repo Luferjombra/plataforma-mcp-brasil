@@ -5,6 +5,7 @@ GET    /carteira/posicoes           → listar posições com preço atual e P&L
 DELETE /carteira/posicoes/{id}      → remover posição
 GET    /carteira/analise            → P&L consolidado + métricas de risco
 """
+import logging
 import uuid
 from collections import defaultdict
 from datetime import date
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from carteira.metricas import calcular_todas
 from db import supabase
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -89,25 +91,42 @@ def get_posicoes(
     tickers = list({p["ticker"] for p in posicoes})
     precos: dict[str, dict] = {}
     if tickers:
-        res_precos = (
-            supabase.table("rv_historico")
-            .select("ticker,data,fechamento_adj,fechamento")
-            .in_("ticker", tickers)
-            .order("data", desc=True)
-            .limit(len(tickers) * 5)
-            .execute()
-        )
-        for row in res_precos.data or []:
-            t = row["ticker"]
-            if t not in precos:
-                precos[t] = row
+        # rv_variacao_diaria() (migration 004, ORDER BY ticker desde a 013)
+        # já calcula o último preço por ticker via ROW_NUMBER particionado —
+        # substitui a heurística frágil de LIMIT global (len(tickers)*5),
+        # que podia dar cobertura desigual entre tickers (ver ADR-001, E3).
+        try:
+            res_precos = supabase.rpc("rv_variacao_diaria").in_("ticker", tickers).execute()
+            for row in res_precos.data or []:
+                precos[row["ticker"]] = row
+        except Exception as e:
+            logger.warning(f"rv_variacao_diaria indisponivel ({e}); tentando fallback por ticker.")
+
+        # A RPC só olha os últimos 10 dias (pensada pra "variação diária" de
+        # ativos ativamente negociados) — um ticker ilíquido que não negociou
+        # nesse intervalo (FII de baixo volume, ou o padrão ELET3/RBRF11 do
+        # ADR-001 item 5) simplesmente não aparece no resultado, mesmo tendo
+        # preço histórico válido. Busca pontual por ticker (não um LIMIT
+        # global) pra cobrir esses casos sem reintroduzir a heurística frágil.
+        for t in [t for t in tickers if t not in precos]:
+            res_fallback = (
+                supabase.table("rv_historico")
+                .select("data,fechamento")
+                .eq("ticker", t)
+                .order("data", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if res_fallback.data:
+                row = res_fallback.data[0]
+                precos[t] = {"preco_atual": row["fechamento"], "data_preco": row["data"]}
 
     valor_total = 0.0
     resultado = []
     for p in posicoes:
         ticker = p["ticker"]
         info = precos.get(ticker, {})
-        preco_atual = info.get("fechamento_adj") or info.get("fechamento")
+        preco_atual = info.get("preco_atual")
         qtd = float(p["quantidade"])
         pm = float(p["preco_medio"])
 
@@ -119,7 +138,7 @@ def get_posicoes(
         resultado.append({
             **p,
             "preco_atual": preco_atual,
-            "data_preco":  info.get("data"),
+            "data_preco":  info.get("data_preco"),
             "pl_valor":    pl_valor,
             "pl_pct":      pl_pct,
             "valor_pos":   valor_pos,
