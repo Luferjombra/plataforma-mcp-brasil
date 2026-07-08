@@ -58,6 +58,8 @@ on:
           - validar_cotahist_ajustado
           - eventos_corporativos
           - ajuste_proventos
+          - promover_cotahist_dry_run
+          - promover_cotahist
 
 jobs:
   # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
@@ -252,6 +254,51 @@ jobs:
       - name: Rodar validação cruzada (ajustado)
         working-directory: etl
         run: python validar_cotahist.py --usar-ajustado
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+  # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) — dry-run ────
+  # Só leitura. Requer migration 012_fonte_producao.sql executada antes.
+  etl-promover-cotahist-dry-run:
+    name: Promoção COTAHIST -> produção (dry-run)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'promover_cotahist_dry_run'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+      - name: Rodar dry-run
+        working-directory: etl
+        run: python promover_cotahist.py --dry-run
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+  # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) — real ───────
+  # ESCREVE em rv_ativos/rv_historico (produção). Só disparar depois do
+  # dry-run revisado e aprovado.
+  etl-promover-cotahist:
+    name: Promoção COTAHIST -> produção
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'promover_cotahist'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+      - name: Rodar promoção
+        working-directory: etl
+        run: python promover_cotahist.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
