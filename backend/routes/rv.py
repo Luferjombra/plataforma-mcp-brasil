@@ -3,53 +3,56 @@ from typing import Union
 
 from fastapi import APIRouter, Query, HTTPException
 from db import supabase
+from postgrest_utils import sanitizar_busca
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-TAMANHO_PAGINA = 1000
-
-
-def _buscar_paginado(construir_query):
-    """Pagina com .range() para não bater no limite padrão de 1000 linhas
-    do PostgREST. `construir_query` é chamado de novo a cada página (uma
-    query builder do Supabase não pode ser reexecutada) e deve retornar uma
-    query/rpc builder SEM `.range()` — esta função aplica o range.
-
-    Necessário desde que rv_ativos passou a cobrir o universo completo do
-    COTAHIST (2.368 tickers, ver ADR-001) — antes da promoção a curadoria de
-    ~30 tickers nunca chegava perto do limite."""
-    todos = []
-    inicio = 0
-    while True:
-        res = construir_query().range(inicio, inicio + TAMANHO_PAGINA - 1).execute()
-        if not res.data:
-            break
-        todos.extend(res.data)
-        if len(res.data) < TAMANHO_PAGINA:
-            break
-        inicio += TAMANHO_PAGINA
-    return todos
-
 
 @router.get("/ativos")
-def get_ativos(setor: str = Query(None), ativo: bool = Query(True)):
-    """Lista ativos RV com preco atual e variacao diaria calculada."""
-    def construir_ativos():
-        # .order() é obrigatório com paginação via LIMIT/OFFSET — sem ordem
-        # explícita o Postgres não garante a mesma ordem entre execuções,
-        # o que pode pular ou duplicar tickers entre uma página e outra.
-        query = supabase.table("rv_ativos").select("*").eq("ativo", ativo).order("ticker")
-        if setor:
-            query = query.eq("setor", setor)
-        return query
+def get_ativos(
+    setor: str = Query(None),
+    ativo: bool = Query(True),
+    q: str = Query(None, description="Busca por ticker ou nome"),
+    tipo: str = Query(None, description="Filtra por tipo exato (ex: FII)"),
+    excluir_fii: bool = Query(False, description="Exclui tipo=FII (aba 'Ações' do frontend)"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=500),
+):
+    """Lista ativos RV paginada, com busca por ticker/nome e preço/variação
+    diária calculados no banco.
 
-    data = _buscar_paginado(construir_ativos)
+    Paginação server-side (ADR-001, Fase 2, item E2): rv_ativos cobre o
+    universo completo do COTAHIST (2.368 tickers) desde o corte — devolver
+    tudo de uma vez sobrecarregava o frontend com um array gigante filtrado
+    no browser. `q` busca por ticker/nome via ilike; sanitizado contra
+    filter injection no `.or_()` do PostgREST (mesmo padrão de F9 em
+    backend/routes/search.py)."""
+    query = supabase.table("rv_ativos").select("*", count="exact").eq("ativo", ativo).order("ticker")
+    if setor:
+        query = query.eq("setor", setor)
+    if tipo:
+        query = query.eq("tipo", tipo)
+    if excluir_fii:
+        query = query.neq("tipo", "FII")
+    if q:
+        termo = sanitizar_busca(q.strip())
+        if termo:
+            query = query.or_(f"ticker.ilike.%{termo}%,nome.ilike.%{termo}%")
 
-    # Variacao diaria calculada no banco via LAG() (migration 004)
+    inicio = (page - 1) * per_page
+    result = query.range(inicio, inicio + per_page - 1).execute()
+    data = list(result.data)
+
+    # Variacao diaria calculada no banco via LAG() (migration 004) -- só
+    # para os tickers desta página, não o universo inteiro.
     try:
-        variacao = _buscar_paginado(lambda: supabase.rpc("rv_variacao_diaria"))
-        por_ticker = {r["ticker"]: r for r in variacao}
+        tickers_pagina = [a["ticker"] for a in data]
+        if tickers_pagina:
+            variacao = supabase.rpc("rv_variacao_diaria").in_("ticker", tickers_pagina).execute()
+            por_ticker = {r["ticker"]: r for r in (variacao.data or [])}
+        else:
+            por_ticker = {}
         for a in data:
             v = por_ticker.get(a["ticker"], {})
             a["preco_atual"] = v.get("preco_atual")
@@ -62,7 +65,7 @@ def get_ativos(setor: str = Query(None), ativo: bool = Query(True)):
             a.setdefault("var_dia_pct", None)
             a.setdefault("data_preco", None)
 
-    return {"data": data, "total": len(data)}
+    return {"data": data, "total": result.count or 0, "page": page, "per_page": per_page}
 
 
 @router.get("/historico/{ticker}")

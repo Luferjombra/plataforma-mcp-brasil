@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, Suspense } from 'react'
+import { useEffect, useState, useMemo, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getAtivos, getHistoricoRV, type Ativo, type Historico } from '@/lib/api'
 import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
@@ -14,33 +14,85 @@ type Filtro = 'todos' | 'acao' | 'fii'
 type Range  = '5d' | '1m' | '3m' | '6m' | '1a'
 
 const RANGE_N: Record<Range, number> = { '5d': 5, '1m': 21, '3m': 63, '6m': 126, '1a': 252 }
+const POR_PAGINA = 50
+const DEBOUNCE_BUSCA_MS = 350
 
 function RVInner() {
   const searchParams  = useSearchParams()
   const tickerParam   = searchParams.get('ticker')
 
   const [ativos, setAtivos]             = useState<Ativo[]>([])
+  const [total, setTotal]               = useState(0)
+  const [pagina, setPagina]             = useState(1)
+  const [busca, setBusca]               = useState(tickerParam ?? '')
+  const [buscaDebounced, setBuscaDebounced] = useState(tickerParam ?? '')
   const [selecionado, setSelecionado]   = useState<string | null>(null)
+  // Objeto completo do ativo selecionado, guardado à parte de `ativos` --
+  // sem isso, trocar de página faz o painel de detalhe "sumir" assim que o
+  // ticker selecionado não está mais na página atual (achado de revisão).
+  const [ativoSel, setAtivoSel]         = useState<Ativo | null>(null)
   const [historico, setHistorico]       = useState<Historico[]>([])
   const [loadingAtivos, setLoadingAtivos] = useState(true)
   const [loadingChart, setLoadingChart]   = useState(false)
   const [filtro, setFiltro]             = useState<Filtro>('todos')
   const [range, setRange]               = useState<Range>('1a')
   const [error, setError]               = useState<string | null>(null)
+  const requestIdRef = useRef(0)
 
-  const recarregar = () => {
-    setLoadingAtivos(true); setError(null)
-    getAtivos().then(r => {
-      setAtivos(r.data)
-      const init = tickerParam
-        ? r.data.find(a => a.ticker === tickerParam.toUpperCase())?.ticker ?? r.data[0]?.ticker
-        : r.data[0]?.ticker
-      if (init) setSelecionado(init)
-    }).catch(e => setError(e instanceof Error ? e.message : 'Erro ao conectar na API'))
-    .finally(() => setLoadingAtivos(false))
+  const selecionarAtivo = (a: Ativo) => {
+    setSelecionado(a.ticker)
+    setAtivoSel(a)
   }
 
-  useEffect(() => { recarregar() }, [tickerParam]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Busca com debounce -- evita 1 requisição por tecla digitada.
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(busca.trim()), DEBOUNCE_BUSCA_MS)
+    return () => clearTimeout(t)
+  }, [busca])
+
+  // Trocar filtro ou busca reinicia a paginação.
+  useEffect(() => { setPagina(1) }, [filtro, buscaDebounced])
+
+  // Deep-link vindo da busca global (SearchBar navega para /rv?ticker=X):
+  // preenche a busca com o ticker para garantir que ele apareça na lista
+  // (sem isso, um ticker fora da página 1 alfabética nunca seria
+  // encontrado -- achado de revisão) e limpa a seleção atual para forçar
+  // o auto-select em `recarregar` a escolher o novo ticker do deep-link.
+  useEffect(() => {
+    if (tickerParam) {
+      setBusca(tickerParam); setBuscaDebounced(tickerParam); setSelecionado(null)
+    }
+  }, [tickerParam])
+
+  const recarregar = () => {
+    const meuId = ++requestIdRef.current
+    setLoadingAtivos(true); setError(null)
+    getAtivos({
+      q: buscaDebounced || undefined,
+      tipo: filtro === 'fii' ? 'FII' : undefined,
+      excluirFii: filtro === 'acao',
+      page: pagina,
+      perPage: POR_PAGINA,
+    }).then(r => {
+      if (requestIdRef.current !== meuId) return // resposta desatualizada (troca rápida de filtro/página) -- ignorar
+      setAtivos(r.data)
+      setTotal(r.total)
+      if (!selecionado) {
+        const init = tickerParam
+          ? r.data.find(a => a.ticker === tickerParam.toUpperCase()) ?? r.data[0]
+          : r.data[0]
+        if (init) selecionarAtivo(init)
+      }
+    }).catch(e => {
+      if (requestIdRef.current !== meuId) return
+      setError(e instanceof Error ? e.message : 'Erro ao conectar na API')
+    }).finally(() => {
+      if (requestIdRef.current === meuId) setLoadingAtivos(false)
+    })
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { recarregar() }, [tickerParam, filtro, buscaDebounced, pagina])
 
   useEffect(() => {
     if (!selecionado) return
@@ -51,17 +103,18 @@ function RVInner() {
       .finally(() => setLoadingChart(false))
   }, [selecionado])
 
-  const ativosFiltrados = useMemo(() => ativos
-    .filter(a => filtro === 'fii' ? a.tipo === 'FII' : filtro === 'acao' ? a.tipo !== 'FII' : true)
-    .sort((a, b) => {
-      if (a.var_dia_pct == null && b.var_dia_pct == null) return 0
-      if (a.var_dia_pct == null) return 1
-      if (b.var_dia_pct == null) return -1
-      return b.var_dia_pct - a.var_dia_pct
-    }), [ativos, filtro])
+  // Ordenação por variação diária é feita client-side só na página atual
+  // (50 itens) -- a busca/filtro/paginação em si já são server-side (E2).
+  const ativosFiltrados = useMemo(() => [...ativos].sort((a, b) => {
+    if (a.var_dia_pct == null && b.var_dia_pct == null) return 0
+    if (a.var_dia_pct == null) return 1
+    if (b.var_dia_pct == null) return -1
+    return b.var_dia_pct - a.var_dia_pct
+  }), [ativos])
 
-  const ativoSel = ativos.find(a => a.ticker === selecionado)
-  const isFII    = ativoSel?.tipo === 'FII'
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA))
+
+  const isFII = ativoSel?.tipo === 'FII'
 
   const histReversed = useMemo(() => [...historico].reverse(), [historico])
   const sliced       = useMemo(() => histReversed.slice(-RANGE_N[range]), [histReversed, range])
@@ -76,9 +129,6 @@ function RVInner() {
   const ret12m    = primHist && ultHist ? ((ultHist.fechamento - primHist.fechamento) / primHist.fechamento * 100) : null
   const varDay    = ativoSel?.var_dia_pct ?? 0
   const chartColor = varDay >= 0 ? 'var(--cl-up)' : 'var(--cl-down)'
-
-  const totalAcoes = ativos.filter(a => a.tipo !== 'FII').length
-  const totalFIIs  = ativos.filter(a => a.tipo === 'FII').length
 
   if (error) return (
     <div style={{ background: 'var(--cl-card)', border: '1px solid var(--cl-line)', borderRadius: 'var(--cl-radius)' }}>
@@ -99,6 +149,19 @@ function RVInner() {
       {/* ── LEFT PANEL ─────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
+        {/* Busca por ticker ou nome (server-side — ver ADR-001 E2) */}
+        <input
+          type="text"
+          value={busca}
+          onChange={e => setBusca(e.target.value)}
+          placeholder="Buscar por ticker ou nome..."
+          style={{
+            padding: '8px 12px', fontSize: 12, borderRadius: 'var(--cl-radius-xs)',
+            border: '1px solid var(--cl-line)', background: 'var(--cl-card)',
+            color: 'var(--cl-ink)', outline: 'none',
+          }}
+        />
+
         {/* Filter tabs */}
         <div style={{ display: 'flex', gap: 6 }}>
           {(['todos', 'acao', 'fii'] as Filtro[]).map(f => (
@@ -115,7 +178,7 @@ function RVInner() {
         </div>
 
         <div style={{ fontSize: 11, color: 'var(--cl-ink3)', paddingLeft: 2 }}>
-          {totalAcoes} ações · {totalFIIs} FIIs
+          {total.toLocaleString('pt-BR')} ativo(s) · página {pagina} de {totalPaginas}
         </div>
 
         {/* Asset list */}
@@ -152,7 +215,7 @@ function RVInner() {
                   const active = selecionado === a.ticker
                   const pos    = (a.var_dia_pct ?? 0) >= 0
                   return (
-                    <button key={a.ticker} onClick={() => setSelecionado(a.ticker)} style={{
+                    <button key={a.ticker} onClick={() => selecionarAtivo(a)} style={{
                       width: '100%', display: 'grid', gridTemplateColumns: '1fr auto auto',
                       gap: 8, alignItems: 'center', padding: '10px 14px', textAlign: 'left',
                       background: active ? 'var(--cl-accent-soft)' : 'transparent',
@@ -187,6 +250,37 @@ function RVInner() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Pagination — E2, ADR-001 */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <button
+            onClick={() => setPagina(p => Math.max(1, p - 1))}
+            disabled={pagina <= 1 || loadingAtivos}
+            style={{
+              padding: '6px 12px', fontSize: 12, borderRadius: 'var(--cl-radius-xs)',
+              background: 'var(--cl-card)', color: 'var(--cl-ink)', border: '1px solid var(--cl-line)',
+              cursor: pagina <= 1 || loadingAtivos ? 'default' : 'pointer',
+              opacity: pagina <= 1 || loadingAtivos ? 0.5 : 1,
+            }}
+          >
+            ‹ Anterior
+          </button>
+          <span style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>
+            {pagina} / {totalPaginas}
+          </span>
+          <button
+            onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+            disabled={pagina >= totalPaginas || loadingAtivos}
+            style={{
+              padding: '6px 12px', fontSize: 12, borderRadius: 'var(--cl-radius-xs)',
+              background: 'var(--cl-card)', color: 'var(--cl-ink)', border: '1px solid var(--cl-line)',
+              cursor: pagina >= totalPaginas || loadingAtivos ? 'default' : 'pointer',
+              opacity: pagina >= totalPaginas || loadingAtivos ? 0.5 : 1,
+            }}
+          >
+            Próxima ›
+          </button>
         </div>
       </div>
 

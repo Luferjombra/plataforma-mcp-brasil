@@ -60,8 +60,22 @@ export interface Historico {
   volume: number | null
 }
 
-export function getAtivos() {
-  return fetchAPI<{ data: Ativo[]; total: number }>('/rv/ativos')
+export interface AtivosParams {
+  q?: string
+  tipo?: string
+  excluirFii?: boolean
+  page?: number
+  perPage?: number
+}
+
+export function getAtivos(params: AtivosParams = {}) {
+  const qs = new URLSearchParams()
+  if (params.q) qs.set('q', params.q)
+  if (params.tipo) qs.set('tipo', params.tipo)
+  if (params.excluirFii) qs.set('excluir_fii', 'true')
+  qs.set('page', String(params.page ?? 1))
+  qs.set('per_page', String(params.perPage ?? 50))
+  return fetchAPI<{ data: Ativo[]; total: number; page: number; per_page: number }>(`/rv/ativos?${qs}`)
 }
 
 export function getHistoricoRV(ticker: string, limit = 252) {

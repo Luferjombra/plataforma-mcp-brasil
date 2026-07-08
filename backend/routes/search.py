@@ -3,6 +3,7 @@ from typing import Union
 
 from fastapi import APIRouter, Query
 from db import supabase
+from postgrest_utils import sanitizar_busca
 
 router = APIRouter()
 
@@ -44,7 +45,7 @@ async def search(q: str = Query(..., min_length=1, max_length=100), limit: Union
     """Busca ativos, títulos e fundos por nome ou código (3 queries em paralelo)."""
     limit = max(1, min(int(limit), 20))
     q = q.strip()
-    pattern = f"%{q}%"
+    pattern = f"%{sanitizar_busca(q)}%"
 
     # Cliente supabase é síncrono — roda as 3 buscas em threads concorrentes
     rv, rf, fundos_q = await asyncio.gather(

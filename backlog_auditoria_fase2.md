@@ -21,7 +21,7 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 - [ ] **F6** `limit: Union[int, str]` + `int()` sem try em ~7 rotas — trocar por `Query(default, ge=1, le=max)` e remover o clamp manual. `1h`
 - [x] **F7** ✅ (2026-07-07) `etl/anbima.py` — adicionado `ETLRun.set_status()` + helper `_marcar_status_parcial`; os 3 loops agora marcam `error` (tudo falhou) ou `partial` (parte) em `etl_runs`. O 401 da ANBIMA passa a aparecer no `/status`.
 - [ ] **F8** `backend/copilot/orchestrator.py` — incluir `contexto_extra` no hash do cache e gravar `expira_em` no insert (hoje o cache é eterno e pode responder com contexto errado). `1h`
-- [ ] **F9** `backend/routes/search.py` — sanitizar `q` (remover `,.()*`) antes de interpolar no `.or_()` do PostgREST (filter-injection). `30min`
+- [x] **F9** ✅ (2026-07-08) `backend/routes/search.py` — `sanitizar_busca()` (novo `backend/postgrest_utils.py`) remove `,.()*` antes de interpolar `q` no `.or_()`. Reaproveitado também na busca nova de `/rv/ativos` (E2).
 - [ ] **F10** Timezone — helper `hoje_brt()` (`ZoneInfo("America/Sao_Paulo")`) em `log_etl.py`, usar em `cotahist.py`, `rv_historico.py`, `validar_cotahist.py`. `45min`
 - [x] **F11** ✅ (2026-07-08) `etl/eventos_corporativos.py` — agora pula tickers já cobertos (`success` em `etl_runs`) e para no primeiro 403 em vez de insistir no resto da lista. Cron diário adicionado (`0 19 * * 1-5`) para convergir sozinho sem disparo manual.
 - [x] **F12** ✅ (2026-07-08) `etl/eventos_corporativos.py` — `_dedup_por_chave()` remove duplicatas pela chave de conflito antes de cada upsert. Confirmado em produção: ITUB4 estava derrubando o batch com "ON CONFLICT DO UPDATE command cannot affect row a second time".
