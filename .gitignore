@@ -18,8 +18,9 @@ etl/data/cvm/*.zip
 
 # Claude Code — config local (não versionar: settings, sessões, cache)
 .claude/*
-# Skills do projeto SÃO versionadas — ficam disponíveis em qualquer ambiente
+# Skills e agents do projeto SÃO versionados — ficam disponíveis em qualquer ambiente
 !.claude/skills/
+!.claude/agents/
 
 # Skills QA — zip e pasta extraída são locais, não versionar
 qa-financeiro-extracted/

@@ -43,3 +43,9 @@ Plataforma de dados financeiros brasileiros (CVM, BCB/BACEN, B3) com stack Next.
 - `.claude/skills/project-development/` — fit task-model, pipelines batch, estimativa de custos
 - `.claude/skills/bdi-mental-states/` — modelagem BDI: beliefs, desires, intentions, RDF
 - `.claude/skills/hosted-agents/` — infraestrutura de agentes hosted, warm pools, sandboxes
+
+## Agents disponíveis
+
+> Agents em `.claude/agents/` são **versionados no repo**, mesma lógica das skills.
+
+- `.claude/agents/pair-reviewer.md` — revisor de pair-programming. Use PROATIVAMENTE depois de qualquer diff não-trivial (ETL, migration, rota de backend, componente de frontend) e antes de commit/merge para `main`, especialmente durante a Fase 2 do ADR-001 (corte staging → produção). Conhece as convenções do projeto (ETLRun, staging discipline, limite de 1000 linhas do PostgREST, upsert com chave duplicada, etc.) e devolve veredito + achados — não escreve código.

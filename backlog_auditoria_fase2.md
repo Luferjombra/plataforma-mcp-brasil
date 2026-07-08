@@ -102,8 +102,8 @@ Não promover fonte nova por cima de bugs conhecidos, especialmente F1 (carteira
 - [ ] Upgrade Supabase Pro (E1) — não é mais bloqueador do corte (ver E1 revisado); só decidir quando definirmos retenção multi-ano.
 
 ### Passo 5 — Mecanismo de corte — ~3h
-- [ ] `etl/promover_cotahist.py`: copia **staging inteiro** (universo completo, 2.366 tickers) → produção com `fonte='cotahist'`, preservando linhas brapi onde COTAHIST não cobre (precedência por `fonte` — cobre casos como ELET3/RBRF11, ver ADR-001 item 5)
-- [ ] Rodar em modo dry-run primeiro (relatório de o que mudaria, sem escrever)
+- [x] `etl/promover_cotahist.py` — ✅ IMPLEMENTADO (2026-07-08). Copia **staging inteiro** (universo completo, 2.366 tickers) → produção com `fonte='cotahist'`, preservando linhas brapi onde COTAHIST não cobre. Revisado por pair-programming (agent `.claude/agents/pair-reviewer.md`): pegou bug crítico (fechamento_adj sobrescrevendo com NULL) e um erro factual meu sobre a migration 008 — ambos corrigidos, ver ADR-001 "Mecanismo de corte".
+- [ ] Rodar em modo dry-run, revisar relatório com o usuário, então rodar a promoção real (`migration 012_widen_ticker_producao.sql` precisa ser executada no Supabase antes da promoção real — dry-run não precisa)
 
 ### Passo 6 — Operação paralela (1–2 semanas)
 - [ ] Simplificar `etl.yml`: 6 janelas de descoberta → 1 cron ~21h BRT + fallback manhã (mantendo fallback D-1 no script — não há horário fixo da B3, comprovado na Fase 1)
