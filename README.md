@@ -164,9 +164,9 @@ plataforma-mcp-brasil/
 | Tabela | Registros | Fonte | Período |
 |---|---|---|---|
 | indicadores_economicos | ~4.035 | BCB SGS API | 2020–hoje |
-| rv_ativos | ~30 | brapi.dev | — |
-| rv_historico | ~22.000 | brapi.dev | 2020–hoje |
-| rv_ativos_staging / rv_historico_staging | crescendo | COTAHIST (B3) | desde 2026-07-01 (Fase 1, ver ADR-001) |
+| rv_ativos | ~2.368 | brapi.dev (~30) + COTAHIST/B3 (~2.338) | pós-corte Fase 2, ver ADR-001 |
+| rv_historico | ~371.000 | brapi.dev (~22.000) + COTAHIST/B3 (~349.452) | 2020–hoje |
+| rv_ativos_staging / rv_historico_staging | crescendo | COTAHIST (B3) | operação paralela pós-corte (ver ADR-001) |
 | fundos_cadastro | 8 | CVM cad_fi.csv | — |
 | fundos_historico | ~4.852 | CVM inf_diario_fi_*.zip | 2024–2026 |
 | rf_titulos | 78 | Tesouro Transparente CSV | — |
@@ -246,7 +246,7 @@ O portal CVM (`dados.cvm.gov.br`) usa Cloudflare WAF que bloqueia requisições 
 | Épico B | LibreChat + MCP (Copilot avançado) | ✅ Concluída |
 | — | ANBIMA (índices/debêntures/CRI/CRA) + Dashboard V3 Renda Fixa | ⚙️ Backend/ETL prontos — acesso de dados pendente no portal ANBIMA |
 | — | COTAHIST (B3) — Fase 1 (staging + descoberta de horário) | ✅ Concluída (2026-07-03) |
-| — | COTAHIST (B3) — Fase 2 (promoção para produção) | 🔲 Pendente — ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md) |
+| — | COTAHIST (B3) — Fase 2 (promoção para produção + API/frontend + virtualização) | ✅ Concluída (2026-07-08) — ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md) |
 
 ### Semana 8 — Redesign Clarity (frontend completo)
 
@@ -310,7 +310,7 @@ O portal CVM (`dados.cvm.gov.br`) usa Cloudflare WAF que bloqueia requisições 
 Ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md) para o histórico completo. Resumo:
 - Fase 1 (concluída): ingestão em staging, 3 dias consecutivos de smoke test passando, descoberta de que a B3 não tem horário fixo de publicação
 - Backfill anual (`cotahist_backfill.py`) implementado, escopo inicial de 1 ano (limite de armazenamento do Supabase free tier)
-- Fase 2 (pendente): validação cruzada com brapi, resolução de ambiguidade ETF/fundo, decisão de escopo do universo e mecanismo de corte para produção
+- Fase 2 (concluída 2026-07-08): validação cruzada com brapi, ajuste por proventos, corte staging → produção (2.368 tickers, 349.452 linhas), paginação/busca server-side em `/rv/ativos`, RPC de último preço reaproveitada em `/carteira`, virtualização das listas (`@tanstack/react-virtual`) e QA amostral estatístico (`qa_run.py`)
 </details>
 
 <details>

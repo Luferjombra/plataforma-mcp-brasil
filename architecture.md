@@ -6,7 +6,7 @@
 Fontes Públicas
   ├── BCB SGS API          → indicadores_economicos
   ├── brapi.dev            → rv_ativos + rv_historico  (free tier — janela 90d)
-  ├── COTAHIST (B3)        → rv_ativos_staging + rv_historico_staging (Fase 1, ver ADR-001)
+  ├── COTAHIST (B3)        → rv_ativos_staging + rv_historico_staging (paralelo) → promovido para rv_ativos/rv_historico (corte Fase 2, ver ADR-001)
   ├── ANBIMA Feed API      → anbima_indices, anbima_debentures_*, anbima_cri_*, anbima_cra_*
   ├── CVM (arquivos local) → fundos_cadastro + fundos_historico
   └── RSS (InfoMoney/MT/Valor) → noticias
@@ -87,10 +87,10 @@ Frontend (Chat Finance UI)
 | Tabela | Tipo | Descrição |
 |---|---|---|
 | indicadores_economicos | time series | IPCA, SELIC, CDI, PIB |
-| rv_ativos | relacional | Cadastro de ações B3 |
-| rv_historico | time series | OHLCV diário |
-| rv_ativos_staging | relacional | COTAHIST — cadastro (Fase 1, ver ADR-001) |
-| rv_historico_staging | time series | COTAHIST — OHLCV diário (Fase 1, ver ADR-001) |
+| rv_ativos | relacional | Cadastro de ações/FIIs B3 — brapi.dev + COTAHIST (pós-corte Fase 2, ver ADR-001) |
+| rv_historico | time series | OHLCV diário — brapi.dev + COTAHIST (pós-corte Fase 2) |
+| rv_ativos_staging | relacional | COTAHIST — cadastro (staging, operação paralela pós-corte, ver ADR-001) |
+| rv_historico_staging | time series | COTAHIST — OHLCV diário (staging, operação paralela pós-corte, ver ADR-001) |
 | cotahist_smoke_test | operacional | Resultado do smoke test por run (8 papéis de tipo conhecido) |
 | fundos_cadastro | relacional | Cadastro CVM |
 | fundos_historico | time series | Cotas diárias CVM |
@@ -191,6 +191,7 @@ def run():
 - Ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md) para o contexto completo da decisão
 - Um único download (`COTAHIST_D<ddmmaaaa>.ZIP`) cobre todo o universo de papéis do dia — ao contrário do brapi (ticker a ticker)
 - **Fase 1 (concluída 2026-07-03):** ingestão só em staging (`rv_ativos_staging`/`rv_historico_staging`), nunca em produção
+- **Fase 2 — corte para produção (concluído 2026-07-08):** `etl/promover_cotahist.py` promoveu o universo de staging para `rv_ativos`/`rv_historico` (2.368 tickers, 349.452 linhas de histórico). Staging continua recebendo ingestão diária em paralelo (`etl.yml`) para validação cruzada contínua — ver ADR-001
 - Sem horário fixo de publicação da B3 — fallback D-1 obrigatório (não é detalhe de implementação)
 - Backfill anual (`cotahist_backfill.py --anos N`) usa `COTAHIST_A<aaaa>.ZIP`; escopo inicial de 1 ano por limite de armazenamento do Supabase free tier
 

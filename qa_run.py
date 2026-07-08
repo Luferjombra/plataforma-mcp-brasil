@@ -33,6 +33,16 @@ def check(label, ok, detalhe=""):
     return ok
 
 
+def check_info(label, ok, detalhe=""):
+    """Como `check()`, mas não entra no score que bloqueia o workflow
+    (`.github/workflows/qa.yml` falha se score < 90%). Usar para limiares
+    novos ainda sem baseline real (ex.: E5 -- primeira rodada contra
+    produção) até confirmar que o limiar escolhido é realista."""
+    status = "✅" if ok else "🟡"
+    print(f"  {status} {label} (informativo)" + (f" — {detalhe}" if detalhe else ""))
+    return ok
+
+
 def get(path, timeout=TIMEOUT):
     url = f"{API}{path}"
     t0 = time.time()
@@ -250,6 +260,70 @@ if r and r.status_code == 200:
         if data_str:
             diff = (date.today() - date.fromisoformat(data_str)).days
             check("PETR4 dados recentes (≤30 dias)", diff <= 30, f"data={data_str}")
+
+print("\n[3.4] Cobertura estatística do universo RV — amostra (E5)")
+# Desde o corte Fase 2 (ADR-001) o universo tem ~2.368 tickers (era ~30) —
+# checar só PETR4 não pega regressões que afetem o universo COTAHIST. Em
+# vez de mais tickers hardcoded, amostra várias páginas de /rv/ativos e
+# valida estatisticamente (% em faixa válida, cobertura por tipo).
+amostra = []
+r, elapsed = get("/rv/ativos?per_page=500&page=1")
+if r and r.status_code == 200:
+    body = r.json()
+    total = body.get("total", 0)
+    amostra.extend(body.get("data", []))
+    # teto de 5 páginas (~2.500 ativos) para não sobrecarregar a API numa checagem de QA
+    total_paginas = min(5, -(-total // 500)) if total else 1
+    for pg in range(2, total_paginas + 1):
+        r_pg, _ = get(f"/rv/ativos?per_page=500&page={pg}")
+        if r_pg and r_pg.status_code == 200:
+            amostra.extend(r_pg.json().get("data", []))
+
+    # Bloqueante: só confirma que o endpoint paginado responde e devolve
+    # dados -- sem depender de nenhum limiar estatístico não validado ainda.
+    check("Amostra coletada para QA estatístico", len(amostra) > 0,
+          f"{len(amostra)}/{total} ativos ({elapsed:.1f}s primeira página)")
+
+    if amostra:
+        # Os checks abaixo usam `check_info()` (não `check()`) -- os limiares
+        # (80%/99%/50%) ainda não foram validados contra a API real (rodar
+        # via workflow_dispatch e ajustar com o número observado antes de
+        # promover para bloqueante). Ver achado de revisão no ADR-001, E5.
+        com_preco = [a for a in amostra if a.get("preco_atual") is not None]
+        pct_com_preco = len(com_preco) / len(amostra) * 100
+        # Cobertura <100% é esperada: dos ~2.368 tickers, ~2.338 vêm só do
+        # COTAHIST sem fallback de brapi (os ~30 tickers curados da brapi,
+        # como ELET3/RBRF11, são preservados pela precedência por `fonte`
+        # no corte e continuam frescos independente do COTAHIST). O grupo
+        # em risco de ficar sem preco_atual é o só-COTAHIST fora da janela
+        # de 10 dias de rv_variacao_diaria(), não os tickers da brapi.
+        check_info("Cobertura de preço atual na amostra (≥80%)", pct_com_preco >= 80,
+              f"{len(com_preco)}/{len(amostra)} ({pct_com_preco:.0f}%)")
+
+        precos_validos = [a["preco_atual"] for a in com_preco if 0 < a["preco_atual"] < 100000]
+        pct_preco_valido = (len(precos_validos) / len(com_preco) * 100) if com_preco else 0
+        check_info("Preços em faixa válida (R$0–R$100.000) entre os com preço (≥99%)",
+              pct_preco_valido >= 99,
+              f"{len(precos_validos)}/{len(com_preco)} ({pct_preco_valido:.0f}%)")
+
+        # Cobertura por tipo: garante que nenhum tipo inteiro (ACAO/FII)
+        # ficou sem preço por um bug de pipeline restrito a um tipo.
+        por_tipo = {}
+        for a in amostra:
+            por_tipo.setdefault(a.get("tipo") or "?", []).append(a)
+        for tipo, ativos_tipo in sorted(por_tipo.items()):
+            com_preco_tipo = [a for a in ativos_tipo if a.get("preco_atual") is not None]
+            pct = (len(com_preco_tipo) / len(ativos_tipo) * 100) if ativos_tipo else 0
+            check_info(f"Cobertura de preço para tipo '{tipo}' (≥50%)", pct >= 50,
+                  f"{len(com_preco_tipo)}/{len(ativos_tipo)} ({pct:.0f}%)")
+
+        variacoes = [a["var_dia_pct"] for a in amostra if a.get("var_dia_pct") is not None]
+        absurdas = [v for v in variacoes if abs(v) > 100]
+        check_info("Nenhuma variação diária absurda (>100% em módulo) na amostra",
+              len(absurdas) == 0,
+              f"absurdas={len(absurdas)}/{len(variacoes)}" if absurdas else f"{len(variacoes)} variações checadas")
+else:
+    check("GET /rv/ativos (amostra E5)", False, f"status={r.status_code if r else 'timeout'}")
 
 # ── Seção 4 — Monitoramento ETL ───────────────────────────────────────────────
 print("\n▶ SEÇÃO 4 — Monitoramento ETL\n")

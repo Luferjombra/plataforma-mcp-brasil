@@ -76,7 +76,7 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 - [x] **E3** ✅ (2026-07-08) `backend/routes/carteira.py` `GET /posicoes` — trocou a heurística frágil `limit(len(tickers)*5)` por `rv_variacao_diaria()` (mesma RPC que já serve `/rv/ativos`, corrigida com `ORDER BY` na migration 013). Elimina a duplicação de lógica e a cobertura desigual entre tickers. Revisado por pair-programming em 2 rodadas: 1ª encontrou falta de `try/except` na RPC e a janela de 10 dias da função escondendo tickers ilíquidos/suspensos; corrigido com `try/except` + fallback pontual por ticker. 2ª rodada: ✅ aprovado.
 - [ ] **E3b** (achado ao implementar E3) `backend/routes/carteira.py` `GET /analise` linha ~215 — heurística DIFERENTE e mais complexa (`limit(periodo_dias * len(tickers))` para reconstruir a série histórica completa da carteira, não só o último preço). `rv_variacao_diaria()` não resolve isso (só devolve 1 linha/ticker). Precisa de uma função SQL própria que alinhe as séries por ticker/data (idealmente com forward-fill) em vez de um LIMIT global sem `ORDER BY` por ticker. `2h`
 - [ ] **E4** Metadados setoriais para o universo novo — a planilha de classificação setorial da B3 (pública) cobre o que o brapi `fundamental` não alcança em 2.000 tickers. Pesquisar formato + ETL. `4h`
-- [ ] **E5** QA amostral — validação estatística (% de preços em faixa válida, cobertura por tipo) em vez de tickers hardcoded. `2h`
+- [x] **E5** ✅ (2026-07-08) QA amostral — `qa_run.py` [3.4] agora amostra até 5 páginas de `/rv/ativos` (até ~2.500 ativos) e valida estatisticamente: % com preço atual, % de preços em faixa válida, cobertura por tipo (ACAO/FII), ausência de variações diárias absurdas. Testado localmente com `get()`/`check()` mockados cobrindo casos de borda (universo vazio, 100% sem preço, variação absurda, falha de API) — nenhum lança exceção, todos reportam falha/sucesso corretamente. Mantido o check específico de PETR4 (3.3) como canário barato, não removido. Revisão de pair-programming (2 rodadas): os 4 checks de limiar (nunca validados contra produção real) viraram `check_info()` — informativos, não bloqueiam o workflow `qa.yml` — até rodar uma vez e confirmar os números reais; só "amostra coletada" (endpoint responde) é bloqueante.
 - [ ] **E6** 💰 _(quando houver usuários)_ Render pago — elimina cold start. Só depois de P7.
 
 **Regra de ouro consolidada na auditoria:** para *preço/volume*, escala vem do COTAHIST (1 download = universo inteiro, ~10s/dia). brapi fica para metadados e eventos corporativos, preenchidos em lotes dentro da cota (~13 tickers/dia comprovados para `dividends`). Nunca escalar preço via API ticker-a-ticker (2.000 tickers ≈ 4h30/dia).
@@ -117,9 +117,9 @@ Não promover fonte nova por cima de bugs conhecidos, especialmente F1 (carteira
 ### Passo 7 — API + Frontend para o universo novo — ~7h
 - E2 (paginação server-side) + E3 (RPC último preço) + P6 (virtualização) — nesta ordem
 
-### Passo 8 — QA e documentação — ~2h
-- [ ] E5 (QA amostral) no `qa_run.py`
-- [ ] Atualizar ADR-001 (status: Fase 2 concluída), README (tabela de dados), `architecture.md`
+### Passo 8 — QA e documentação — ~2h ✅ concluído (2026-07-08)
+- [x] E5 (QA amostral) no `qa_run.py`
+- [x] Atualizar ADR-001 (status: Fase 2 concluída), README (tabela de dados), `architecture.md`
 
 **Esforço total Fase 2: ~20h** (sem contar as Propostas 1–3, que somam ~29h e podem ser paralelizadas em parte).
 
