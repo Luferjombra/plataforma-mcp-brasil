@@ -89,6 +89,13 @@ def comparar_ticker(ticker: str, limiar: float, cutoff: str, usar_ajustado: bool
         "divergencias": divergencias,
         "so_producao": len(prod) - len(datas_comuns),
         "so_staging": len(staging) - len(datas_comuns),
+        # min/max de cada lado — só usado no relatório de "sem overlap" para
+        # diagnosticar se é janela de tempo disjunta (ex.: ticker novo na
+        # curadoria) ou mudança de código do papel (ver ADR-001, Fase 2 item 5)
+        "prod_min": min(prod) if prod else None,
+        "prod_max": max(prod) if prod else None,
+        "staging_min": min(staging) if staging else None,
+        "staging_max": max(staging) if staging else None,
     }
 
 
@@ -117,7 +124,8 @@ def run(limiar: float = LIMIAR_PADRAO, janela_dias: int = JANELA_DIAS_PADRAO, us
             if r["datas_comuns"] == 0:
                 tickers_sem_overlap.append(ticker)
                 print(f"  ⚠ {ticker}: sem datas em comum "
-                      f"(só produção={r['so_producao']}, só staging={r['so_staging']})")
+                      f"(só produção={r['so_producao']} [{r['prod_min']}..{r['prod_max']}], "
+                      f"só staging={r['so_staging']} [{r['staging_min']}..{r['staging_max']}])")
                 continue
 
             pct_divergente = len(r["divergencias"]) / r["datas_comuns"] * 100
