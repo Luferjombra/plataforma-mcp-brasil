@@ -18,6 +18,12 @@ on:
     - cron: '0 22 * * *'
     # ANBIMA: índices IMA/IDA + debêntures às 14h BRT (17h UTC) — dados D-1 disponíveis
     - cron: '0 17 * * 1-5'
+    # Eventos Corporativos (brapi dividends): 16h BRT (19h UTC), 1x/dia.
+    # A brapi tem cota diária baixa para dividends=true (~13 tickers antes de
+    # 403 — ver ADR-001). O script é resumível (pula tickers já cobertos,
+    # para no primeiro 403), então rodar 1x/dia converge sozinho até cobrir
+    # os 31 tickers, sem precisar de disparo manual repetido.
+    - cron: '0 19 * * 1-5'
     # COTAHIST staging (Fase 1 — ver ADR-001): rodadas espalhadas ao longo da
     # noite + 1 checagem na manhã seguinte, só nesta semana, para descobrir
     # empiricamente a que horas a B3 publica o arquivo diário. Minutos em
@@ -250,13 +256,16 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
-  # ── Eventos Corporativos (brapi dividendsData) — só manual por enquanto ───
-  # Popula rv_eventos_societarios + rv_proventos. Ver ADR-001. Manual até
-  # validar volume real de dados; depois vira cron (mesma cadência de RV).
+  # ── Eventos Corporativos (brapi dividendsData) — cron diário + manual ─────
+  # Popula rv_eventos_societarios + rv_proventos. Ver ADR-001. Volume real já
+  # validado (cota diária da brapi ~13 tickers) — script resumível converge
+  # sozinho no cron; workflow_dispatch continua disponível para forçar.
   etl-eventos-corporativos:
     name: ETL Eventos Corporativos (bonificação/desdobramento/proventos)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'eventos_corporativos'
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'eventos_corporativos' ||
+      github.event_name == 'schedule' && github.event.schedule == '0 19 * * 1-5'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
