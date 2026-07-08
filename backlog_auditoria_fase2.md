@@ -72,7 +72,7 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 > Decisões e infraestrutura — algumas são suas (💰 = decisão de negócio), o resto é código.
 
 - [ ] **E1** 💰 **Supabase Pro (~US$25/mês)** — ⚠️ REVISADO (2026-07-08): medição exata mostrou que o universo completo (2.366 tickers, 348 mil linhas) com **1 ano de retenção** ocupa só 52–87MB, folgado no free tier (500MB) mesmo somando as outras tabelas do projeto. **Não é mais bloqueador do corte da Fase 2.** O gatilho real é reter múltiplos anos (5 anos do universo completo ≈ 261–435MB, aí sim perto do teto) — decisão adiada para quando definirmos política de retenção, não antes do corte.
-- [ ] **E2** Paginação server-side em `/rv/ativos` (`?page=&per_page=&q=`) + busca no banco. O frontend passa a buscar via API, não filtrar array de 2.000 no browser. `3h`
+- [x] **E2** ✅ (2026-07-08) Paginação server-side em `/rv/ativos` (`?page=&per_page=&q=&tipo=&excluir_fii=`) + busca no banco. Frontend busca via API (campo de busca com debounce, paginação anterior/próxima). Revisado por pair-programming em 2 rodadas — corrigiu bug real de deep-link (SearchBar → ticker fora da página 1 sumia), painel de detalhe instável ao paginar, e race condition sem guard.
 - [ ] **E3** View/RPC "último preço por ticker" — substitui a heurística frágil `limit(n_tickers*5)` da carteira e serve a lista do `/rv`. `1h`
 - [ ] **E4** Metadados setoriais para o universo novo — a planilha de classificação setorial da B3 (pública) cobre o que o brapi `fundamental` não alcança em 2.000 tickers. Pesquisar formato + ETL. `4h`
 - [ ] **E5** QA amostral — validação estatística (% de preços em faixa válida, cobertura por tipo) em vez de tickers hardcoded. `2h`

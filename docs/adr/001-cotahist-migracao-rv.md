@@ -1,7 +1,7 @@
 # ADR-001 — Migração da fonte de Renda Variável para o COTAHIST (B3)
 
 **Status:** Fase 1 concluída (2026-07-03) · Validação cruzada concluída (2026-07-07) · Fonte de eventos corporativos resolvida (2026-07-07) · Ajuste por proventos implementado e validado (2026-07-07) · **Corte staging → produção concluído (2026-07-08)** · Fase 2 em andamento (operação paralela)
-**Referenciado em:** `etl/cotahist.py`, `etl/cotahist_backfill.py`, `etl/validar_cotahist.py`, `etl/eventos_corporativos.py`, `etl/aplicar_ajuste_proventos.py`, `etl/promover_cotahist.py`, `backend/routes/rv.py`, `database/migrations/008_cotahist_staging.sql`, `database/migrations/010_eventos_corporativos.sql`, `database/migrations/011_fechamento_adj_staging.sql`, `database/migrations/012_widen_ticker_producao.sql`, `database/migrations/013_rv_variacao_diaria_order.sql`, `.github/workflows/etl.yml`
+**Referenciado em:** `etl/cotahist.py`, `etl/cotahist_backfill.py`, `etl/validar_cotahist.py`, `etl/eventos_corporativos.py`, `etl/aplicar_ajuste_proventos.py`, `etl/promover_cotahist.py`, `backend/routes/rv.py`, `backend/routes/search.py`, `backend/postgrest_utils.py`, `frontend/app/rv/page.tsx`, `frontend/lib/api.ts`, `database/migrations/008_cotahist_staging.sql`, `database/migrations/010_eventos_corporativos.sql`, `database/migrations/011_fechamento_adj_staging.sql`, `database/migrations/012_widen_ticker_producao.sql`, `database/migrations/013_rv_variacao_diaria_order.sql`, `.github/workflows/etl.yml`
 
 ---
 
@@ -152,9 +152,17 @@ Números batem com a estimativa do dry-run (pequena diferença por causa do univ
 
 **Hotfix pós-corte (2026-07-08):** `GET /rv/ativos` fazia `.select("*")` sem paginação — com `rv_ativos` em 2.368 tickers, o limite padrão de 1000 linhas do PostgREST passou a truncar a lista silenciosamente (bug ativo em produção desde a promoção acima). Corrigido em branch dedicada `fix/rv-ativos-paginacao` (mergeada em `main`): `_buscar_paginado()` (mesmo padrão de `etl/promover_cotahist.py`) aplicado no select de `rv_ativos` e na RPC `rv_variacao_diaria`. Revisão de pair-programming pegou um segundo problema (paginação via `LIMIT/OFFSET` sem `ORDER BY` não é determinística entre páginas) — corrigido com `.order("ticker")` no backend e `database/migrations/013_rv_variacao_diaria_order.sql` (também alarga o retorno da função para `varchar(12)`). Confirmado com teste real contra Postgres (1.500 tickers sintéticos, zero duplicados na paginação). **Fora de escopo, registrado como não bloqueante:** `GET /rv/historico/{ticker}` aceita `limit` até 2000, mas está sujeito ao mesmo cap de 1000 do PostgREST se algum ticker do universo completo tiver mais de 1000 candles — não ocorre hoje (default é 252), mas é a mesma classe de bug.
 
-**Pendente:** iniciar a janela de operação paralela (1–2 semanas, item 6 original) — `validar_cotahist.py` diário monitorando divergências novas — antes de aposentar `rv_historico.py` para preço.
+**Operação paralela (Passo 6):** ✅ em andamento desde 2026-07-08 — `etl.yml` simplificado (6 janelas de descoberta → 2 crons) e `validar_cotahist.py` rodando diariamente. Ao final da janela (1-2 semanas): aposentar `rv_historico.py` para preço.
 
 - **Risco conhecido, não bloqueante (apontado na revisão):** `abertura`/`maxima`/`minima` são nullable nas duas tabelas e `parse_linha` (`etl/cotahist.py`) pode gerar `None` para esses campos quando o COTAHIST não traz o valor. Em tese o mesmo problema do `fechamento_adj` acima se aplicaria — sobrescrever OHLC válido da brapi com `NULL` numa data de overlap. A validação cruzada já documentada (0% de divergência em todos os campos OHLC nos 31 tickers testados) sugere que isso não ocorre na prática hoje, mas não há garantia estrutural para o universo completo (2.366 tickers). Resolver direito exigiria agrupar o upsert por combinação de campos nulos (até 8 grupos) — desproporcional a um risco ainda não observado. Ficar de olho depois do corte; se aparecer, aplicar o mesmo padrão do `fechamento_adj`.
+
+## Passo 7 — API e frontend para o universo novo (em andamento)
+
+**E2 — Paginação server-side (concluído 2026-07-08):** `GET /rv/ativos` aceita `q` (busca ticker/nome), `tipo`, `excluir_fii`, `page`, `per_page` e pagina de verdade no banco (`.range()` + `count="exact"`), substituindo o hotfix F13 que ainda buscava o universo inteiro no backend. RPC `rv_variacao_diaria` filtrada só pelos tickers da página atual via `.in_()`. De brinde, corrigiu o F9 (filter injection não sanitizado no `.or_()` de `backend/routes/search.py`) com um helper novo (`backend/postgrest_utils.py::sanitizar_busca`) reaproveitado nos dois lugares.
+
+Revisão de pair-programming (2 rodadas) encontrou e corrigiu 3 problemas reais no frontend (`frontend/app/rv/page.tsx`): (1) deep-link vindo da busca global (`/rv?ticker=X`) quebrava silenciosamente para qualquer ticker fora da primeira página em ordem alfabética — corrigido inicializando a busca com o `tickerParam` da URL; (2) o painel de detalhe do ativo selecionado ficava inconsistente ao trocar de página (dependia de `ativos.find()` sobre a página atual) — corrigido com estado `ativoSel` próprio, desacoplado da paginação; (3) troca rápida de filtro/busca podia disparar 2 requisições fora de ordem sem guard — corrigido com um `requestIdRef` que descarta respostas obsoletas.
+
+**Pendente:** E3 (RPC/view de último preço por ticker, substituindo a heurística frágil de `backend/routes/carteira.py`) e P6 (virtualização das listas `/rv`, `/fundos`, `/renda-fixa`).
 
 ## Referências
 
