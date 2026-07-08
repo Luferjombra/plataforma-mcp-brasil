@@ -25,6 +25,8 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 - [ ] **F10** Timezone — helper `hoje_brt()` (`ZoneInfo("America/Sao_Paulo")`) em `log_etl.py`, usar em `cotahist.py`, `rv_historico.py`, `validar_cotahist.py`. `45min`
 - [x] **F11** ✅ (2026-07-08) `etl/eventos_corporativos.py` — agora pula tickers já cobertos (`success` em `etl_runs`) e para no primeiro 403 em vez de insistir no resto da lista. Cron diário adicionado (`0 19 * * 1-5`) para convergir sozinho sem disparo manual.
 - [x] **F12** ✅ (2026-07-08) `etl/eventos_corporativos.py` — `_dedup_por_chave()` remove duplicatas pela chave de conflito antes de cada upsert. Confirmado em produção: ITUB4 estava derrubando o batch com "ON CONFLICT DO UPDATE command cannot affect row a second time".
+- [x] **F13** ✅ (2026-07-08, hotfix urgente pós-corte) `backend/routes/rv.py` — `GET /rv/ativos` fazia `.select("*")` sem paginação; com `rv_ativos` em 2.368 tickers (Passo 5 da Fase 2), o limite padrão de 1000 do PostgREST truncava a lista silenciosamente. Corrigido com `_buscar_paginado()` + `.order("ticker")` (branch `fix/rv-ativos-paginacao`, revisado 2x por pair-programming, mergeado em `main`). Migration `013_rv_variacao_diaria_order.sql` adiciona `ORDER BY` na RPC `rv_variacao_diaria`.
+- [ ] **F14** `backend/routes/rv.py:/historico/{ticker}` — aceita `limit` até 2000 mas está sujeito ao mesmo cap de 1000 do PostgREST se um ticker do universo completo tiver mais de 1000 candles. Não ocorre hoje (default 252), mas é a mesma classe de bug do F13. Registrado na revisão do F13, não bloqueante. `30min`
 
 **Critério de aceite:** QA 100% mantido + teste manual de `?limit=abc` (400, não 500) + `carteira/analise` retorna preços da última semana.
 
