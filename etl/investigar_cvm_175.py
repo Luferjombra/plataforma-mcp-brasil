@@ -33,11 +33,16 @@ BASE_CAD = "https://dados.cvm.gov.br/dados/FI/CAD/DADOS"
 BASE_HIST = "https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS"
 
 
-def tentar(url: str, client: httpx.Client, nome: str) -> bytes | None:
+def tentar(url: str, client: httpx.Client, nome: str, timeout: float = 60.0) -> bytes | None:
     print(f"\n--- {nome} ---\n  {url}")
     conteudo = baixar_arquivo_http(
         url, client,
-        user_agent=DEFAULT_USER_AGENT, max_attempts=1, timeout=120,
+        # timeout do httpx é por operação (connect/read/write), não um teto
+        # de duração total -- um arquivo grande que não trava mas transfere
+        # devagar em pedacinhos pode passar disso sem nunca "estourar".
+        # 60s por tentativa, 1 tentativa só -- é diagnóstico, não produção;
+        # melhor falhar rápido e reportar "não deu" do que travar minutos.
+        user_agent=DEFAULT_USER_AGENT, max_attempts=1, timeout=timeout,
         not_found_status=(404, 403),
     )
     if conteudo is None:
@@ -93,12 +98,13 @@ def run() -> None:
                     inspecionar_csv(dados, nome_interno)
                     checar_cnpjs_curados(dados, nome_interno)
 
-        # 4. Só confirma existência/tamanho, não abre (histórico, não é o foco).
-        tentar(f"{BASE_CAD}/cad_fi_hist.zip", client, "cad_fi_hist.zip (só tamanho)")
-
-        # 5. Sonda inf_diario_fi legado em vários meses -- descontinuado de
+        # 4. Sonda inf_diario_fi legado em vários meses -- descontinuado de
         # vez, ou só os 2 mais recentes têm lag maior que o esperado?
-        for aaaamm in ["202607", "202606", "202605", "202604", "202601", "202512", "202506", "202412"]:
+        # (cad_fi_hist.zip removido do escopo -- é um arquivo histórico,
+        # não essencial pra essa pergunta, e demorou demais numa 1a tentativa
+        # sem dar erro nem terminar -- provavelmente só grande mesmo, não
+        # vale o tempo de download aqui.)
+        for aaaamm in ["202607", "202605", "202601", "202412"]:
             tentar(f"{BASE_HIST}/inf_diario_fi_{aaaamm}.csv", client, f"inf_diario_fi_{aaaamm}.csv")
 
     print("\n=== Fim da investigação ===")
