@@ -98,10 +98,18 @@ def run() -> None:
         # também) são um arquivo grande demais pro objetivo de diagnóstico
         # -- timeout do httpx não é um teto de duração total, só por
         # operação, então nada aqui "estoura" mesmo demorando muito.
-        tentar(
+        c = tentar(
             f"{BASE_CAD}/registro_fundo_classe.zip", client,
             "registro_fundo_classe.zip", timeout=20.0,
         )
+        if c:
+            with zipfile.ZipFile(io.BytesIO(c)) as zf:
+                print(f"  [registro_fundo_classe.zip] conteúdo: {zf.namelist()}")
+                for nome_interno in zf.namelist():
+                    with zf.open(nome_interno) as f:
+                        dados = f.read()
+                    inspecionar_csv(dados, nome_interno)
+                    checar_cnpjs_curados(dados, nome_interno)
 
     print("\n=== Fim da investigação ===")
 
