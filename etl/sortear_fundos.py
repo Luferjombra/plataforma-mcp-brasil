@@ -36,7 +36,6 @@ from fundos import (
     DATA_DIR,
     garantir_cadastro_local,
     garantir_historico_local,
-    safe_numeric,
 )
 
 PL_MINIMO = 10_000_000  # R$10M -- piso de relevância, não de "melhor fundo"
@@ -57,22 +56,31 @@ TERMOS_CREDITO_PRIVADO = ["CRÉDITO PRIVADO", "CREDITO PRIVADO", "DEBENTURE", "D
 
 def carregar_pl_recente() -> dict[str, float]:
     """PL mais recente por CNPJ a partir dos inf_diario_fi_*.csv já
-    baixados (mês corrente + anterior) -- não baixa nada além disso."""
-    pl_por_cnpj: dict[str, tuple[str, float]] = {}
-    for caminho in sorted(glob.glob(os.path.join(DATA_DIR, "inf_diario_fi_*.csv"))):
+    baixados (mês corrente + anterior) -- não baixa nada além disso.
+
+    Vetorizado de propósito: ao contrário de fundos.py (que filtra pelos 8
+    CNPJs alvo antes de processar linha a linha), este script olha o
+    cadastro CVM INTEIRO -- um único mês de inf_diario_fi cobre ~30 mil
+    fundos, centenas de milhares de linhas. Achado de produção: a primeira
+    versão usava `.iterrows()` (a mesma lógica de fundos.py, copiada sem
+    ajustar pra escala) e travou >8min num dispatch real antes de ser
+    cancelada -- reescrito com operações nativas do pandas."""
+    frames = []
+    for caminho in glob.glob(os.path.join(DATA_DIR, "inf_diario_fi_*.csv")):
         df = pd.read_csv(caminho, sep=";", dtype=str, low_memory=False, encoding="latin-1")
         df.columns = [c.strip() for c in df.columns]
         col_cnpj = "CNPJ_FUNDO_CLASSE" if "CNPJ_FUNDO_CLASSE" in df.columns else "CNPJ_FUNDO"
-        for _, row in df.iterrows():
-            cnpj = str(row.get(col_cnpj, "")).strip()
-            data = str(row.get("DT_COMPTC", "")).strip()
-            pl = safe_numeric(row.get("VL_PATRIM_LIQ"))
-            if not cnpj or pl is None:
-                continue
-            atual = pl_por_cnpj.get(cnpj)
-            if atual is None or data > atual[0]:
-                pl_por_cnpj[cnpj] = (data, pl)
-    return {cnpj: pl for cnpj, (_, pl) in pl_por_cnpj.items()}
+        frames.append(df[[col_cnpj, "DT_COMPTC", "VL_PATRIM_LIQ"]].rename(columns={col_cnpj: "cnpj"}))
+
+    if not frames:
+        return {}
+
+    todos = pd.concat(frames, ignore_index=True)
+    todos["pl"] = pd.to_numeric(todos["VL_PATRIM_LIQ"].str.replace(",", ".", regex=False), errors="coerce")
+    todos = todos.dropna(subset=["cnpj", "pl", "DT_COMPTC"])
+    todos = todos.sort_values("DT_COMPTC")
+    ultimo_por_cnpj = todos.drop_duplicates(subset=["cnpj"], keep="last")
+    return dict(zip(ultimo_por_cnpj["cnpj"], ultimo_por_cnpj["pl"]))
 
 
 def carregar_candidatos() -> pd.DataFrame:
