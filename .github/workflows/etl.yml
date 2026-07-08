@@ -270,6 +270,13 @@ jobs:
             args: ''
             crons: []
             in_all: false
+            # timeout de job curto de propósito -- é diagnóstico contra uma
+            # fonte externa de comportamento desconhecido (achado: um
+            # arquivo grande transferindo devagar em pedacinhos nunca
+            # estoura o timeout por request do httpx, só um teto de job
+            # mata isso de verdade). 2 rodadas anteriores ficaram >8min sem
+            # terminar nem falhar e precisaram de cancelamento manual.
+            timeout: 5
 
           # ── Notícias RSS ──────────────────────────────────────────────
           - id: noticias

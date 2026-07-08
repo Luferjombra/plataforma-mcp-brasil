@@ -87,25 +87,21 @@ def run() -> None:
                 inspecionar_csv(c, nome_arq)
                 checar_cnpjs_curados(c, nome_arq)
 
-        # 3. Bundle em zip, conforme mencionado na documentação do portal.
-        c = tentar(f"{BASE_CAD}/registro_fundo_classe.zip", client, "registro_fundo_classe.zip")
-        if c:
-            with zipfile.ZipFile(io.BytesIO(c)) as zf:
-                print(f"  [registro_fundo_classe.zip] conteúdo: {zf.namelist()}")
-                for nome_interno in zf.namelist():
-                    with zf.open(nome_interno) as f:
-                        dados = f.read()
-                    inspecionar_csv(dados, nome_interno)
-                    checar_cnpjs_curados(dados, nome_interno)
-
-        # 4. Sonda inf_diario_fi legado em vários meses -- descontinuado de
+        # 3. Sonda inf_diario_fi legado em vários meses -- descontinuado de
         # vez, ou só os 2 mais recentes têm lag maior que o esperado?
-        # (cad_fi_hist.zip removido do escopo -- é um arquivo histórico,
-        # não essencial pra essa pergunta, e demorou demais numa 1a tentativa
-        # sem dar erro nem terminar -- provavelmente só grande mesmo, não
-        # vale o tempo de download aqui.)
         for aaaamm in ["202607", "202605", "202601", "202412"]:
             tentar(f"{BASE_HIST}/inf_diario_fi_{aaaamm}.csv", client, f"inf_diario_fi_{aaaamm}.csv")
+
+        # 4. Bundle em zip, conforme mencionado na documentação do portal --
+        # por último e com timeout mais curto: acho que os 2 timeouts >5min
+        # nas rodadas anteriores (cad_fi_hist.zip, e possivelmente este zip
+        # também) são um arquivo grande demais pro objetivo de diagnóstico
+        # -- timeout do httpx não é um teto de duração total, só por
+        # operação, então nada aqui "estoura" mesmo demorando muito.
+        tentar(
+            f"{BASE_CAD}/registro_fundo_classe.zip", client,
+            "registro_fundo_classe.zip", timeout=20.0,
+        )
 
     print("\n=== Fim da investigação ===")
 
