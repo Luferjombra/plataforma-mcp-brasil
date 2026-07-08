@@ -69,6 +69,19 @@ def montar_observacoes(label: str | None, remarks: str | None, conhecidos: set) 
 
 # ── Parsing ───────────────────────────────────────────────────────────────────
 
+def _dedup_por_chave(registros: list[dict], colunas_chave: tuple) -> list[dict]:
+    """Remove duplicatas pela mesma chave de UNIQUE/on_conflict, mantendo a
+    última ocorrência. Necessário porque a brapi já devolveu o mesmo evento
+    repetido no array (ex.: ITUB4) — um upsert com duas linhas na mesma
+    chave de conflito falha inteiro no Postgres ('ON CONFLICT DO UPDATE
+    command cannot affect row a second time'), não só a linha duplicada."""
+    vistos = {}
+    for r in registros:
+        chave = tuple(r[c] for c in colunas_chave)
+        vistos[chave] = r
+    return list(vistos.values())
+
+
 def parse_eventos_societarios(ticker: str, stock_dividends: list) -> list[dict]:
     registros = []
     for item in stock_dividends:
@@ -88,7 +101,7 @@ def parse_eventos_societarios(ticker: str, stock_dividends: list) -> list[dict]:
             "isin_code": item.get("isinCode") or item.get("assetIssued"),
             "observacoes": montar_observacoes(label, item.get("remarks"), TIPOS_EVENTO_CONHECIDOS),
         })
-    return registros
+    return _dedup_por_chave(registros, ("ticker", "tipo", "data_aprovacao"))
 
 
 def parse_proventos(ticker: str, cash_dividends: list) -> list[dict]:
@@ -110,7 +123,7 @@ def parse_proventos(ticker: str, cash_dividends: list) -> list[dict]:
             "isin_code": item.get("isinCode") or item.get("assetIssued"),
             "observacoes": montar_observacoes(label, item.get("remarks"), TIPOS_PROVENTO_CONHECIDOS),
         })
-    return registros
+    return _dedup_por_chave(registros, ("ticker", "tipo", "data_pagamento", "valor_por_acao"))
 
 
 # ── Resumo de progresso ──────────────────────────────────────────────────────
