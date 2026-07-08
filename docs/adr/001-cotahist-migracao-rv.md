@@ -48,7 +48,7 @@ Migrar a fonte de Renda Variável de brapi.dev (ticker a ticker) para o COTAHIST
 
 **Limitação conhecida (não bloqueia a Fase 1):** o campo `ESPECI` bruto "CI" cobre tanto ETFs quanto outros fundos negociados em bolsa (FIAgro, FIDC listado etc.) — o layout público não distingue os dois de forma inequívoca. Ativos nessa categoria (`BOVA11`, `IVVB11`, `SMAL11`, `XFIX11` observados até agora) são marcados como `tipo='ETF_OU_FUNDO'` e reportados à parte, sem travar o smoke test.
 
-**Ponto de atenção para a Fase 2:** o número de ativos caiu a cada dia (1.412 → 1.396 → 1.257). Pode ser liquidez normal de sexta-feira, mas não foi investigado — deve ser resolvido antes de promover para produção.
+~~**Ponto de atenção para a Fase 2:**~~ ✅ resolvido (2026-07-08) — o número de ativos caiu a cada dia (1.412 → 1.396 → 1.257) nessa amostra de 3 dias. Com ~1 ano de backfill já em `rv_historico_staging`, um script de diagnóstico pontual (`etl/analisar_liquidez_diaria.py`, descartado após uso) mediu a série completa (265 dias úteis, 250 com dado): média por dia da semana muito estável (1381–1406, sem efeito sistemático de "sexta é mais fraca"), tendência **+3,8%** entre os primeiros e os últimos 30 dias com dado (leve alta, não queda), e **zero outliers** (nenhum dia com queda >20% vs. média móvel de 10 dias úteis) em toda a série. Os 15 dias úteis sem dado batem exatamente com feriados nacionais conhecidos (Consciência Negra, Natal, Ano Novo, Carnaval, Sexta-feira Santa, Tiradentes, Dia do Trabalho, Corpus Christi) ou a borda da janela de coleta. **Confirmado: é variação normal de liquidez, não bug no ETL.**
 
 ## Backfill histórico (2026-07-04)
 
