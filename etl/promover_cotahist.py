@@ -6,9 +6,10 @@ Copia rv_ativos_staging/rv_historico_staging (universo completo do COTAHIST,
 (produção, hoje alimentada pelo brapi.dev via rv_historico.py), marcando
 fonte='cotahist'.
 
-Pré-requisito: migration 012_fonte_producao.sql executada (adiciona a coluna
-`fonte` em rv_ativos/rv_historico — não existia antes, apesar do que o ADR-001
-dizia originalmente).
+Pré-requisito: migration 012_widen_ticker_producao.sql executada (alarga
+`ticker` para VARCHAR(12) em rv_ativos/rv_historico — a coluna `fonte` já
+existia desde a migration 008, ao contrário do que uma versão anterior deste
+script/ADR afirmava).
 
 Precedência por fonte: o upsert por (ticker, data) sobrescreve a linha de
 produção existente com o dado do COTAHIST — já validado (0 divergências
@@ -16,8 +17,17 @@ depois do ajuste por proventos, ver validar_cotahist.py --usar-ajustado).
 Onde o COTAHIST não tem dado para aquele (ticker, data) — ex.: ELET3/RBRF11
 no período em que pararam de negociar sob esse código, ver ADR-001 item 5 —
 a linha de produção do brapi.dev simplesmente não é tocada, porque upsert
-nunca deleta o que não está no payload. É assim que a precedência por fonte
-funciona na prática, sem lógica condicional extra.
+nunca deleta o que não está no payload.
+
+CUIDADO — fechamento_adj: `aplicar_ajuste_proventos.py` só populou essa
+coluna em staging para os tickers com evento societário cadastrado (hoje
+ITUB4/MGLU3/PETR4/VALE3). Para o resto do universo, fechamento_adj é NULL em
+staging — mas em produção (via rv_historico.py) ela é sempre preenchida pela
+brapi. Mandar fechamento_adj=None no payload do upsert SOBRESCREVE o valor
+real já existente em produção com NULL (PostgREST só pula colunas ausentes do
+payload, não colunas presentes com valor null). Por isso o upsert de
+histórico é feito em dois lotes: linhas com fechamento_adj (mandam a coluna)
+e linhas sem (omitem a chave inteira do payload).
 
 rv_historico tem FK para rv_ativos(ticker) — por isso promove ativos primeiro.
 O upsert de rv_ativos só manda ticker/nome/tipo/fonte: nunca toca
@@ -33,26 +43,23 @@ import argparse
 
 from config import supabase
 from log_etl import ETLRun
-from rv_historico import ATIVOS
-from validar_cotahist import comparar_ticker
 
 CHUNK = 500
 TAMANHO_PAGINA = 1000
 
 
-def buscar_paginado(tabela: str, colunas: str) -> list[dict]:
+def buscar_paginado(tabela: str, colunas: str, filtros: dict | None = None) -> list[dict]:
     """Pagina com .range() para não bater no limite padrão de 1000 linhas
     do PostgREST — já causou bug real neste projeto (validar_cotahist.py,
     diagnosticar_ticker_sucessor.py)."""
     todos = []
     inicio = 0
     while True:
-        res = (
-            supabase.table(tabela)
-            .select(colunas)
-            .range(inicio, inicio + TAMANHO_PAGINA - 1)
-            .execute()
-        )
+        q = supabase.table(tabela).select(colunas)
+        if filtros:
+            for campo, valor in filtros.items():
+                q = q.eq(campo, valor)
+        res = q.range(inicio, inicio + TAMANHO_PAGINA - 1).execute()
         if not res.data:
             break
         todos.extend(res.data)
@@ -66,46 +73,74 @@ def contar(tabela: str) -> int:
     return supabase.table(tabela).select("*", count="exact").limit(1).execute().count or 0
 
 
+def buscar_datas(tabela: str, ticker: str) -> set:
+    """Datas de um ticker específico, paginado — mesmo cuidado do limite de
+    1000 linhas, já que tickers líquidos de vários anos podem passar disso."""
+    linhas = buscar_paginado(tabela, "data", filtros={"ticker": ticker})
+    return {r["data"] for r in linhas}
+
+
 # ── Dry-run ───────────────────────────────────────────────────────────────────
 
 def dry_run():
     print("=== DRY-RUN — promoção COTAHIST staging -> produção (nada será escrito) ===\n")
 
-    tickers_staging = {r["ticker"] for r in buscar_paginado("rv_ativos_staging", "ticker")}
-    tickers_producao = {r["ticker"] for r in buscar_paginado("rv_ativos", "ticker")}
+    with ETLRun("promover_cotahist_dry_run") as run:
+        tickers_staging = {r["ticker"] for r in buscar_paginado("rv_ativos_staging", "ticker")}
+        tickers_producao = {r["ticker"] for r in buscar_paginado("rv_ativos", "ticker")}
 
-    novos = tickers_staging - tickers_producao
-    ja_existentes = tickers_staging & tickers_producao
+        novos = tickers_staging - tickers_producao
+        ja_existentes = tickers_staging & tickers_producao
 
-    print(f"Tickers em rv_ativos_staging (universo completo): {len(tickers_staging)}")
-    print(f"Tickers em rv_ativos (produção atual):             {len(tickers_producao)}")
-    print(f"  -> novos (serão inseridos):                                        {len(novos)}")
-    print(f"  -> já existentes (metadata será atualizada para fonte='cotahist'): {len(ja_existentes)}\n")
+        print(f"Tickers em rv_ativos_staging (universo completo): {len(tickers_staging)}")
+        print(f"Tickers em rv_ativos (produção atual):             {len(tickers_producao)}")
+        print(f"  -> novos (serão inseridos):                                        {len(novos)}")
+        print(f"  -> já existentes (metadata será atualizada para fonte='cotahist'): {len(ja_existentes)}\n")
 
-    # Overlap de histórico só é possível nos tickers que já existem em produção
-    # hoje (a curadoria via brapi, ~30). Para o resto do universo, staging é
-    # 100% linha nova — não precisa comparar linha a linha.
-    print("Overlap de histórico (só possível nos tickers já em produção hoje):")
-    total_overlap = 0
-    for ticker in [a["ticker"] for a in ATIVOS]:
-        if ticker not in tickers_producao:
-            continue
-        r = comparar_ticker(ticker, limiar=999, cutoff="2000-01-01")
-        total_overlap += r["datas_comuns"]
-    print(f"  Linhas que serão SOBRESCRITAS (mesmo ticker+data já em produção): ~{total_overlap}")
-    print("  (já validado em validar_cotahist.py --usar-ajustado: 0 divergências nessas linhas)\n")
+        # Overlap de histórico só é possível nos tickers que JÁ EXISTEM EM
+        # PRODUÇÃO HOJE (fato do banco, não a lista ATIVOS[] do código — um
+        # ticker removido de ATIVOS mas ainda com linhas em rv_historico, ex.
+        # BCFF11, ainda seria sobrescrito de verdade e precisa entrar na conta).
+        print("Overlap de histórico (só possível nos tickers já em produção hoje):")
+        total_overlap = 0
+        total_com_ajuste = 0
+        for ticker in sorted(ja_existentes):
+            datas_staging_row = buscar_paginado(
+                "rv_historico_staging", "data,fechamento_adj", filtros={"ticker": ticker}
+            )
+            datas_staging = {r["data"] for r in datas_staging_row}
+            datas_producao = buscar_datas("rv_historico", ticker)
+            overlap = datas_staging & datas_producao
+            total_overlap += len(overlap)
+            total_com_ajuste += sum(1 for r in datas_staging_row if r.get("fechamento_adj") is not None)
 
-    n_hist_staging = contar("rv_historico_staging")
-    n_hist_producao = contar("rv_historico")
-    print(f"Linhas em rv_historico_staging (total):  {n_hist_staging}")
-    print(f"Linhas em rv_historico (produção atual): {n_hist_producao}")
-    print(f"  -> linhas novas estimadas:        ~{n_hist_staging - total_overlap}")
-    print(f"  -> linhas sobrescritas estimadas: ~{total_overlap}")
+        print(f"  Linhas que serão SOBRESCRITAS (mesmo ticker+data já em produção): ~{total_overlap}")
+        print("  (já validado em validar_cotahist.py --usar-ajustado: 0 divergências nessas linhas)")
+        print(f"  Linhas do staging com fechamento_adj calculado (evento societário cadastrado): {total_com_ajuste}")
+        print("  As demais NÃO mandam fechamento_adj no payload — preserva o valor já existente em produção\n")
+
+        n_hist_staging = contar("rv_historico_staging")
+        n_hist_producao = contar("rv_historico")
+        print(f"Linhas em rv_historico_staging (total):  {n_hist_staging}")
+        print(f"Linhas em rv_historico (produção atual): {n_hist_producao}")
+        print(f"  -> linhas novas estimadas:        ~{n_hist_staging - total_overlap}")
+        print(f"  -> linhas sobrescritas estimadas: ~{total_overlap}")
+
+        run.set_rows(n_hist_staging)
 
     print("\n=== Fim do dry-run — nada foi escrito ===")
 
 
 # ── Promoção real ─────────────────────────────────────────────────────────────
+
+def _upsert_em_lotes(tabela: str, registros: list[dict], on_conflict: str) -> int:
+    n = 0
+    for i in range(0, len(registros), CHUNK):
+        lote = registros[i:i + CHUNK]
+        supabase.table(tabela).upsert(lote, on_conflict=on_conflict).execute()
+        n += len(lote)
+    return n
+
 
 def promover():
     print("=== Promoção COTAHIST staging -> produção ===\n")
@@ -113,11 +148,8 @@ def promover():
     with ETLRun("promover_cotahist") as run:
         print("[1/2] Promovendo rv_ativos...")
         ativos_staging = buscar_paginado("rv_ativos_staging", "ticker,nome,tipo")
-        n_ativos = 0
-        for i in range(0, len(ativos_staging), CHUNK):
-            lote = [{**a, "fonte": "cotahist"} for a in ativos_staging[i:i + CHUNK]]
-            supabase.table("rv_ativos").upsert(lote, on_conflict="ticker").execute()
-            n_ativos += len(lote)
+        ativos_payload = [{**a, "fonte": "cotahist"} for a in ativos_staging]
+        n_ativos = _upsert_em_lotes("rv_ativos", ativos_payload, on_conflict="ticker")
         print(f"  ✓ {n_ativos} ticker(s) promovido(s)\n")
 
         print("[2/2] Promovendo rv_historico...")
@@ -125,15 +157,31 @@ def promover():
             "rv_historico_staging",
             "ticker,data,abertura,maxima,minima,fechamento,fechamento_adj,volume,negocios",
         )
+
+        # Ver docstring do módulo: nunca mandar fechamento_adj=None no upsert,
+        # senão sobrescreve com NULL o valor já calculado em produção pela
+        # brapi para os tickers sem evento societário cadastrado em staging.
+        com_ajuste = [h for h in historico_staging if h.get("fechamento_adj") is not None]
+        sem_ajuste = [
+            {k: v for k, v in h.items() if k != "fechamento_adj"}
+            for h in historico_staging if h.get("fechamento_adj") is None
+        ]
+
         n_hist = 0
-        for i in range(0, len(historico_staging), CHUNK):
-            lote = [{**h, "fonte": "cotahist"} for h in historico_staging[i:i + CHUNK]]
-            supabase.table("rv_historico").upsert(lote, on_conflict="ticker,data").execute()
-            n_hist += len(lote)
-            print(f"  ...{n_hist}/{len(historico_staging)}", end="\r")
+        n_hist += _upsert_em_lotes(
+            "rv_historico",
+            [{**h, "fonte": "cotahist"} for h in com_ajuste],
+            on_conflict="ticker,data",
+        )
+        n_hist += _upsert_em_lotes(
+            "rv_historico",
+            [{**h, "fonte": "cotahist"} for h in sem_ajuste],
+            on_conflict="ticker,data",
+        )
 
         run.set_rows(n_ativos + n_hist)
-        print(f"\n  ✓ {n_hist} linha(s) de histórico promovida(s)")
+        print(f"  ✓ {n_hist} linha(s) de histórico promovida(s) "
+              f"({len(com_ajuste)} com fechamento_adj, {len(sem_ajuste)} sem)")
 
     print("\n=== Promoção concluída ===")
 

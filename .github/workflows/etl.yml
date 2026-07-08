@@ -259,7 +259,8 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
   # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) — dry-run ────
-  # Só leitura. Requer migration 012_fonte_producao.sql executada antes.
+  # Só leitura, não precisa da migration 012 (dry-run só lê ticker/data, não
+  # escreve). A promoção real (job abaixo) sim precisa da 012 executada.
   etl-promover-cotahist-dry-run:
     name: Promoção COTAHIST -> produção (dry-run)
     runs-on: ubuntu-latest
@@ -281,7 +282,8 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
   # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) — real ───────
-  # ESCREVE em rv_ativos/rv_historico (produção). Só disparar depois do
+  # ESCREVE em rv_ativos/rv_historico (produção). Requer migration
+  # 012_widen_ticker_producao.sql executada antes. Só disparar depois do
   # dry-run revisado e aprovado.
   etl-promover-cotahist:
     name: Promoção COTAHIST -> produção
