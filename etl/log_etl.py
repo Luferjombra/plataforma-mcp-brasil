@@ -99,14 +99,24 @@ def baixar_arquivo_http(
     timeout: float = 60.0,
     msg_404: str | None = None,
     msg_falha: str | None = None,
+    not_found_status: tuple[int, ...] = (404,),
 ) -> bytes | None:
-    """Baixa um arquivo público (COTAHIST da B3, CSVs da CVM), tratando 404
-    como "ainda não publicado" -- não é erro, ao contrário de
-    `retry_request()` (que trataria 404 como falha definitiva via
-    `raise_for_status()`). Repete em falha de rede/5xx; desiste depois de
-    `max_attempts`. Base compartilhada por `cotahist.py`, `cotahist_backfill.py`
-    e `fundos.py`, que tinham (ou precisavam d)o mesmo loop de retry
-    diferindo só em tentativas/timeout/mensagens."""
+    """Baixa um arquivo público (COTAHIST da B3, CSVs da CVM), tratando os
+    códigos em `not_found_status` como "ainda não publicado" -- não é erro,
+    ao contrário de `retry_request()` (que trataria como falha definitiva
+    via `raise_for_status()`). Repete em falha de rede/5xx; desiste depois
+    de `max_attempts`. Base compartilhada por `cotahist.py`,
+    `cotahist_backfill.py` e `fundos.py`, que tinham (ou precisavam d)o
+    mesmo loop de retry diferindo só em tentativas/timeout/mensagens.
+
+    `not_found_status` default é só (404,) -- B3 (COTAHIST) usa 404 puro
+    pra arquivo ainda não publicado. A CVM (cad_fi.csv/inf_diario_fi) é
+    servida por um bucket sem permissão de listagem: pedir uma chave que
+    não existe (ex: informe do mês corrente antes de publicado) devolve
+    **403**, não 404 -- achado rodando contra a CVM de verdade via
+    workflow_dispatch. Chamadores da CVM passam `not_found_status=(404, 403)`
+    explicitamente; não virou default global pra não mascarar um 403 real
+    (ex: bloqueio de WAF) nas fontes que legitimamente usam 404."""
     headers = {"User-Agent": user_agent}
     for tentativa in range(1, max_attempts + 1):
         try:
@@ -115,8 +125,8 @@ def baixar_arquivo_http(
             print(f"  [aviso] tentativa {tentativa}/{max_attempts} — falha de conexão em {url}: {e}")
             continue
 
-        if resp.status_code == 404:
-            print(msg_404 if msg_404 is not None else f"  [info] ainda não publicado: {url}")
+        if resp.status_code in not_found_status:
+            print(msg_404 if msg_404 is not None else f"  [info] ainda não publicado (HTTP {resp.status_code}): {url}")
             return None
         if resp.status_code in (500, 502, 503, 504):
             print(f"  [aviso] tentativa {tentativa}/{max_attempts} — HTTP {resp.status_code} em {url}")

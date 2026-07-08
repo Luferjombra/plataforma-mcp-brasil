@@ -101,7 +101,11 @@ def garantir_cadastro_local(client: httpx.Client) -> None:
         URL_CADASTRO, client,
         # cad_fi.csv cobre TODOS os fundos da CVM (dezenas de milhares de
         # linhas) -- dezenas de MB, timeout maior que os outros downloads.
+        # not_found_status inclui 403: a CVM serve esses arquivos de um
+        # bucket sem permissão de listagem -- chave inexistente responde
+        # 403, não 404 (achado rodando contra a CVM de verdade).
         user_agent=DEFAULT_USER_AGENT, max_attempts=3, timeout=180,
+        not_found_status=(404, 403),
         msg_falha="  ✗ Falha ao baixar cad_fi.csv após 3 tentativas — cadastro não será atualizado nesta execução.",
     )
     if conteudo:
@@ -124,8 +128,11 @@ def garantir_historico_local(client: httpx.Client) -> None:
             url, client,
             # 1 linha por fundo por pregão, todos os fundos da CVM --
             # também pode chegar a dezenas/centenas de MB por mês.
+            # not_found_status inclui 403 -- ver comentário em
+            # garantir_cadastro_local (mesmo bucket, mesmo comportamento).
             user_agent=DEFAULT_USER_AGENT, max_attempts=2, timeout=180,
-            msg_404="ainda não publicado (404)",
+            not_found_status=(404, 403),
+            msg_404="ainda não publicado",
         )
         if conteudo:
             with open(caminho, "wb") as f:
