@@ -88,12 +88,21 @@ jobs:
     # jobs que nunca tiveram timeout (incl. promover_cotahist, que escreve em
     # produção, e rv_historico, que pode acumular retries da brapi).
     timeout-minutes: ${{ matrix.timeout || 360 }}
-    if: |
-      github.event_name == 'workflow_dispatch' && (
-        github.event.inputs.etl == matrix.id ||
-        (github.event.inputs.etl == 'all' && matrix.in_all)
-      ) ||
-      github.event_name == 'schedule' && contains(matrix.crons, github.event.schedule)
+    # A condição de disparo por item da matrix foi movida pra cada step (ver
+    # `if: *deve_rodar` abaixo) -- achado real, descoberto tentando disparar
+    # de verdade via workflow_dispatch: o contexto `matrix` não existe ainda
+    # no `if:` de NÍVEL DE JOB (é resolvido só depois, quando a matrix já foi
+    # expandida em instâncias concretas) -- "Unrecognized named-value: matrix"
+    # do próprio parser do GitHub. Um `if:` de job aqui quebra o parse do
+    # workflow inteiro (nenhum job roda, nem os agendados). A âncora YAML
+    # evita repetir a mesma expressão 4 vezes num por step.
+    env:
+      DEVE_RODAR: &deve_rodar |
+        github.event_name == 'workflow_dispatch' && (
+          github.event.inputs.etl == matrix.id ||
+          (github.event.inputs.etl == 'all' && matrix.in_all)
+        ) ||
+        github.event_name == 'schedule' && contains(matrix.crons, github.event.schedule)
     strategy:
       fail-fast: false
       matrix:
@@ -286,14 +295,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        if: *deve_rodar
       - uses: actions/setup-python@v5
+        if: *deve_rodar
         with:
           python-version: '3.12'
           cache: 'pip'
           cache-dependency-path: etl/requirements.txt
       - name: Instalar dependências
+        if: *deve_rodar
         run: pip install -r etl/requirements.txt
       - name: Rodar ${{ matrix.label }}
+        if: *deve_rodar
         working-directory: etl
         run: python ${{ matrix.script }} ${{ matrix.args }}
         env:
