@@ -24,17 +24,20 @@ on:
     # para no primeiro 403), então rodar 1x/dia converge sozinho até cobrir
     # os 31 tickers, sem precisar de disparo manual repetido.
     - cron: '0 19 * * 1-5'
-    # COTAHIST staging (Fase 1 — ver ADR-001): rodadas espalhadas ao longo da
-    # noite + 1 checagem na manhã seguinte, só nesta semana, para descobrir
-    # empiricamente a que horas a B3 publica o arquivo diário. Minutos em
-    # :10/:40 (em vez de :00/:30) só para não colidir com os crons acima nos
-    # logs. Horários em BRT (UTC-3), com rollover de dia onde necessário:
-    - cron: '10 21 * * 1-5'   # 18h10 BRT
-    - cron: '10 22 * * 1-5'   # 19h10 BRT
-    - cron: '10 23 * * 1-5'   # 20h10 BRT
+    # COTAHIST staging (produção — ver ADR-001, Passo 6): simplificado de 6
+    # janelas de descoberta (Fase 1) para 1 cron principal + 1 fallback de
+    # manhã. A Fase 1 mostrou que não há horário fixo de publicação da B3
+    # (variou de ~19h a depois das 21h10 BRT na mesma semana) — por isso o
+    # fallback D-1 dentro do próprio script (não só o cron) continua
+    # obrigatório. Horários em BRT (UTC-3), com rollover de dia:
     - cron: '10 0 * * 2-6'    # 21h10 BRT (rollover: UTC já é o dia seguinte)
-    - cron: '40 1 * * 2-6'    # 22h40 BRT (rollover)
     - cron: '10 10 * * 2-6'   # 07h10 BRT do dia seguinte — fallback/manhã
+    # Validação cruzada COTAHIST vs brapi: diária durante a operação paralela
+    # (ADR-001, Passo 6) — roda depois dos dois pipelines de preço (brapi às
+    # 17h30 BRT, COTAHIST às 21h10/07h10 BRT) para pegar divergência nova
+    # cedo. Desligar quando a operação paralela terminar e rv_historico.py
+    # for aposentado para preço.
+    - cron: '15 11 * * 2-6'   # 08h15 BRT do dia seguinte
   workflow_dispatch:
     inputs:
       etl:
@@ -155,21 +158,18 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
-  # ── COTAHIST Staging (B3) — Fase 1, ver ADR-001 ──────────────────────────
-  # Roda várias vezes ao dia só nesta semana para descobrir empiricamente a
-  # janela de publicação do arquivo diário da B3. Escreve só em tabelas de
-  # staging (rv_ativos_staging / rv_historico_staging) — nunca em produção.
+  # ── COTAHIST Staging (B3) — ver ADR-001, Passo 6 (operação paralela) ─────
+  # 1 cron principal à noite + 1 fallback de manhã (simplificado da Fase 1,
+  # que rodava 6x/dia para descobrir a janela de publicação da B3). Continua
+  # escrevendo só em staging (rv_ativos_staging / rv_historico_staging) —
+  # nunca em produção; a promoção é feita por etl/promover_cotahist.py.
   etl-cotahist-staging:
-    name: ETL COTAHIST Staging (B3) — descoberta de horário
+    name: ETL COTAHIST Staging (B3)
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' && (github.event.inputs.etl == 'cotahist_staging' || github.event.inputs.etl == 'all') ||
       github.event_name == 'schedule' && (
-        github.event.schedule == '10 21 * * 1-5' ||
-        github.event.schedule == '10 22 * * 1-5' ||
-        github.event.schedule == '10 23 * * 1-5' ||
         github.event.schedule == '10 0 * * 2-6'  ||
-        github.event.schedule == '40 1 * * 2-6'  ||
         github.event.schedule == '10 10 * * 2-6'
       )
     steps:
@@ -212,13 +212,17 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
-  # ── Validação cruzada COTAHIST vs brapi — só manual ───────────────────────
+  # ── Validação cruzada COTAHIST vs brapi — diária + manual ─────────────────
   # Compara staging (COTAHIST) com produção (brapi) nos tickers já cobertos.
-  # Só leitura — não escreve em nenhuma tabela. Fase 2, ver ADR-001.
+  # Só leitura — não escreve em nenhuma tabela. Cron diário durante a
+  # operação paralela (ADR-001, Passo 6) — qualquer divergência nova > 1%
+  # aparece no log deste job.
   etl-validar-cotahist:
     name: Validação cruzada COTAHIST vs brapi
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'validar_cotahist'
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'validar_cotahist' ||
+      github.event_name == 'schedule' && github.event.schedule == '15 11 * * 2-6'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

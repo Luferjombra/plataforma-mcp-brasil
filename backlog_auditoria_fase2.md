@@ -107,10 +107,11 @@ Não promover fonte nova por cima de bugs conhecidos, especialmente F1 (carteira
 - [x] `etl/promover_cotahist.py` — implementado. Copia **staging inteiro** (universo completo) → produção com `fonte='cotahist'`, preservando linhas brapi onde COTAHIST não cobre. Revisado por pair-programming (agent `.claude/agents/pair-reviewer.md`): pegou bug crítico (fechamento_adj sobrescrevendo com NULL) e um erro factual meu sobre a migration 008 — ambos corrigidos, ver ADR-001 "Mecanismo de corte".
 - [x] Dry-run rodado e revisado com o usuário (2.335 tickers novos, ~4.785 linhas sobrescritas estimadas), migration 012 executada, promoção real aprovada e executada: **2.368 tickers + 349.452 linhas de histórico promovidos** para `rv_ativos`/`rv_historico`.
 
-### Passo 6 — Operação paralela (1–2 semanas)
-- [ ] Simplificar `etl.yml`: 6 janelas de descoberta → 1 cron ~21h BRT + fallback manhã (mantendo fallback D-1 no script — não há horário fixo da B3, comprovado na Fase 1)
-- [ ] `validar_cotahist.py` como job diário durante a janela de paralelo — qualquer divergência nova > 1% aparece no log
-- [ ] Ao final: aposentar `rv_historico.py` para preços (mantém-se para metadados via `fundamental`, em cadência semanal)
+### Passo 6 — Operação paralela (1–2 semanas) — iniciada 2026-07-08
+- [x] Simplificar `etl.yml` — ✅ CONCLUÍDO (2026-07-08). 6 janelas de descoberta → 2 crons (21h10 BRT principal + 07h10 BRT fallback), mantendo fallback D-1 no script. Revisado por pair-programming (conferiu rollover BRT→UTC caractere a caractere, sem reincidência do bug de espaço duplo já documentado).
+- [x] `validar_cotahist.py` como job diário — ✅ CONCLUÍDO (2026-07-08). Cron `15 11 * * 2-6` (08h15 BRT), depois que brapi e COTAHIST já rodaram no dia.
+- [ ] **F15** (achado na revisão do Passo 6) `validar_cotahist.py` só imprime divergências no log, não falha o job nem alerta — monitorar exige checar o GitHub Actions manualmente todo dia durante a janela paralela. Se a intenção é alerta ativo (não só auditoria manual periódica), falta isso. `1h`
+- [ ] Ao final da janela paralela (1-2 semanas a partir de 2026-07-08): aposentar `rv_historico.py` para preços (mantém-se para metadados via `fundamental`, em cadência semanal)
 
 ### Passo 7 — API + Frontend para o universo novo — ~7h
 - E2 (paginação server-side) + E3 (RPC último preço) + P6 (virtualização) — nesta ordem
