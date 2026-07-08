@@ -69,7 +69,7 @@ _Criado em 2026-07-07 a partir da auditoria completa (backend, ETL, frontend —
 
 > Decisões e infraestrutura — algumas são suas (💰 = decisão de negócio), o resto é código.
 
-- [ ] **E1** 💰 **Supabase Pro (~US$25/mês)** — com 347 mil linhas já no staging + universo completo, o free tier (500MB) não sustenta a Fase 2. É a única despesa recorrente realmente necessária do plano. _Decisão antes do corte da Fase 2._
+- [ ] **E1** 💰 **Supabase Pro (~US$25/mês)** — ⚠️ REVISADO (2026-07-08): medição exata mostrou que o universo completo (2.366 tickers, 348 mil linhas) com **1 ano de retenção** ocupa só 52–87MB, folgado no free tier (500MB) mesmo somando as outras tabelas do projeto. **Não é mais bloqueador do corte da Fase 2.** O gatilho real é reter múltiplos anos (5 anos do universo completo ≈ 261–435MB, aí sim perto do teto) — decisão adiada para quando definirmos política de retenção, não antes do corte.
 - [ ] **E2** Paginação server-side em `/rv/ativos` (`?page=&per_page=&q=`) + busca no banco. O frontend passa a buscar via API, não filtrar array de 2.000 no browser. `3h`
 - [ ] **E3** View/RPC "último preço por ticker" — substitui a heurística frágil `limit(n_tickers*5)` da carteira e serve a lista do `/rv`. `1h`
 - [ ] **E4** Metadados setoriais para o universo novo — a planilha de classificação setorial da B3 (pública) cobre o que o brapi `fundamental` não alcança em 2.000 tickers. Pesquisar formato + ETL. `4h`
@@ -98,11 +98,11 @@ Não promover fonte nova por cima de bugs conhecidos, especialmente F1 (carteira
 - [x] Variação de volume diário no COTAHIST (1.412→1.396→1.257) — ✅ CONFIRMADO liquidez normal (2026-07-08). Série completa de 1 ano (265 dias úteis, 250 com dado): média por dia da semana estável (1381–1406), tendência +3,8% primeiros vs últimos 30 dias (alta, não queda), zero outliers (>20% vs média móvel de 10 dias). Os 15 dias sem dado são feriados nacionais conhecidos ou borda da janela — nenhum gap inexplicado. Não é bug.
 
 ### Passo 4 — 💰 Decisões suas
-- [ ] Escopo do universo: 2.000 tickers completos ou subconjunto líquido (sugestão: começar com todos os ON/PN/FII/BDR do COTAHIST — são ~1.400–2.200/dia — e filtrar depois por liquidez se precisar)
-- [ ] Upgrade Supabase Pro (E1) — antes do corte
+- [x] Escopo do universo — ✅ DECIDIDO (2026-07-08): **Opção C, universo completo do COTAHIST** (2.366 tickers medidos, ~348 mil linhas/ano). Cabe no free tier com 1 ano de retenção (52–87MB).
+- [ ] Upgrade Supabase Pro (E1) — não é mais bloqueador do corte (ver E1 revisado); só decidir quando definirmos retenção multi-ano.
 
 ### Passo 5 — Mecanismo de corte — ~3h
-- [ ] `etl/promover_cotahist.py`: copia staging → produção com `fonte='cotahist'`, preservando linhas brapi onde COTAHIST não cobre (precedência por `fonte`)
+- [ ] `etl/promover_cotahist.py`: copia **staging inteiro** (universo completo, 2.366 tickers) → produção com `fonte='cotahist'`, preservando linhas brapi onde COTAHIST não cobre (precedência por `fonte` — cobre casos como ELET3/RBRF11, ver ADR-001 item 5)
 - [ ] Rodar em modo dry-run primeiro (relatório de o que mudaria, sem escrever)
 
 ### Passo 6 — Operação paralela (1–2 semanas)
