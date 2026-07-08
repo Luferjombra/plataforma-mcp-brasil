@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
+import { useState, useMemo, Suspense } from 'react'
 import { getIndicadores, type Indicador } from '@/lib/api'
 import { SkeletonShimmer, ErrorState, EmptyState } from '@/components/DataStates'
 import { PageHeader } from '@/components/PageHeader'
+import { Sparkline as SparklineBase } from '@/components/Sparkline'
+import { useApi } from '@/lib/useApi'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -22,45 +24,31 @@ const META: Record<Serie, { label: string; desc: string; source: string; unit: s
 const RANGE_N: Record<Range, number | null> = { '3m': 3, '6m': 6, '12m': 12, 'all': null }
 
 function Sparkline({ data, dir }: { data: number[]; dir: 'up' | 'down' | 'flat' }) {
-  if (data.length < 2) return <div style={{ width: 80, height: 24 }} />
-  const w = 80, h = 24, pad = 2
-  const min = Math.min(...data), max = Math.max(...data), rng = max - min || 1
-  const pts = data.map((v, i) => [
-    pad + (i / (data.length - 1)) * (w - pad * 2),
-    h - pad - ((v - min) / rng) * (h - pad * 2),
-  ])
-  const line = pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ')
-  const col  = dir === 'up' ? 'var(--cl-up)' : dir === 'down' ? 'var(--cl-down)' : 'var(--cl-ink3)'
-  const last = pts[pts.length - 1]
+  const col = dir === 'up' ? 'var(--cl-up)' : dir === 'down' ? 'var(--cl-down)' : 'var(--cl-ink3)'
   return (
-    <svg width={w} height={h} style={{ overflow: 'visible', display: 'block' }}>
-      <polyline points={line} fill="none" stroke={col} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={last[0]} cy={last[1]} r="2" fill={col} />
-    </svg>
+    <SparklineBase
+      data={data} width={80} height={24} padding={2}
+      color={col} filled={false} dotRadius={2} strokeWidth={1.5}
+    />
   )
 }
 
+const DADOS_VAZIOS: Record<Serie, Indicador[]> = { selic: [], ipca: [], cdi: [], pib: [] }
+
 function IndicadoresInner() {
-  const [dados, setDados] = useState<Record<Serie, Indicador[]>>({ selic: [], ipca: [], cdi: [], pib: [] })
   const [serie, setSerie] = useState<Serie>('selic')
   const [range, setRange] = useState<Range>('12m')
-  const [loading, setLoading] = useState(true)
-  const [error, setError]   = useState<string | null>(null)
 
-  const carregar = useCallback(() => {
-    setLoading(true); setError(null)
-    Promise.all(SERIES.map(s => getIndicadores(s, 120))).then(results => {
-      const next = { selic: [], ipca: [], cdi: [], pib: [] } as Record<Serie, Indicador[]>
-      SERIES.forEach((s, i) => { next[s] = results[i].data })
-      setDados(next)
-    }).catch(e => setError(e instanceof Error ? e.message : 'Erro ao conectar na API'))
-    .finally(() => setLoading(false))
+  const { data: dados, loading, error, reload: carregar } = useApi(async () => {
+    const results = await Promise.all(SERIES.map(s => getIndicadores(s, 120)))
+    const next = { selic: [], ipca: [], cdi: [], pib: [] } as Record<Serie, Indicador[]>
+    SERIES.forEach((s, i) => { next[s] = results[i].data })
+    return next
   }, [])
 
-  useEffect(() => { carregar() }, [carregar]) // eslint-disable-line react-hooks/set-state-in-effect
-
+  const dadosSeguro = dados ?? DADOS_VAZIOS
   const m = META[serie]
-  const reversed = useMemo(() => [...(dados[serie] ?? [])].reverse(), [dados, serie])
+  const reversed = useMemo(() => [...(dadosSeguro[serie] ?? [])].reverse(), [dadosSeguro, serie])
   const sliced   = useMemo(() => {
     const n = RANGE_N[range]
     return n ? reversed.slice(-n) : reversed
@@ -71,12 +59,12 @@ function IndicadoresInner() {
     valor: d.valor,
   })), [sliced])
 
-  const ultimoValor = dados[serie][0]?.valor ?? null
-  const prevValor   = dados[serie][1]?.valor ?? null
+  const ultimoValor = dadosSeguro[serie][0]?.valor ?? null
+  const prevValor   = dadosSeguro[serie][1]?.valor ?? null
   const delta       = ultimoValor != null && prevValor != null ? ultimoValor - prevValor : null
   const dir: 'up' | 'down' | 'flat' = delta == null ? 'flat' : delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'
-  const dataRef     = dados[serie][0]?.data
-    ? new Date(dados[serie][0].data + 'T00:00:00').toLocaleDateString('pt-BR')
+  const dataRef     = dadosSeguro[serie][0]?.data
+    ? new Date(dadosSeguro[serie][0].data + 'T00:00:00').toLocaleDateString('pt-BR')
     : null
 
   const tableRows = useMemo(() => [...sliced].reverse(), [sliced])
@@ -101,11 +89,11 @@ function IndicadoresInner() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {SERIES.map(s => {
           const sm  = META[s]
-          const sv  = dados[s][0]?.valor ?? null
-          const sp  = dados[s][1]?.valor ?? null
+          const sv  = dadosSeguro[s][0]?.valor ?? null
+          const sp  = dadosSeguro[s][1]?.valor ?? null
           const sd  = sv != null && sp != null ? sv - sp : null
           const sdr: 'up' | 'down' | 'flat' = sd == null ? 'flat' : sd > 0 ? 'up' : sd < 0 ? 'down' : 'flat'
-          const spark = [...dados[s]].reverse().slice(-12).map(d => d.valor)
+          const spark = [...dadosSeguro[s]].reverse().slice(-12).map(d => d.valor)
           const active = serie === s
           return (
             <button key={s} onClick={() => setSerie(s)} style={{

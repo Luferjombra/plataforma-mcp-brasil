@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getIndicadores, type Indicador } from '@/lib/api'
+import { Sparkline as SparklineBase } from '@/components/Sparkline'
+import { juroRealFisher } from '@/lib/format'
 
 /* ── types ───────────────────────────────────────────────── */
 interface KpiData {
@@ -36,23 +38,14 @@ const EVENTOS = [
 
 /* ── components ───────────────────────────────────────────── */
 function Sparkline({ data, dir, w = 120, h = 40 }: { data: number[]; dir: KpiData['dir']; w?: number; h?: number }) {
-  if (data.length < 2) return <div style={{ width: w, height: h }} />
-  const pad = 3
-  const min = Math.min(...data), max = Math.max(...data), rng = max - min || 1
-  const pts = data.map((v, i) => [
-    pad + (i / (data.length - 1)) * (w - pad * 2),
-    h - pad - ((v - min) / rng) * (h - pad * 2),
-  ])
-  const line = pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ')
   const col  = dir === 'up' ? 'var(--cl-up)' : dir === 'down' ? 'var(--cl-down)' : 'var(--cl-ink3)'
   const fill = dir === 'up' ? 'var(--cl-up-soft)' : dir === 'down' ? 'var(--cl-down-soft)' : 'var(--cl-line2)'
-  const last = pts[pts.length - 1]
   return (
-    <svg width={w} height={h} style={{ display: 'block', overflow: 'visible' }}>
-      <polygon points={`${pad},${h - pad} ${line} ${w - pad},${h - pad}`} fill={fill} />
-      <polyline points={line} fill="none" stroke={col} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={last[0]} cy={last[1]} r="2.5" fill={col} />
-    </svg>
+    <SparklineBase
+      data={data} width={w} height={h}
+      color={col} fillColor={fill}
+      strokeWidth={1.8} dotRadius={2.5}
+    />
   )
 }
 
@@ -200,7 +193,7 @@ export default function HomePage() {
   const selic = kpis[0].value
   const ipca  = kpis[1].value
   const juroReal = selic != null && ipca != null
-    ? +((selic - ipca) / (1 + ipca / 100)).toFixed(2)
+    ? juroRealFisher(selic, ipca)
     : null
 
   return (

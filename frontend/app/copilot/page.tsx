@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { getIndicadores, perguntarCopilot, APIError } from '@/lib/api'
+import { juroRealFisher } from '@/lib/format'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -48,7 +49,7 @@ export default function CopilotPage() {
   }, [])
 
   const juroReal = lastSelic != null && lastIpca != null
-    ? +((lastSelic - lastIpca) / (1 + lastIpca / 100)).toFixed(2)
+    ? juroRealFisher(lastSelic, lastIpca)
     : null
 
   const chartData = useMemo(() => selicHistory.map(d => ({

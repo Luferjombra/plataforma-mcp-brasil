@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { getNoticias, getIndicadores, type Noticia } from '@/lib/api'
 import { ExternalLink, RefreshCw } from 'lucide-react'
+import { juroRealFisher, formatPctSinal } from '@/lib/format'
 
 type Categoria = 'Todos' | 'Macro' | 'Renda Variável' | 'Renda Fixa' | 'Fundos' | 'Outros'
 
@@ -86,7 +87,7 @@ export default function NoticiasPage() {
 
   const juroReal = useMemo(() => {
     if (selic == null || ipca == null) return null
-    return +((selic - ipca) / (1 + ipca / 100)).toFixed(2)
+    return juroRealFisher(selic, ipca)
   }, [selic, ipca])
 
   const filtradas = useMemo(() => {
@@ -107,8 +108,6 @@ export default function NoticiasPage() {
   const col0 = feedNoticias.filter((_, i) => i % 3 === 0)
   const col1 = feedNoticias.filter((_, i) => i % 3 === 1)
   const col2 = feedNoticias.filter((_, i) => i % 3 === 2)
-
-  const fmtPct = (v: number | null) => v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`
 
   const isSpinning = loading || refreshing
 
@@ -203,7 +202,7 @@ export default function NoticiasPage() {
             {[
               { label: 'Selic Meta',   value: selic   != null ? `${selic.toFixed(2)}%` : '—' },
               { label: 'IPCA 12M',     value: ipca    != null ? `${ipca.toFixed(2)}%`  : '—' },
-              { label: 'Juro Real',    value: juroReal != null ? fmtPct(juroReal)       : '—' },
+              { label: 'Juro Real',    value: juroReal != null ? formatPctSinal(juroReal) : '—' },
             ].map(({ label, value }) => (
               <div key={label}>
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,.45)', margin: '0 0 2px' }}>{label}</p>

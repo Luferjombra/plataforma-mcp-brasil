@@ -6,6 +6,9 @@ import {
   getDebentures, getCRI, getCRA, getAnbimaSparklines,
   AnbimaDebenture, AnbimaCRI, AnbimaCRA,
 } from '@/lib/api'
+import { Sparkline } from '@/components/Sparkline'
+import { formatDataBR } from '@/lib/format'
+import { useApi } from '@/lib/useApi'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -108,12 +111,6 @@ function fmtPU(v: number | null): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-function fmtDate(d: string | null): string {
-  if (!d) return '—'
-  const [y, m, day] = d.split('-')
-  return `${day}/${m}/${y}`
-}
-
 function ratingColor(r: string | null): { bg: string; text: string } {
   if (!r) return { bg: 'var(--cl-line2)', text: 'var(--cl-ink3)' }
   const upper = r.toUpperCase()
@@ -155,23 +152,11 @@ function RatingBadge({ rating }: { rating: string | null }) {
 }
 
 function MiniLine({ values, color }: { values: number[]; color: string }) {
-  if (!values || values.length < 2) {
-    return <svg width={60} height={24} />
-  }
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const range = max - min || 1
-  const w = 60, h = 24, pad = 2
-  const pts = values.map((v, i) => {
-    const x = pad + (i / (values.length - 1)) * (w - pad * 2)
-    const y = pad + (1 - (v - min) / range) * (h - pad * 2)
-    return `${x},${y}`
-  })
-  const pathD = pts.reduce((acc, pt, i) => acc + (i === 0 ? `M${pt}` : `L${pt}`), '')
   return (
-    <svg width={w} height={h} style={{ display: 'block' }}>
-      <path d={pathD} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <Sparkline
+      data={values} width={60} height={24} padding={2}
+      color={color} filled={false} showDot={false} strokeWidth={1.5}
+    />
   )
 }
 
@@ -246,7 +231,7 @@ function BondDetail({ bond, sparkline }: { bond: Bond; sparkline: number[] }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
         {[
           { key: 'Indexador', val: bond.indexador ?? '—' },
-          { key: 'Vencimento', val: fmtDate(bond.data_vencimento) },
+          { key: 'Vencimento', val: formatDataBR(bond.data_vencimento) },
           { key: 'Volume Neg.', val: fmtVol(bond.volume_negociado) },
         ].map(c => (
           <div key={c.key} style={{ padding: 12, background: 'var(--cl-line2)', borderRadius: 8 }}>
@@ -293,22 +278,15 @@ function BondDetail({ bond, sparkline }: { bond: Bond; sparkline: number[] }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+const RENDA_FIXA_VAZIO = { debs: [] as Bond[], cris: [] as Bond[], cras: [] as Bond[], sparklines: {} as Record<string, number[]> }
+
 export default function RendaFixaPage() {
   const [tab, setTab] = useState<TabType>('debentures')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Bond | null>(null)
 
-  const [debs, setDebs] = useState<Bond[]>([])
-  const [cris, setCris] = useState<Bond[]>([])
-  const [cras, setCras] = useState<Bond[]>([])
-  const [sparklines, setSparklines] = useState<Record<string, number[]>>({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    setLoading(true)
-    setError(null)
-    Promise.all([
+  const { data, loading, error } = useApi(async () => {
+    const [debRes, criRes, craRes, debSp, criSp, craSp] = await Promise.all([
       getDebentures(100),
       getCRI(100),
       getCRA(100),
@@ -316,19 +294,20 @@ export default function RendaFixaPage() {
       getAnbimaSparklines('cri', 7).catch(() => ({ data: {} })),
       getAnbimaSparklines('cra', 7).catch(() => ({ data: {} })),
     ])
-      .then(([debRes, criRes, craRes, debSp, criSp, craSp]) => {
-        const d = (debRes.data ?? []).map(toBondFromDeb)
-        const c = (criRes.data ?? []).map(toBondFromCRI)
-        const a = (craRes.data ?? []).map(toBondFromCRA)
-        setDebs(d)
-        setCris(c)
-        setCras(a)
-        setSparklines({ ...debSp.data, ...criSp.data, ...craSp.data })
-        if (d.length > 0) setSelected(d[0])
-      })
-      .catch(e => setError(e.message ?? 'Erro ao carregar dados'))
-      .finally(() => setLoading(false))
+    return {
+      debs: (debRes.data ?? []).map(toBondFromDeb),
+      cris: (criRes.data ?? []).map(toBondFromCRI),
+      cras: (craRes.data ?? []).map(toBondFromCRA),
+      sparklines: { ...debSp.data, ...criSp.data, ...craSp.data },
+    }
   }, [])
+
+  const { debs, cris, cras, sparklines } = data ?? RENDA_FIXA_VAZIO
+
+  useEffect(() => {
+    if (debs.length > 0) setSelected(debs[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debs])
 
   const activeList = tab === 'debentures' ? debs : tab === 'cri' ? cris : cras
 

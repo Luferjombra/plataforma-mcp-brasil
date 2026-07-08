@@ -1,11 +1,7 @@
 // Helpers de formatação e session para o módulo Carteira
 // Tipos Posicao e AnaliseCarteira definidos em @/lib/api
 
-export const fmtBRL = (v: number) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-
-export const fmtPct = (v: number, casas = 2) =>
-  `${v >= 0 ? '+' : ''}${v.toFixed(casas)}%`
+export { formatBRL as fmtBRL, formatPctSinal as fmtPct } from '@/lib/format'
 
 export const fmtPP = (v: number) =>
   `${v >= 0 ? '+' : ''}${v.toFixed(2)}pp`

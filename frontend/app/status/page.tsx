@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { getEtlHealth, type EtlJob, type EtlHealth, type EtlStatus } from '@/lib/api'
+import { formatDataHoraBRT } from '@/lib/format'
 
 const STATUS_CFG: Record<EtlStatus, { label: string; symbol: string; color: string; bg: string }> = {
   ok:      { label: 'Online',        symbol: '✓', color: 'var(--cl-up)',     bg: 'var(--cl-up-soft)'     },
@@ -20,13 +21,6 @@ const SOURCES = [
   { key: 'ANBIMA', label: 'ANBIMA',          endpoint: '/fundos/historico',   matches: (j: string) => /anbima/i.test(j) },
 ]
 
-function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  }) + ' BRT'
-}
 
 function fmtDuration(secs: number | null) {
   if (secs == null) return '—'
@@ -225,7 +219,7 @@ export default function StatusPage() {
                       {[
                         { label: 'Jobs', value: String(srcJobs.length) },
                         { label: 'OK', value: String(srcJobs.filter(j => j.status === 'ok').length) },
-                        { label: 'Última exec.', value: srcJobs[0]?.started_at ? fmtDate(srcJobs[0].started_at).split(' ')[0] : '—' },
+                        { label: 'Última exec.', value: srcJobs[0]?.started_at ? formatDataHoraBRT(srcJobs[0].started_at).split(' ')[0] : '—' },
                         { label: 'Linhas', value: srcJobs.reduce((s, j) => s + (j.rows_upserted ?? 0), 0).toLocaleString('pt-BR') },
                       ].map(m => (
                         <div key={m.label} style={{ background: 'var(--cl-bg)', borderRadius: 4, padding: '6px 8px', border: '1px solid var(--cl-line2)' }}>
