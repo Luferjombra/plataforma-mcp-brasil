@@ -93,7 +93,7 @@ Não promover fonte nova por cima de bugs conhecidos, especialmente F1 (carteira
 - [ ] Completar `rv_eventos_societarios` para os tickers que faltaram (3/31 cobertos oficialmente em `etl_runs`, mais ITUB4/MGLU3 já com dados na tabela; cron diário `0 19 * * 1-5` — ver F11 — converge sozinho ao longo dos próximos dias por causa da cota da brapi)
 
 ### Passo 3 — Investigações pendentes — ~2h
-- [ ] `ELET3`/`RBRF11`: por que zero overlap de datas entre fontes (delisting? rebatização? gap de coleta?)
+- [ ] `ELET3`/`RBRF11`: diagnosticado (2026-07-08) — janelas de datas completamente disjuntas (staging para em nov/out-2025, produção só começa em mar/2026, gap de 4-5,5 meses sem dado em nenhuma fonte apesar do cron diário rodando). Não é gap de coleta, parece rebatização/evento societário. Falta confirmar buscando ticker sucessor em `rv_ativos_staging`. Ver ADR-001 item 5.
 - [x] Critério definitivo para `ETF_OU_FUNDO` (BOVA11, IVVB11, SMAL11, XFIX11) — ✅ CONCLUÍDO (2026-07-08). Lista curada `ETFS_CONHECIDOS` (confirmados via busca — todos ETFs reais) classifica como `ETF`; resto do universo "CI" vira `FUNDO_LISTADO`.
 - [ ] Variação de volume diário no COTAHIST (1.412→1.396→1.257): confirmar que é liquidez, com 1 semana a mais de dados do staging
 
