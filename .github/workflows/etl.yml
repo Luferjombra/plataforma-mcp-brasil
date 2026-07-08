@@ -58,6 +58,7 @@ on:
           - validar_cotahist_ajustado
           - eventos_corporativos
           - ajuste_proventos
+          - diagnosticar_ticker_sucessor
 
 jobs:
   # ── Tesouro Direto (RF) ───────────────────────────────────────────────────
@@ -252,6 +253,28 @@ jobs:
       - name: Rodar validação cruzada (ajustado)
         working-directory: etl
         run: python validar_cotahist.py --usar-ajustado
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+  # ── Diagnóstico pontual — ticker sucessor ELET3/RBRF11 (ADR-001 item 5) ───
+  # Só leitura. Descartável — remover job + script depois de resolver o item 5.
+  etl-diagnosticar-ticker-sucessor:
+    name: Diagnóstico — ticker sucessor ELET3/RBRF11
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.etl == 'diagnosticar_ticker_sucessor'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r etl/requirements.txt
+      - name: Rodar diagnóstico
+        working-directory: etl
+        run: python diagnosticar_ticker_sucessor.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
