@@ -17,6 +17,12 @@ CNPJS_ALVO = [
     "26.324.298/0001-89",  # Kinea Infra FIC
     "00.947.958/0001-94",  # Opportunity Market
     "05.775.774/0001-08",  # Alaska Poland
+    # Sorteados via etl/sortear_fundos.py -- expansão pra Cambial/Crédito Privado
+    "00.822.954/0001-80",  # Itaú B Cambial FIF
+    "54.379.670/0001-90",  # Capannori FI Ações
+    "63.433.149/0001-84",  # Splendore RV FIF Multimercado
+    "54.463.768/0001-20",  # Sofie Infra FI Renda Fixa
+    "60.760.008/0001-88",  # Bradesco BKFD RF Crédito Privado
 ]
 
 # Nomes de exibição para o frontend
@@ -29,6 +35,11 @@ NOMES_DISPLAY = {
     "26.324.298/0001-89": "Kinea Infra FIC",
     "00.947.958/0001-94": "Opportunity Market",
     "05.775.774/0001-08": "Alaska Poland",
+    "00.822.954/0001-80": "Itaú B Cambial",
+    "54.379.670/0001-90": "Capannori Ações",
+    "63.433.149/0001-84": "Splendore RV Multimercado",
+    "54.463.768/0001-20": "Sofie Infra RF",
+    "60.760.008/0001-88": "Bradesco BKFD Crédito Privado",
 }
 
 

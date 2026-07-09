@@ -41,6 +41,14 @@ CNPJS_ALVO = [
     "26.324.298/0001-89",  # Kinea Infra FIC de Fundos Incentivados Infra RF
     "00.947.958/0001-94",  # Opportunity Market FIC de Fundos FI Financeiro
     "05.775.774/0001-08",  # Alaska Poland FI em Ações
+    # Sorteados via sortear_fundos.py (pool registro_fundo/classe.csv,
+    # ~33 mil candidatos) -- expansão pra categorias Cambial/Crédito
+    # Privado que a plataforma ainda não cobria.
+    "00.822.954/0001-80",  # Itaú B Cambial FIF (Cambial)
+    "54.379.670/0001-90",  # Capannori FI Ações (Ações)
+    "63.433.149/0001-84",  # Splendore RV FIF Multimercado (Multimercado)
+    "54.463.768/0001-20",  # Sofie Infra FI Renda Fixa (Renda Fixa)
+    "60.760.008/0001-88",  # Bradesco BKFD RF Crédito Privado (Crédito Privado, aprox.)
 ]
 
 
