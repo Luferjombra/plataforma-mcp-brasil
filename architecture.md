@@ -174,11 +174,10 @@ def run():
 - Cada fonte vira um `ETLRun` separado (`noticias_infomoney`, etc.) para granularidade no `etl_runs`
 
 ### CVM (fundos.py)
-- **Problema:** Cloudflare WAF bloqueia todas as requisições HTTP automatizadas com 403
-- **Solução:** download manual dos arquivos no navegador → `etl/data/cvm/`
-- Script aceita `.csv` e `.zip` (descompacta automaticamente)
+- Download automático a cada execução (`garantir_cadastro_local`/`garantir_historico_local`) — necessário porque o runner do GitHub Actions começa de um checkout limpo
+- **Informe diário mudou de formato:** a partir de jul/2025 a CVM publica `inf_diario_fi_AAAAMM.zip` em vez de `.csv` (mesma URL base, descoberto via API CKAN do portal — `package_show` em `fi-doc-inf_diario` — depois que o `.csv` direto passou a dar 403). Script aceita `.csv` e `.zip` (descompacta automaticamente)
 - **Mudança de schema CVM:** coluna `CNPJ_FUNDO` renomeada para `CNPJ_FUNDO_CLASSE` nos arquivos de 2024+. O script detecta e normaliza automaticamente.
-- **Duplicatas:** cad_fi.csv e inf_diario_fi_*.csv podem ter linhas repetidas — `drop_duplicates()` antes de cada upsert
+- **Duplicatas:** cad_fi.csv e inf_diario_fi_* podem ter linhas repetidas — `drop_duplicates()` antes de cada upsert
 - `upsert_historico()` tem retry de 3 tentativas com backoff (1s, 2s)
 
 ### ANBIMA Feed API (anbima.py)

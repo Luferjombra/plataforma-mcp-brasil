@@ -2,7 +2,7 @@
 ETL — Fundos de Investimento
 Fonte: CVM (Comissão de Valores Mobiliários), portal de dados abertos.
 
-O cadastro (cad_fi.csv) e os informes diários (inf_diario_fi_AAAAMM.csv) são
+O cadastro (cad_fi.csv) e os informes diários (inf_diario_fi_AAAAMM.zip) são
 baixados automaticamente a cada execução -- necessário porque o runner do
 GitHub Actions começa de um checkout limpo (etl/data/cvm/ só tem .gitkeep,
 os CSVs estão no .gitignore por serem grandes demais para o repo). Rodar
@@ -119,9 +119,12 @@ def garantir_cadastro_local(client: httpx.Client) -> None:
 
 def garantir_historico_local(client: httpx.Client) -> None:
     """Baixa os informes diários (mês corrente + anterior) se ainda não
-    existirem localmente."""
+    existirem localmente. A CVM passou a publicar em .zip a partir de
+    jul/2025 (mesma URL base e convenção de nome do .csv legado, achado via
+    API CKAN do portal -- package_show em fi-doc-inf_diario -- depois que o
+    .csv direto passou a dar 403 pra todo mês testado)."""
     for aaaamm in meses_a_baixar():
-        nome = f"inf_diario_fi_{aaaamm}.csv"
+        nome = f"inf_diario_fi_{aaaamm}.zip"
         caminho = os.path.join(DATA_DIR, nome)
         if os.path.exists(caminho):
             continue
@@ -213,25 +216,33 @@ def _ler_csv_bytes(dados: bytes, nome: str) -> pd.DataFrame:
     return df
 
 
+def ler_arquivo_mensal(caminho: str) -> pd.DataFrame:
+    """Lê um arquivo mensal de informe diário (.csv ou .zip -- a CVM passou a
+    publicar em .zip a partir de jul/2025, ver garantir_historico_local) e
+    normaliza a coluna de CNPJ pro nome comum "CNPJ_FUNDO" (a CVM usa
+    CNPJ_FUNDO_CLASSE no formato novo, CNPJ_FUNDO no antigo). Levanta exceção
+    se o arquivo/CSV interno não puder ser lido -- quem chama decide como
+    tratar (ver processar_arquivo e sortear_fundos.py::carregar_pl_recente)."""
+    if caminho.endswith(".zip"):
+        with zipfile.ZipFile(caminho) as zf:
+            # Pega o primeiro CSV dentro do zip
+            csvs_internos = [n for n in zf.namelist() if n.endswith(".csv")]
+            if not csvs_internos:
+                raise ValueError(f"nenhum CSV dentro de {os.path.basename(caminho)}")
+            with zf.open(csvs_internos[0]) as f:
+                df = _ler_csv_bytes(f.read(), csvs_internos[0])
+    else:
+        with open(caminho, "rb") as f:
+            df = _ler_csv_bytes(f.read(), os.path.basename(caminho))
+
+    col_cnpj = "CNPJ_FUNDO_CLASSE" if "CNPJ_FUNDO_CLASSE" in df.columns else "CNPJ_FUNDO"
+    return df.rename(columns={col_cnpj: "CNPJ_FUNDO"})
+
+
 def processar_arquivo(caminho: str, cnpjs: list[str]) -> pd.DataFrame | None:
     """Lê um arquivo mensal (.csv ou .zip) e filtra pelos CNPJs alvo."""
     try:
-        if caminho.endswith(".zip"):
-            with zipfile.ZipFile(caminho) as zf:
-                # Pega o primeiro CSV dentro do zip
-                csvs_internos = [n for n in zf.namelist() if n.endswith(".csv")]
-                if not csvs_internos:
-                    print(f"  ⚠ Nenhum CSV dentro de {os.path.basename(caminho)}")
-                    return None
-                with zf.open(csvs_internos[0]) as f:
-                    df = _ler_csv_bytes(f.read(), csvs_internos[0])
-        else:
-            with open(caminho, "rb") as f:
-                df = _ler_csv_bytes(f.read(), os.path.basename(caminho))
-
-        # CVM usa CNPJ_FUNDO_CLASSE no formato novo, CNPJ_FUNDO no antigo
-        col_cnpj = "CNPJ_FUNDO_CLASSE" if "CNPJ_FUNDO_CLASSE" in df.columns else "CNPJ_FUNDO"
-        df = df.rename(columns={col_cnpj: "CNPJ_FUNDO"})
+        df = ler_arquivo_mensal(caminho)
         filtrado = df[df["CNPJ_FUNDO"].isin(cnpjs)].copy()
         return filtrado if not filtrado.empty else None
 
@@ -320,8 +331,8 @@ def run():
         arquivos = listar_arquivos_historico()
 
         if not arquivos:
-            print("⚠ Nenhum arquivo inf_diario_fi_*.csv disponível (download falhou e nada em cache local).\n")
-            batch_run.set_status("error", "Download de inf_diario_fi_*.csv falhou e não há arquivo local em cache.")
+            print("⚠ Nenhum arquivo inf_diario_fi_* disponível (download falhou e nada em cache local).\n")
+            batch_run.set_status("error", "Download de inf_diario_fi_* falhou e não há arquivo local em cache.")
             return
 
         print(f"→ {len(arquivos)} arquivo(s) encontrado(s) em etl/data/cvm/\n")
