@@ -159,27 +159,49 @@ def run() -> None:
     print("=== Investigação CVM Resolução 175 (fundos/classes/subclasses) ===")
 
     with httpx.Client() as client:
-        # 1. cad_fi.csv -- confirma tamanho/estrutura e se os 8 CNPJs curados
+        # 1. API CKAN primeiro -- é a pergunta ainda em aberto (fonte de
+        # série diária de cotas pós-RCVM175 pra fundos_historico/
+        # fund_analytics.py). Os passos 2-5 abaixo já têm resposta
+        # confirmada de uma rodada anterior bem-sucedida; se o runner desta
+        # vez tiver a mesma instabilidade de rede já vista 2x ("Network is
+        # unreachable", 60s por URL, come o timeout de 5min inteiro antes de
+        # chegar ao fim do script), pelo menos a pergunta nova é respondida
+        # primeiro em vez de ficar de novo sem resposta.
+        resultado = consultar_ckan(
+            client, "package_show", {"id": "fi-doc-inf_diario"},
+            "fi-doc-inf_diario (recursos do informe diário atual)",
+        )
+        if resultado:
+            inspecionar_resources(resultado)
+
+        resultado = consultar_ckan(
+            client, "group_show", {"id": "fundos-de-investimento", "include_datasets": "true"},
+            "grupo fundos-de-investimento (todos os datasets)",
+        )
+        if resultado:
+            inspecionar_pacotes_do_grupo(resultado)
+
+        # 2. cad_fi.csv -- confirma tamanho/estrutura e se os 8 CNPJs curados
         # ainda estão no dataset "não adaptados" que fundos.py usa hoje.
         c = tentar(f"{BASE_CAD}/cad_fi.csv", client, "cad_fi.csv (legado / não-adaptados)")
         if c:
             inspecionar_csv(c, "cad_fi.csv")
             checar_cnpjs_curados(c, "cad_fi.csv")
 
-        # 2. Tentativas diretas dos CSVs novos (talvez não existam soltos,
-        # só dentro do zip -- ver item 4).
+        # 3. Tentativas diretas dos CSVs novos (talvez não existam soltos,
+        # só dentro do zip -- ver item 5).
         for nome_arq in ["registro_fundo.csv", "registro_classe.csv", "registro_subclasse.csv"]:
             c = tentar(f"{BASE_CAD}/{nome_arq}", client, nome_arq)
             if c:
                 inspecionar_csv(c, nome_arq)
                 checar_cnpjs_curados(c, nome_arq)
 
-        # 3. Sonda inf_diario_fi legado em vários meses -- descontinuado de
+        # 4. Sonda inf_diario_fi legado em vários meses -- descontinuado de
         # vez, ou só os 2 mais recentes têm lag maior que o esperado?
         for aaaamm in ["202607", "202605", "202601", "202412"]:
             tentar(f"{BASE_HIST}/inf_diario_fi_{aaaamm}.csv", client, f"inf_diario_fi_{aaaamm}.csv")
 
-        # 4. Bundle em zip, conforme documentado no portal -- por último e
+        # 5. Bundle em zip, conforme documentado no portal -- por último e
         # com timeout mais curto (ver comentário histórico no git blame:
         # a CVM já ficou >8min sem responder nem falhar numa tentativa,
         # timeout do httpx não é teto de duração total, só por operação).
@@ -195,26 +217,6 @@ def run() -> None:
                         dados = f.read()
                     inspecionar_csv(dados, nome_interno)
                     checar_cnpjs_curados(dados, nome_interno)
-
-        # 5. API CKAN -- fonte de verdade sobre o que existe de fato no
-        # portal, em vez de adivinhar nome de arquivo pra um possível
-        # informe diário por classe (ver docstring do módulo). WebFetch/
-        # WebSearch não alcançam dados.cvm.gov.br desta sandbox (bloqueio de
-        # rede da própria sandbox, não do site) -- só o runner do GitHub
-        # Actions alcança (confirmado nas rodadas anteriores deste script).
-        resultado = consultar_ckan(
-            client, "package_show", {"id": "fi-doc-inf_diario"},
-            "fi-doc-inf_diario (recursos do informe diário atual)",
-        )
-        if resultado:
-            inspecionar_resources(resultado)
-
-        resultado = consultar_ckan(
-            client, "group_show", {"id": "fundos-de-investimento", "include_datasets": "true"},
-            "grupo fundos-de-investimento (todos os datasets)",
-        )
-        if resultado:
-            inspecionar_pacotes_do_grupo(resultado)
 
     print("\n=== Fim da investigação ===")
 
