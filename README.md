@@ -111,7 +111,9 @@ plataforma-mcp-brasil/
 │   ├── cotahist_backfill.py ← COTAHIST anual — backfill histórico (staging)
 │   ├── rf_tesouro.py        ← Tesouro Transparente CSV
 │   ├── anbima.py            ← ANBIMA Feed API (OAuth2) — índices/debêntures/CRI/CRA/VNA
-│   ├── fundos.py            ← CVM arquivos locais (anti-WAF)
+│   ├── fundos.py            ← CVM cadastro+histórico — 13 CNPJs curados (CNPJS_ALVO)
+│   ├── sortear_fundos.py    ← sorteio de candidatos novos p/ curadoria manual (não é ETL de produção)
+│   ├── fund_analytics.py    ← retornos/volatilidade/sharpe_12m/max_drawdown/%CDI por fundo (fund_analytics_metrics)
 │   ├── noticias.py          ← RSS InfoMoney/Money Times/Valor Investe
 │   └── data/
 │       └── cvm/             ← arquivos .csv/.zip baixados manualmente
@@ -167,8 +169,11 @@ plataforma-mcp-brasil/
 | rv_ativos | ~2.368 | brapi.dev (~30) + COTAHIST/B3 (~2.338) | pós-corte Fase 2, ver ADR-001 |
 | rv_historico | ~371.000 | brapi.dev (~22.000) + COTAHIST/B3 (~349.452) | 2020–hoje |
 | rv_ativos_staging / rv_historico_staging | crescendo | COTAHIST (B3) | operação paralela pós-corte (ver ADR-001) |
-| fundos_cadastro | 8 | CVM cad_fi.csv | — |
-| fundos_historico | ~4.852 | CVM inf_diario_fi_*.zip | 2024–2026 |
+| fundos_cadastro | 13 curados (`CNPJS_ALVO`)* | CVM cad_fi.csv + registro_fundo_classe.zip (pós-Resolução CVM 175) | — |
+| fundos_historico | crescendo | CVM inf_diario_fi_*.zip | 2024–2026 |
+| fund_analytics_metrics | ≤13 | calculado (retornos 1m/3m/6m/12m/ytd, volatilidade_12m, sharpe_12m, max_drawdown, pct_cdi_12m) sobre fundos_historico — fundo com <20 cotas fica sem métrica | — |
+
+_\* tabela pode ter registros além dos 13 curados (herdados de testes) — `GET /fundos/` filtra por `CNPJS_ALVO`, ver `docs/erros_e_solucoes.md`._
 | rf_titulos | 78 | Tesouro Transparente CSV | — |
 | rf_historico | ~65.927 | Tesouro Transparente CSV | 2020–hoje |
 | anbima_indices / anbima_debentures_* / anbima_cri_* / anbima_cra_* | — | ANBIMA Feed API | pendente de acesso liberado no portal (ver `docs/erros_e_solucoes.md`) |
@@ -221,14 +226,14 @@ python rf_tesouro.py
 python cotahist.py                       # COTAHIST diário (staging)
 python cotahist_backfill.py --anos 1     # backfill histórico (staging)
 python anbima.py                         # requer ANBIMA_CLIENT_ID/SECRET
-# Para fundos: baixar arquivos em https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/
-# Salvar em etl/data/cvm/ e executar:
-python fundos.py
+python fundos.py                         # cadastro + histórico CVM — download automático
+python sortear_fundos.py                 # curadoria manual: sorteia candidatos novos fora do CNPJS_ALVO
+python fund_analytics.py                 # retornos/volatilidade/sharpe_12m/max_drawdown/%CDI por fundo
 ```
 
-### ETL de Fundos — por que arquivos locais?
+### ETL de Fundos — download automático
 
-O portal CVM (`dados.cvm.gov.br`) usa Cloudflare WAF que bloqueia requisições HTTP automatizadas com 403. A solução é baixar os arquivos manualmente no navegador e colocá-los em `etl/data/cvm/`. O script aceita `.csv` e `.zip`.
+`fundos.py` baixa sozinho tudo que precisa a cada execução (`garantir_cadastro_local`/`garantir_historico_local`/`garantir_registro_novo_local`), sem passo manual: `cad_fi.csv` (cadastro legado), `inf_diario_fi_AAAAMM.zip` (histórico mensal) e `registro_fundo_classe.zip` (cadastro pós-Resolução CVM 175, usado como fallback para fundos que `cad_fi.csv` não cobre mais). Os arquivos ficam em `etl/data/cvm/` como cache local entre execuções — não é preciso baixar nada manualmente no navegador.
 
 ## Roadmap MVP (8 semanas) + extensões pós-MVP
 

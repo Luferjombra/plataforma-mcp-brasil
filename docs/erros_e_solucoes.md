@@ -155,20 +155,49 @@ def safe_float(value) -> float | None:
 
 ## ETL — Fundos de Investimento (CVM)
 
-### CVM — HTTP 403 Forbidden (Cloudflare WAF)
+### CVM — HTTP 403 Forbidden (Cloudflare WAF) — histórico, já resolvido
 
 **Erro:**
 ```
 HTTP 403 — resposta HTML da Cloudflare
 ```
 
-**Causa:** `dados.cvm.gov.br` usa Cloudflare WAF que bloqueia todas as requisições HTTP automatizadas, independente de headers, User-Agent, Referer ou follow_redirects.
+**Causa:** Em versões antigas do script, `dados.cvm.gov.br` retornava 403 pra certas requisições automatizadas (variava por header/rota). Chegou a exigir download manual no navegador como workaround temporário.
 
-**Solução:** Baixar os arquivos **manualmente no navegador** e salvá-los em `etl/data/cvm/`. O script lê os arquivos locais.
+**Status atual:** `fundos.py` baixa tudo automaticamente hoje (`garantir_cadastro_local`/`garantir_historico_local`/`garantir_registro_novo_local`) — validado repetidamente via GitHub Actions em produção, sem 403. Não é mais necessário baixar nada manualmente. Os arquivos ficam cacheados em `etl/data/cvm/` entre execuções.
 
 **Links:**
 - Cotas diárias: https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/
-- Cadastro: https://dados.cvm.gov.br/dados/FI/CAD/DADOS/cad_fi.csv
+- Cadastro legado: https://dados.cvm.gov.br/dados/FI/CAD/DADOS/cad_fi.csv
+- Cadastro pós-Resolução CVM 175: https://dados.cvm.gov.br/dados/FI/CAD/DADOS/registro_fundo_classe.zip
+
+---
+
+### CVM — informe diário mudou de `.csv` pra `.zip` (jul/2025)
+
+**Sintoma:** Download direto de `inf_diario_fi_AAAAMM.csv` passou a dar 403 a partir de jul/2025.
+
+**Diagnóstico:** Não foi descontinuação — a CVM só mudou o formato de publicação para `.zip` na mesma URL base. Confirmado via API CKAN do portal (`package_show` em `fi-doc-inf_diario`).
+
+**Solução:** `fundos.py` aceita `.csv` e `.zip`, descompactando automaticamente quando necessário.
+
+---
+
+### CVM — FK constraint zera histórico ao expandir CNPJS_ALVO sem cadastro completo
+
+**Erro:**
+```
+23503 foreign key violation — fundos_historico_cnpj_fkey
+```
+
+**Causa:** `fundos_historico_cnpj_fkey` exige que o `cnpj` já exista em `fundos_cadastro`. `upsert_historico()` agrupa **todos** os CNPJs de um mês num único upsert — se 1 CNPJ do lote não tiver cadastro resolvido, o Postgres rejeita o upsert inteiro, não só a linha daquele CNPJ. Ao expandir `CNPJS_ALVO` de 8 para 13 fundos, 4 dos 5 novos não estavam em `cad_fi.csv` (cadastro legado) — isso derrubou o histórico de todos os 13 fundos (200 registros salvos → 0), não só dos 4 novos.
+
+**Solução (3 rounds de pair-review até fechar):**
+1. `carregar_cadastro_novo()` complementa `cad_fi.csv` lendo `registro_fundo_classe.zip` (pós-Resolução CVM 175) — filtrando por `CNPJ_Classe` em `registro_classe.csv`, não por `CNPJ_Fundo` em `registro_fundo.csv` (são colunas diferentes: fundo multi-classe tem CNPJ "guarda-chuva" próprio, cada classe tem o seu).
+2. Carregamento do cadastro novo é best-effort (try/except) — se o zip vier corrompido/schema mudar, o histórico não trava por causa disso.
+3. `run()` filtra `cnpjs_alvo` pelos CNPJs efetivamente resolvidos nesta execução antes de chamar o histórico — e distingue "cad_fi.csv falhou totalmente" (usa a lista completa + `ETLRun.set_status("partial", ...)`) de "cadastro resolvido mas incompleto" (filtra e avisa quais CNPJs ficaram de fora), evitando tanto o "0 registros silencioso" quanto o "sucesso falso".
+
+**Lição:** ao adicionar CNPJ novo em `CNPJS_ALVO`, garantir que o cadastro dele resolve em pelo menos uma das duas fontes (`cad_fi.csv` ou `registro_fundo_classe.zip`) *antes* de confiar no histórico — validar via dispatch real, não só localmente.
 
 ---
 
@@ -338,11 +367,11 @@ PYTHON_VERSION = 3.12.0
 
 ## Frontend — Fundos
 
-### Fundos — lista mostra todos os fundos do banco, não só os 8 alvos
+### Fundos — lista mostra todos os fundos do banco, não só os 13 alvos
 
 **Causa:** A rota `GET /fundos/` sem filtro retorna todos os registros de `fundos_cadastro`, que inclui fundos extras inseridos por engano ou testes.
 
-**Solução:** Filtrar no backend pelos 8 CNPJs alvo:
+**Solução:** Filtrar no backend pelos 13 CNPJs alvo:
 ```python
 query = supabase.table("fundos_cadastro").select("*").in_("cnpj", CNPJS_ALVO)
 ```

@@ -124,12 +124,27 @@ jobs:
             in_all: true
 
           # ── Fundos de Investimento (CVM) ─────────────────────────────
+          # timeout de job explícito (achado real via workflow_dispatch): a
+          # CVM ficou >12min sem responder nem falhar num dispatch de teste
+          # do download automático (cad_fi.csv/inf_diario_fi via
+          # garantir_cadastro_local/garantir_historico_local) -- o mesmo
+          # comportamento de "transferência lenta nunca estoura timeout por
+          # request" já visto em investigar_cvm_175. Sem teto, ficaria preso
+          # até o default de 360min.
+          # 30min, não 20 -- achado de revisão: o pior caso já configurado
+          # DENTRO do script (retries de baixar_arquivo_http, sem backoff)
+          # soma sozinho ~21min só em downloads (cad_fi.csv: 3x180s=9min;
+          # inf_diario_fi x2 meses: 2x180s cada=12min), antes de
+          # checkout/pip install/parsing/upsert. Um teto de 20min mataria
+          # até uma execução normal (rede lenta mas progredindo), não só um
+          # hang de verdade -- 30min dá folga real sobre esse teto interno.
           - id: fundos
             label: 'ETL Fundos de Investimento (CVM)'
             script: fundos.py
             args: ''
             crons: ['0 21 * * 1-5']
             in_all: true
+            timeout: 30
 
           # ── Métricas analíticas de fundos (Sharpe/vol/drawdown/%CDI) --
           # roda 1h depois de 'fundos' (19h BRT) pra calcular em cima do
@@ -258,6 +273,10 @@ jobs:
             args: ''
             crons: []
             in_all: false
+            # mesmo risco de hang de 'fundos' (chama as mesmas funções
+            # garantir_cadastro_local/garantir_historico_local) -- mesmo teto
+            # (ver comentário em 'fundos' sobre por que 30min, não 20).
+            timeout: 30
 
           # ── Notícias RSS ──────────────────────────────────────────────
           - id: noticias
@@ -315,3 +334,8 @@ jobs:
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
           ANBIMA_CLIENT_ID: ${{ secrets.ANBIMA_CLIENT_ID }}
           ANBIMA_CLIENT_SECRET: ${{ secrets.ANBIMA_CLIENT_SECRET }}
+          # Achado: sem TTY, o stdout do Python roda bufferizado -- quando o
+          # job é morto por timeout-minutes (ex: investigar_cvm_175), tudo
+          # que ficou no buffer é perdido, nenhum print() chega ao log. Já
+          # aconteceu 2x (job cancelado sem nenhuma linha de output).
+          PYTHONUNBUFFERED: '1'
