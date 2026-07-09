@@ -19,6 +19,15 @@ legado ainda é publicado (testando vários meses, não só os 2 mais
 recentes), e verifica se os 8 CNPJs já rastreados (CNPJS_ALVO) aparecem no
 cadastro legado ou no novo.
 
+Achado da rodada anterior: inf_diario_fi confirmado morto (403 em 5 meses
+testados, incluindo dez/2024) -- não é lag, é descontinuação de fato. O zip
+novo (registro_fundo_classe.zip) resolve cadastro/PL, mas NÃO tem série
+histórica diária de cotas (só 1 PL "mais recente" por fundo/classe) --
+fund_analytics.py precisa de cota diária pra Sharpe/vol/drawdown. Passo 5
+abaixo consulta a API CKAN do próprio portal (package_show/group_show) pra
+descobrir de fato -- não adivinhar -- se existe um informe diário novo por
+classe de cotas e qual o nome/padrão real do arquivo.
+
 Achado de uma rodada anterior: a 1a versão desse último check comparava
 substring cru contra o texto inteiro do arquivo -- dava falso negativo em
 registro_fundo.csv/registro_classe.csv, que guardam CNPJ sem pontuação
@@ -41,6 +50,7 @@ from log_etl import baixar_arquivo_http
 
 BASE_CAD = "https://dados.cvm.gov.br/dados/FI/CAD/DADOS"
 BASE_HIST = "https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS"
+BASE_API = "https://dados.cvm.gov.br/api/3/action"
 
 # Coluna que identifica o CNPJ do próprio fundo/classe em cada arquivo --
 # nomes confirmados nos headers reais (rodada anterior). registro_subclasse.csv
@@ -106,6 +116,45 @@ def checar_cnpjs_curados(conteudo: bytes, nome: str) -> None:
         print(f"  [{nome}] {cnpj}: {'PRESENTE' if achou else 'ausente'}")
 
 
+def consultar_ckan(client: httpx.Client, endpoint: str, params: dict, nome: str, timeout: float = 30.0) -> dict | None:
+    """Consulta a API CKAN do portal (o mesmo motor por trás das páginas de
+    dataset) -- fonte de verdade sobre quais recursos/arquivos existem de
+    fato, em vez de adivinhar nome de arquivo. Chamada direta (não usa
+    baixar_arquivo_http) porque a resposta é JSON pequeno, não CSV/zip."""
+    url = f"{BASE_API}/{endpoint}"
+    print(f"\n--- CKAN API: {nome} ---\n  {url} params={params}")
+    try:
+        resp = client.get(url, params=params, timeout=timeout, headers={"User-Agent": DEFAULT_USER_AGENT})
+    except (httpx.TimeoutException, httpx.ConnectError) as e:
+        print(f"  -> falha de conexão: {e}")
+        return None
+    if resp.status_code != 200:
+        print(f"  -> HTTP {resp.status_code}")
+        return None
+    dados = resp.json()
+    if not dados.get("success"):
+        print(f"  -> success=false: {dados.get('error')}")
+        return None
+    return dados["result"]
+
+
+def inspecionar_resources(resultado: dict) -> None:
+    recursos = resultado.get("resources", [])
+    print(f"  {len(recursos)} recurso(s) no pacote '{resultado.get('name')}':")
+    for r in recursos:
+        ultima_mod = r.get("last_modified") or r.get("created")
+        print(f"    - {r.get('name')} | formato={r.get('format')} | última_modificação={ultima_mod}")
+        print(f"      url={r.get('url')}")
+
+
+def inspecionar_pacotes_do_grupo(resultado: dict) -> None:
+    pacotes = resultado.get("packages", [])
+    nome_grupo = resultado.get("display_name") or resultado.get("name")
+    print(f"  {len(pacotes)} dataset(s) no grupo '{nome_grupo}':")
+    for p in pacotes:
+        print(f"    - {p.get('name')}: {p.get('title')}")
+
+
 def run() -> None:
     print("=== Investigação CVM Resolução 175 (fundos/classes/subclasses) ===")
 
@@ -146,6 +195,26 @@ def run() -> None:
                         dados = f.read()
                     inspecionar_csv(dados, nome_interno)
                     checar_cnpjs_curados(dados, nome_interno)
+
+        # 5. API CKAN -- fonte de verdade sobre o que existe de fato no
+        # portal, em vez de adivinhar nome de arquivo pra um possível
+        # informe diário por classe (ver docstring do módulo). WebFetch/
+        # WebSearch não alcançam dados.cvm.gov.br desta sandbox (bloqueio de
+        # rede da própria sandbox, não do site) -- só o runner do GitHub
+        # Actions alcança (confirmado nas rodadas anteriores deste script).
+        resultado = consultar_ckan(
+            client, "package_show", {"id": "fi-doc-inf_diario"},
+            "fi-doc-inf_diario (recursos do informe diário atual)",
+        )
+        if resultado:
+            inspecionar_resources(resultado)
+
+        resultado = consultar_ckan(
+            client, "group_show", {"id": "fundos-de-investimento", "include_datasets": "true"},
+            "grupo fundos-de-investimento (todos os datasets)",
+        )
+        if resultado:
+            inspecionar_pacotes_do_grupo(resultado)
 
     print("\n=== Fim da investigação ===")
 
