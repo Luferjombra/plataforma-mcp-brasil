@@ -8,19 +8,29 @@ novos fundos rodou contra a CVM real e voltou com só 21 candidatos --
 achado: cad_fi.csv (o que fundos.py usa hoje) parece cobrir só o dataset
 "Fundos de Investimento - Não Adaptados RCVM175", um universo cada vez
 menor. A maior parte migrou pra uma estrutura nova (registro_fundo.csv,
-registro_classe.csv, registro_subclasse.csv, possivelmente dentro de um
-zip registro_fundo_classe.zip), que aparentemente já traz Patrimonio_Liquido
-direto no cadastro -- se confirmado, elimina a necessidade de baixar o
-inf_diario_fi mensal (dezenas/centenas de MB) só pra filtrar por PL.
+registro_classe.csv, registro_subclasse.csv, dentro de um zip
+registro_fundo_classe.zip), que já traz Patrimonio_Liquido direto no
+cadastro -- se os 8 CNPJs curados estiverem lá, elimina a necessidade de
+baixar o inf_diario_fi mensal (dezenas/centenas de MB) só pra filtrar/
+atualizar por PL.
 
 Este script tenta baixar e inspecionar tudo isso, sonda se o inf_diario_fi
 legado ainda é publicado (testando vários meses, não só os 2 mais
 recentes), e verifica se os 8 CNPJs já rastreados (CNPJS_ALVO) aparecem no
-cadastro legado ou não.
+cadastro legado ou no novo.
+
+Achado de uma rodada anterior: a 1a versão desse último check comparava
+substring cru contra o texto inteiro do arquivo -- dava falso negativo em
+registro_fundo.csv/registro_classe.csv, que guardam CNPJ sem pontuação
+("00016999000167"), diferente de cad_fi.csv ("00.016.999/0001-67"). Reescrito
+pra parsear a coluna de CNPJ de verdade (csv.DictReader) e comparar só
+dígitos dos dois lados -- também evita falso positivo por concatenação
+acidental de dígitos entre colunas vizinhas, que um substring cru arriscaria.
 
 Uso: python investigar_cvm_175.py
 """
 
+import csv
 import io
 import zipfile
 
@@ -31,6 +41,19 @@ from log_etl import baixar_arquivo_http
 
 BASE_CAD = "https://dados.cvm.gov.br/dados/FI/CAD/DADOS"
 BASE_HIST = "https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS"
+
+# Coluna que identifica o CNPJ do próprio fundo/classe em cada arquivo --
+# nomes confirmados nos headers reais (rodada anterior). registro_subclasse.csv
+# não tem CNPJ próprio (é vinculada por ID_Registro_Classe), fica de fora.
+COLUNA_CNPJ = {
+    "cad_fi.csv": "CNPJ_FUNDO",
+    "registro_fundo.csv": "CNPJ_Fundo",
+    "registro_classe.csv": "CNPJ_Classe",
+}
+
+
+def normalizar_cnpj(cnpj: str) -> str:
+    return "".join(c for c in cnpj if c.isdigit())
 
 
 def tentar(url: str, client: httpx.Client, nome: str, timeout: float = 60.0) -> bytes | None:
@@ -62,9 +85,24 @@ def inspecionar_csv(conteudo: bytes, nome: str, n_amostras: int = 2) -> None:
 
 
 def checar_cnpjs_curados(conteudo: bytes, nome: str) -> None:
+    """Compara CNPJS_ALVO (normalizado, só dígitos) contra a coluna de CNPJ
+    do próprio fundo/classe -- parseada de verdade via csv.DictReader, não
+    um substring cru no texto inteiro (ver docstring do módulo)."""
+    coluna = COLUNA_CNPJ.get(nome)
+    if coluna is None:
+        print(f"  [{nome}] sem coluna de CNPJ própria conhecida -- pulando checagem")
+        return
+
     texto = conteudo.decode("latin-1", errors="replace")
+    leitor = csv.DictReader(io.StringIO(texto), delimiter=";")
+    if coluna not in (leitor.fieldnames or []):
+        print(f"  [{nome}] coluna '{coluna}' não encontrada -- header real: {leitor.fieldnames}")
+        return
+
+    presentes = {normalizar_cnpj(linha.get(coluna) or "") for linha in leitor}
+    presentes.discard("")
     for cnpj in CNPJS_ALVO:
-        achou = cnpj in texto
+        achou = normalizar_cnpj(cnpj) in presentes
         print(f"  [{nome}] {cnpj}: {'PRESENTE' if achou else 'ausente'}")
 
 
@@ -80,7 +118,7 @@ def run() -> None:
             checar_cnpjs_curados(c, "cad_fi.csv")
 
         # 2. Tentativas diretas dos CSVs novos (talvez não existam soltos,
-        # só dentro do zip -- ver item 3).
+        # só dentro do zip -- ver item 4).
         for nome_arq in ["registro_fundo.csv", "registro_classe.csv", "registro_subclasse.csv"]:
             c = tentar(f"{BASE_CAD}/{nome_arq}", client, nome_arq)
             if c:
@@ -92,12 +130,10 @@ def run() -> None:
         for aaaamm in ["202607", "202605", "202601", "202412"]:
             tentar(f"{BASE_HIST}/inf_diario_fi_{aaaamm}.csv", client, f"inf_diario_fi_{aaaamm}.csv")
 
-        # 4. Bundle em zip, conforme mencionado na documentação do portal --
-        # por último e com timeout mais curto: acho que os 2 timeouts >5min
-        # nas rodadas anteriores (cad_fi_hist.zip, e possivelmente este zip
-        # também) são um arquivo grande demais pro objetivo de diagnóstico
-        # -- timeout do httpx não é um teto de duração total, só por
-        # operação, então nada aqui "estoura" mesmo demorando muito.
+        # 4. Bundle em zip, conforme documentado no portal -- por último e
+        # com timeout mais curto (ver comentário histórico no git blame:
+        # a CVM já ficou >8min sem responder nem falhar numa tentativa,
+        # timeout do httpx não é teto de duração total, só por operação).
         c = tentar(
             f"{BASE_CAD}/registro_fundo_classe.zip", client,
             "registro_fundo_classe.zip", timeout=20.0,
