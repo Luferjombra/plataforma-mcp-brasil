@@ -56,17 +56,15 @@ import pandas as pd
 from fundos import (
     CNPJS_ALVO,
     DATA_DIR,
-    DEFAULT_USER_AGENT,
     garantir_historico_local,
+    garantir_registro_novo_local,
     ler_arquivo_mensal,
     listar_arquivos_historico,
+    normalizar_cnpj,
 )
-from log_etl import baixar_arquivo_http
 
 PL_MINIMO = 10_000_000  # R$10M -- piso de relevância, não de "melhor fundo"
 SEED = 20260708  # data da decisão -- reprodutível, não é escolha manual
-
-URL_REGISTRO_ZIP = "https://dados.cvm.gov.br/dados/FI/CAD/DADOS/registro_fundo_classe.zip"
 
 CATEGORIAS_ALVO = {
     "Cambial":       ["CAMBIAL"],
@@ -79,33 +77,6 @@ CATEGORIAS_ALVO = {
 # estratégia. Pode não achar nenhum candidato; nesse caso o script reporta
 # 0, não força um resultado.
 TERMOS_CREDITO_PRIVADO = ["CRÉDITO PRIVADO", "CREDITO PRIVADO", "DEBENTURE", "DEBÊNTURE"]
-
-
-def normalizar_cnpj(cnpj: str) -> str:
-    """Só dígitos -- registro_classe.csv usa CNPJ_Classe sem pontuação
-    ("00016999000167"), o informe diário (fonte do PL) usa CNPJ_FUNDO_CLASSE
-    pontuado ("00.016.999/0001-67"). Mesmo achado/abordagem de
-    investigar_cvm_175.py::normalizar_cnpj."""
-    return "".join(c for c in str(cnpj) if c.isdigit())
-
-
-def garantir_registro_novo_local(client: httpx.Client) -> None:
-    """Baixa registro_fundo_classe.zip (cadastro pós-RCVM175: fundo/classe/
-    subclasse) se ainda não existir localmente -- universo de candidatos bem
-    maior que cad_fi.csv (ver docstring do módulo)."""
-    caminho = os.path.join(DATA_DIR, "registro_fundo_classe.zip")
-    if os.path.exists(caminho):
-        return
-    print("→ Baixando cadastro novo CVM (registro_fundo_classe.zip)...")
-    conteudo = baixar_arquivo_http(
-        URL_REGISTRO_ZIP, client,
-        user_agent=DEFAULT_USER_AGENT, max_attempts=3, timeout=60,
-        msg_falha="  ✗ Falha ao baixar registro_fundo_classe.zip após 3 tentativas.",
-    )
-    if conteudo:
-        with open(caminho, "wb") as f:
-            f.write(conteudo)
-        print(f"  ✓ registro_fundo_classe.zip salvo ({len(conteudo)} bytes)\n")
 
 
 def carregar_pl_recente() -> dict[str, float]:

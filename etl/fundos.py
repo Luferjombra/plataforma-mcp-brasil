@@ -27,6 +27,7 @@ from log_etl import safe_float as _safe_float_base
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "cvm")
 URL_CADASTRO = "https://dados.cvm.gov.br/dados/FI/CAD/DADOS/cad_fi.csv"
 URL_HISTORICO_BASE = "https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS"
+URL_REGISTRO_ZIP = "https://dados.cvm.gov.br/dados/FI/CAD/DADOS/registro_fundo_classe.zip"
 
 # Fundos de referência — CNPJs validados no cadastro CVM
 # Preferência por feeders (o que o cotista acessa diretamente)
@@ -83,6 +84,14 @@ def parse_date(value) -> str | None:
     return None
 
 
+def normalizar_cnpj(cnpj: str) -> str:
+    """Só dígitos -- o cadastro novo (registro_fundo.csv/registro_classe.csv)
+    guarda CNPJ sem pontuação ("00016999000167"), diferente do legado
+    cad_fi.csv e de CNPJS_ALVO ("00.016.999/0001-67"). Mesmo achado/
+    abordagem de investigar_cvm_175.py e sortear_fundos.py."""
+    return "".join(c for c in str(cnpj) if c.isdigit())
+
+
 # ---------------------------------------------------------------------------
 # Download (CVM)
 # ---------------------------------------------------------------------------
@@ -125,6 +134,30 @@ def garantir_cadastro_local(client: httpx.Client) -> None:
         print(f"  ✓ cad_fi.csv salvo ({len(conteudo)} bytes)\n")
 
 
+def garantir_registro_novo_local(client: httpx.Client) -> None:
+    """Baixa registro_fundo_classe.zip (cadastro pós-RCVM175: fundo/classe/
+    subclasse) se ainda não existir localmente -- necessário pra achar
+    cadastro de CNPJS_ALVO que não constam em cad_fi.csv (cadastro legado,
+    ver carregar_cadastro_novo). Achado em produção: sem isso, um CNPJ
+    sorteado via sortear_fundos.py (que usa esse cadastro maior) entra em
+    CNPJS_ALVO mas fica sem linha em fundos_cadastro -- e o upsert de
+    fundos_historico inteiro falha por causa da foreign key
+    fundos_historico_cnpj_fkey."""
+    caminho = os.path.join(DATA_DIR, "registro_fundo_classe.zip")
+    if os.path.exists(caminho):
+        return
+    print("→ Baixando cadastro novo CVM (registro_fundo_classe.zip)...")
+    conteudo = baixar_arquivo_http(
+        URL_REGISTRO_ZIP, client,
+        user_agent=DEFAULT_USER_AGENT, max_attempts=3, timeout=60,
+        msg_falha="  ✗ Falha ao baixar registro_fundo_classe.zip após 3 tentativas.",
+    )
+    if conteudo:
+        with open(caminho, "wb") as f:
+            f.write(conteudo)
+        print(f"  ✓ registro_fundo_classe.zip salvo ({len(conteudo)} bytes)\n")
+
+
 def garantir_historico_local(client: httpx.Client) -> None:
     """Baixa os informes diários (mês corrente + anterior) se ainda não
     existirem localmente. A CVM passou a publicar em .zip a partir de
@@ -160,8 +193,59 @@ def garantir_historico_local(client: httpx.Client) -> None:
 # Cadastro
 # ---------------------------------------------------------------------------
 
+def carregar_cadastro_novo(cnpjs_faltantes: list[str]) -> pd.DataFrame:
+    """Monta linhas de cadastro (schema compatível com cad_fi.csv) a partir
+    do cadastro novo (registro_fundo.csv + registro_classe.csv, dentro de
+    registro_fundo_classe.zip) -- só pros CNPJS_ALVO que carregar_cadastro()
+    não achou em cad_fi.csv (cadastro legado, "não adaptados RCVM175").
+    CNPJ_Fundo em registro_fundo.csv é sem pontuação; usa o valor original de
+    CNPJS_ALVO (pontuado) como cnpj final, pra bater com o que
+    fundos_historico grava (vindo do informe diário, também pontuado)."""
+    caminho_zip = os.path.join(DATA_DIR, "registro_fundo_classe.zip")
+    with zipfile.ZipFile(caminho_zip) as zf:
+        with zf.open("registro_fundo.csv") as f:
+            df_fundo = pd.read_csv(f, sep=";", dtype=str, low_memory=False, encoding="latin-1")
+        with zf.open("registro_classe.csv") as f:
+            df_classe = pd.read_csv(f, sep=";", dtype=str, low_memory=False, encoding="latin-1")
+
+    df_fundo.columns = [c.strip() for c in df_fundo.columns]
+    df_classe.columns = [c.strip() for c in df_classe.columns]
+
+    faltantes_norm = {normalizar_cnpj(c): c for c in cnpjs_faltantes}
+    df_fundo["_cnpj_norm"] = df_fundo["CNPJ_Fundo"].apply(normalizar_cnpj)
+    df = df_fundo[df_fundo["_cnpj_norm"].isin(faltantes_norm)].copy()
+
+    # Classificacao é atributo de classe, não de fundo -- pega a 1a classe
+    # não-vazia de cada fundo (funciona bem pros fundos simples/sem múltiplas
+    # classes que passam pelo sorteio; ver CATEGORIAS_ALVO em sortear_fundos.py).
+    classe_por_fundo = (
+        df_classe[["ID_Registro_Fundo", "Classificacao"]]
+        .dropna(subset=["Classificacao"])
+        .drop_duplicates(subset=["ID_Registro_Fundo"], keep="first")
+    )
+    df = df.merge(classe_por_fundo, on="ID_Registro_Fundo", how="left")
+
+    df["CNPJ_FUNDO"] = df["_cnpj_norm"].map(faltantes_norm)
+    df = df.rename(columns={
+        "Denominacao_Social": "DENOM_SOCIAL",
+        "Classificacao": "CLASSE",
+        "Gestor": "GESTOR",
+        "Administrador": "ADMIN",
+        "Tipo_Fundo": "TP_FUNDO",
+        "Data_Constituicao": "DT_CONST",
+    })
+    # cad_fi.csv usa "EM FUNCIONAMENTO NORMAL" (maiúsculo); o cadastro novo
+    # usa "Em Funcionamento Normal" -- normaliza aqui pra upsert_cadastro()
+    # não precisar saber de qual fonte cada linha veio.
+    df["SIT"] = df["Situacao"].fillna("").str.upper()
+    return df
+
+
 def carregar_cadastro() -> pd.DataFrame | None:
-    """Lê cad_fi.csv local e filtra pelos CNPJs alvo."""
+    """Lê cad_fi.csv local e filtra pelos CNPJs alvo. Pros CNPJs alvo que não
+    aparecem em cad_fi.csv (cadastro legado, "não adaptados RCVM175") --
+    caso dos fundos sorteados via sortear_fundos.py, que vêm do cadastro
+    novo -- complementa com carregar_cadastro_novo() (ver docstring lá)."""
     caminho = os.path.join(DATA_DIR, "cad_fi.csv")
     if not os.path.exists(caminho):
         print("  ⚠ cad_fi.csv não encontrado em etl/data/cvm/ — pulando cadastro.")
@@ -173,7 +257,19 @@ def carregar_cadastro() -> pd.DataFrame | None:
     df.columns = [c.strip() for c in df.columns]
     cnpjs_limpos = [c.strip() for c in CNPJS_ALVO]
     df = df[df["CNPJ_FUNDO"].isin(cnpjs_limpos)].copy()
-    print(f"  ✓ {len(df)} fundos encontrados no cadastro\n")
+    print(f"  ✓ {len(df)} fundo(s) encontrado(s) no cadastro legado (cad_fi.csv)\n")
+
+    achados_norm = {normalizar_cnpj(c) for c in df["CNPJ_FUNDO"]}
+    faltantes = [c for c in cnpjs_limpos if normalizar_cnpj(c) not in achados_norm]
+    if faltantes:
+        caminho_zip = os.path.join(DATA_DIR, "registro_fundo_classe.zip")
+        if os.path.exists(caminho_zip):
+            df_novo = carregar_cadastro_novo(faltantes)
+            print(f"  ✓ {len(df_novo)}/{len(faltantes)} fundo(s) encontrado(s) no cadastro novo (registro_fundo_classe.zip)\n")
+            df = pd.concat([df, df_novo], ignore_index=True)
+        else:
+            print(f"  ⚠ {len(faltantes)} fundo(s) não encontrados em cad_fi.csv, e registro_fundo_classe.zip não disponível localmente\n")
+
     return df
 
 
@@ -327,6 +423,7 @@ def run():
     with ETLRun("fundos_historico") as batch_run:
         with httpx.Client() as client:
             garantir_cadastro_local(client)
+            garantir_registro_novo_local(client)
             garantir_historico_local(client)
 
         # 1. Cadastro (opcional — segue sem se o download falhar)
