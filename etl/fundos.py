@@ -195,45 +195,65 @@ def garantir_historico_local(client: httpx.Client) -> None:
 
 def carregar_cadastro_novo(cnpjs_faltantes: list[str]) -> pd.DataFrame:
     """Monta linhas de cadastro (schema compatível com cad_fi.csv) a partir
-    do cadastro novo (registro_fundo.csv + registro_classe.csv, dentro de
+    do cadastro novo (registro_classe.csv + registro_fundo.csv, dentro de
     registro_fundo_classe.zip) -- só pros CNPJS_ALVO que carregar_cadastro()
     não achou em cad_fi.csv (cadastro legado, "não adaptados RCVM175").
-    CNPJ_Fundo em registro_fundo.csv é sem pontuação; usa o valor original de
-    CNPJS_ALVO (pontuado) como cnpj final, pra bater com o que
-    fundos_historico grava (vindo do informe diário, também pontuado)."""
+
+    Filtra por CNPJ_Classe (registro_classe.csv), NÃO por CNPJ_Fundo
+    (registro_fundo.csv) -- achado de revisão: são colunas DIFERENTES sob a
+    Resolução CVM 175 (fundo multi-classe tem CNPJ próprio por classe,
+    diferente do CNPJ "guarda-chuva" do fundo -- ver COLUNA_CNPJ no git blame
+    de investigar_cvm_175.py). Os CNPJs sorteados vieram de
+    sortear_fundos.py::carregar_candidatos(), que usa CNPJ_Classe -- filtrar
+    aqui por CNPJ_Fundo arriscaria não achar NADA pra um fundo multi-classe
+    e reviver o mesmo crash de FK que este código existe pra evitar. Filtrar
+    por CNPJ_Classe também elimina a ambiguidade de "qual classe pertence a
+    este fundo": Classificacao/Situacao já vêm da própria linha encontrada,
+    não precisa adivinhar via ID_Registro_Fundo.
+
+    CNPJ_Classe é sem pontuação; usa o valor original de CNPJS_ALVO
+    (pontuado) como cnpj final, pra bater com o que fundos_historico grava
+    (vindo do informe diário, também pontuado)."""
     caminho_zip = os.path.join(DATA_DIR, "registro_fundo_classe.zip")
     with zipfile.ZipFile(caminho_zip) as zf:
-        with zf.open("registro_fundo.csv") as f:
-            df_fundo = pd.read_csv(f, sep=";", dtype=str, low_memory=False, encoding="latin-1")
         with zf.open("registro_classe.csv") as f:
             df_classe = pd.read_csv(f, sep=";", dtype=str, low_memory=False, encoding="latin-1")
+        with zf.open("registro_fundo.csv") as f:
+            df_fundo = pd.read_csv(f, sep=";", dtype=str, low_memory=False, encoding="latin-1")
 
-    df_fundo.columns = [c.strip() for c in df_fundo.columns]
     df_classe.columns = [c.strip() for c in df_classe.columns]
+    df_fundo.columns = [c.strip() for c in df_fundo.columns]
+    df_fundo = df_fundo.drop_duplicates(subset=["ID_Registro_Fundo"])
 
     faltantes_norm = {normalizar_cnpj(c): c for c in cnpjs_faltantes}
-    df_fundo["_cnpj_norm"] = df_fundo["CNPJ_Fundo"].apply(normalizar_cnpj)
-    df = df_fundo[df_fundo["_cnpj_norm"].isin(faltantes_norm)].copy()
+    df_classe["_cnpj_norm"] = df_classe["CNPJ_Classe"].apply(normalizar_cnpj)
+    df = df_classe[df_classe["_cnpj_norm"].isin(faltantes_norm)].copy()
 
-    # Classificacao é atributo de classe, não de fundo -- pega a 1a classe
-    # não-vazia de cada fundo (funciona bem pros fundos simples/sem múltiplas
-    # classes que passam pelo sorteio; ver CATEGORIAS_ALVO em sortear_fundos.py).
-    classe_por_fundo = (
-        df_classe[["ID_Registro_Fundo", "Classificacao"]]
-        .dropna(subset=["Classificacao"])
-        .drop_duplicates(subset=["ID_Registro_Fundo"], keep="first")
+    # Administrador/Tipo_Fundo/Data_Constituicao só existem no nível fundo
+    # -- renomeia ANTES do merge (várias colunas, incl. Data_Constituicao,
+    # têm o MESMO nome em registro_classe.csv e registro_fundo.csv; deixar
+    # o merge() auto-sufixar com _x/_y faria o rename() abaixo não achar
+    # nem uma nem outra, em silêncio).
+    df_fundo_sel = df_fundo[["ID_Registro_Fundo", "Administrador", "Tipo_Fundo", "Data_Constituicao", "Gestor"]].rename(
+        columns={
+            "Administrador": "_ADMIN_fundo",
+            "Tipo_Fundo": "_TP_FUNDO_fundo",
+            "Data_Constituicao": "_DT_CONST_fundo",
+            "Gestor": "_GESTOR_fundo",
+        }
     )
-    df = df.merge(classe_por_fundo, on="ID_Registro_Fundo", how="left")
+    df = df.merge(df_fundo_sel, on="ID_Registro_Fundo", how="left")
 
     df["CNPJ_FUNDO"] = df["_cnpj_norm"].map(faltantes_norm)
     df = df.rename(columns={
         "Denominacao_Social": "DENOM_SOCIAL",
         "Classificacao": "CLASSE",
-        "Gestor": "GESTOR",
-        "Administrador": "ADMIN",
-        "Tipo_Fundo": "TP_FUNDO",
-        "Data_Constituicao": "DT_CONST",
+        "_GESTOR_fundo": "GESTOR",
+        "_ADMIN_fundo": "ADMIN",
+        "_TP_FUNDO_fundo": "TP_FUNDO",
+        "_DT_CONST_fundo": "DT_CONST",
     })
+    assert "GESTOR" in df.columns, "coluna GESTOR não foi criada pelo rename -- schema de registro_fundo.csv mudou?"
     # cad_fi.csv usa "EM FUNCIONAMENTO NORMAL" (maiúsculo); o cadastro novo
     # usa "Em Funcionamento Normal" -- normaliza aqui pra upsert_cadastro()
     # não precisar saber de qual fonte cada linha veio.
@@ -264,9 +284,17 @@ def carregar_cadastro() -> pd.DataFrame | None:
     if faltantes:
         caminho_zip = os.path.join(DATA_DIR, "registro_fundo_classe.zip")
         if os.path.exists(caminho_zip):
-            df_novo = carregar_cadastro_novo(faltantes)
-            print(f"  ✓ {len(df_novo)}/{len(faltantes)} fundo(s) encontrado(s) no cadastro novo (registro_fundo_classe.zip)\n")
-            df = pd.concat([df, df_novo], ignore_index=True)
+            # Best-effort de propósito (mesmo espírito do resto desta
+            # função): um problema aqui (zip corrompido, coluna que sumiu
+            # num schema futuro da CVM) não pode derrubar o job inteiro
+            # antes mesmo de chegar no histórico -- melhor seguir só com o
+            # que cad_fi.csv achou do que abortar tudo.
+            try:
+                df_novo = carregar_cadastro_novo(faltantes)
+                print(f"  ✓ {len(df_novo)}/{len(faltantes)} fundo(s) encontrado(s) no cadastro novo (registro_fundo_classe.zip)\n")
+                df = pd.concat([df, df_novo], ignore_index=True)
+            except Exception as e:
+                print(f"  ⚠ Falha ao ler cadastro novo pros {len(faltantes)} fundo(s) faltantes: {e}\n")
         else:
             print(f"  ⚠ {len(faltantes)} fundo(s) não encontrados em cad_fi.csv, e registro_fundo_classe.zip não disponível localmente\n")
 
@@ -428,11 +456,24 @@ def run():
 
         # 1. Cadastro (opcional — segue sem se o download falhar)
         df_cad = carregar_cadastro()
+        cnpjs_com_cadastro = set()
         if df_cad is not None:
             upsert_cadastro(df_cad)
+            cnpjs_com_cadastro = set(df_cad["CNPJ_FUNDO"])
 
-        # 2. Histórico
-        cnpjs = [c.strip() for c in CNPJS_ALVO]
+        # 2. Histórico -- só pros CNPJs com cadastro resolvido nesta run.
+        # Achado de incidente real: fundos_historico tem foreign key pra
+        # fundos_cadastro, e upsert_historico() grava TODOS os CNPJs do mês
+        # numa chamada só -- 1 CNPJ sem cadastro (typo, fundo cancelado,
+        # mismatch de coluna não previsto aqui) derruba o upsert INTEIRO,
+        # inclusive os que já funcionavam. Filtrar aqui isola o problema no
+        # CNPJ específico em vez de derrubar todo mundo de novo.
+        cnpjs_alvo = [c.strip() for c in CNPJS_ALVO]
+        cnpjs_sem_cadastro = [c for c in cnpjs_alvo if c not in cnpjs_com_cadastro]
+        if cnpjs_sem_cadastro:
+            print(f"⚠ {len(cnpjs_sem_cadastro)} CNPJ(s) de CNPJS_ALVO sem cadastro resolvido nesta run -- histórico não será gravado pra eles: {cnpjs_sem_cadastro}\n")
+        cnpjs = [c for c in cnpjs_alvo if c in cnpjs_com_cadastro]
+
         arquivos = listar_arquivos_historico()
 
         if not arquivos:
