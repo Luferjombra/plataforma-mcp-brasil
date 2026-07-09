@@ -456,23 +456,37 @@ def run():
 
         # 1. Cadastro (opcional — segue sem se o download falhar)
         df_cad = carregar_cadastro()
-        cnpjs_com_cadastro = set()
         if df_cad is not None:
             upsert_cadastro(df_cad)
-            cnpjs_com_cadastro = set(df_cad["CNPJ_FUNDO"])
 
-        # 2. Histórico -- só pros CNPJs com cadastro resolvido nesta run.
-        # Achado de incidente real: fundos_historico tem foreign key pra
-        # fundos_cadastro, e upsert_historico() grava TODOS os CNPJs do mês
-        # numa chamada só -- 1 CNPJ sem cadastro (typo, fundo cancelado,
+        # 2. Histórico -- só pros CNPJs com cadastro resolvido nesta run,
+        # MAS só quando carregar_cadastro() de fato rodou (df_cad não é
+        # None). Achado de incidente real: fundos_historico tem foreign key
+        # pra fundos_cadastro, e upsert_historico() grava TODOS os CNPJs do
+        # mês numa chamada só -- 1 CNPJ sem cadastro (typo, fundo cancelado,
         # mismatch de coluna não previsto aqui) derruba o upsert INTEIRO,
         # inclusive os que já funcionavam. Filtrar aqui isola o problema no
         # CNPJ específico em vez de derrubar todo mundo de novo.
+        #
+        # Achado de revisão: se cad_fi.csv não pôde ser lido (df_cad is
+        # None -- falha transitória de download, não um problema de CNPJ
+        # específico), NÃO zera a lista -- fundos_cadastro é uma tabela que
+        # PERSISTE no Supabase entre execuções; um CNPJ já resolvido numa
+        # run anterior continua com a FK satisfeita mesmo sem cadastro
+        # fresco agora. Tratar como "sem CNPJ nenhum" derrubaria o
+        # histórico do mês inteiro por causa de uma falha de rede
+        # completamente alheia a qualquer CNPJ específico -- e mascararia
+        # isso como "success" de 0 linhas no lugar de sinalizar a falha.
         cnpjs_alvo = [c.strip() for c in CNPJS_ALVO]
-        cnpjs_sem_cadastro = [c for c in cnpjs_alvo if c not in cnpjs_com_cadastro]
-        if cnpjs_sem_cadastro:
-            print(f"⚠ {len(cnpjs_sem_cadastro)} CNPJ(s) de CNPJS_ALVO sem cadastro resolvido nesta run -- histórico não será gravado pra eles: {cnpjs_sem_cadastro}\n")
-        cnpjs = [c for c in cnpjs_alvo if c in cnpjs_com_cadastro]
+        if df_cad is None:
+            batch_run.set_status("partial", "cad_fi.csv indisponível nesta run -- histórico seguiu confiando no cadastro já persistido de runs anteriores.")
+            cnpjs = cnpjs_alvo
+        else:
+            cnpjs_com_cadastro = set(df_cad["CNPJ_FUNDO"])
+            cnpjs_sem_cadastro = [c for c in cnpjs_alvo if c not in cnpjs_com_cadastro]
+            if cnpjs_sem_cadastro:
+                print(f"⚠ {len(cnpjs_sem_cadastro)} CNPJ(s) de CNPJS_ALVO sem cadastro resolvido nesta run -- histórico não será gravado pra eles: {cnpjs_sem_cadastro}\n")
+            cnpjs = [c for c in cnpjs_alvo if c in cnpjs_com_cadastro]
 
         arquivos = listar_arquivos_historico()
 
