@@ -111,6 +111,12 @@ r, elapsed = get("/fundos")
 ok = r and r.status_code == 200
 data = r.json().get("data", []) if ok else []
 check("GET /fundos", ok and len(data) > 0, f"{len(data)} fundos em {elapsed:.1f}s")
+# CNPJS_ALVO tem 13 fundos curados hoje (etl/fundos.py + backend/routes/fundos.py) --
+# menos indica cadastro não resolvido pra algum CNPJ novo, mais indica vazamento
+# de fundo não-curado em fundos_cadastro. Informativo pq o número muda a cada
+# curadoria nova (sortear_fundos.py) -- não deve travar merge sozinho.
+check_info("GET /fundos retorna os 13 fundos curados (CNPJS_ALVO)", ok and len(data) == 13,
+           f"esperado 13, recebido {len(data)}")
 
 # Edge cases
 print("\n[1.6] Casos de borda")
@@ -426,29 +432,36 @@ if r and r.status_code == 200:
 else:
     check("GET /health/etl para fundos", False, "inacessível")
 
-print("\n[6.2] Dados de fundo recentes")
+print("\n[6.2] Dados de fundo recentes (amostra em 3 fundos, cadastro legado + novo)")
 r, _ = get("/fundos")
 if r and r.status_code == 200:
     fundos_list = r.json().get("data", [])
     if fundos_list:
-        cnpj = fundos_list[0].get("cnpj", "")
         from urllib.parse import quote
-        r2, _ = get(f"/fundos/historico/{quote(cnpj, safe='')}?limit=1")
-        if r2 and r2.status_code == 200:
-            data_list = r2.json().get("data", [])
-            if data_list:
-                dt_str = data_list[0].get("data", "")[:10]
-                try:
-                    diff = (date.today() - date.fromisoformat(dt_str)).days
-                    check("Histórico de fundo recente (≤60 dias)", diff <= 60,
-                          f"última data={dt_str}, {diff}d atrás")
-                except ValueError:
-                    check("Histórico de fundo data válida", False, f"data={dt_str}")
+        # Amostra até 3 fundos (início, meio, fim da lista) em vez de só o
+        # primeiro -- cobre tanto CNPJs resolvidos via cad_fi.csv (legado)
+        # quanto via registro_fundo_classe.zip (pós-Resolução CVM 175),
+        # que são caminhos de código diferentes em carregar_cadastro().
+        indices = sorted({0, len(fundos_list) // 2, len(fundos_list) - 1})
+        amostra = [fundos_list[i] for i in indices]
+        for fundo in amostra:
+            cnpj = fundo.get("cnpj", "")
+            r2, _ = get(f"/fundos/historico/{quote(cnpj, safe='')}?limit=1")
+            if r2 and r2.status_code == 200:
+                data_list = r2.json().get("data", [])
+                if data_list:
+                    dt_str = data_list[0].get("data", "")[:10]
+                    try:
+                        diff = (date.today() - date.fromisoformat(dt_str)).days
+                        check(f"Histórico de fundo recente ({cnpj}, ≤60 dias)", diff <= 60,
+                              f"última data={dt_str}, {diff}d atrás")
+                    except ValueError:
+                        check(f"Histórico de fundo data válida ({cnpj})", False, f"data={dt_str}")
+                else:
+                    check(f"Histórico de fundo tem dados ({cnpj})", False, "data=[]")
             else:
-                check("Histórico de fundo tem dados", False, "data=[]")
-        else:
-            check("GET /fundos/historico/{cnpj}", False,
-                  f"status={r2.status_code if r2 else 'timeout'}")
+                check(f"GET /fundos/historico/{{cnpj}} ({cnpj})", False,
+                      f"status={r2.status_code if r2 else 'timeout'}")
     else:
         check("GET /fundos retornou fundos", False, "lista vazia")
 else:

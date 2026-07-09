@@ -179,6 +179,9 @@ def run():
 - **Mudança de schema CVM:** coluna `CNPJ_FUNDO` renomeada para `CNPJ_FUNDO_CLASSE` nos arquivos de 2024+. O script detecta e normaliza automaticamente.
 - **Duplicatas:** cad_fi.csv e inf_diario_fi_* podem ter linhas repetidas — `drop_duplicates()` antes de cada upsert
 - `upsert_historico()` tem retry de 3 tentativas com backoff (1s, 2s)
+- **`CNPJS_ALVO` expandido de 8 pra 13 fundos** — os 5 novos foram sorteados via `sortear_fundos.py` pra cobrir categorias que a plataforma ainda não tinha (Cambial, Crédito Privado), além de reforçar Ações/Multimercado/Renda Fixa.
+- **Cadastro pós-Resolução CVM 175:** `cad_fi.csv` (legado) está encolhendo e não cobre mais fundos novos/multi-classe. `carregar_cadastro_novo()` complementa lendo `registro_fundo_classe.zip` (`registro_classe.csv` + `registro_fundo.csv`, ~33 mil candidatos). Filtra por `CNPJ_Classe` (não `CNPJ_Fundo` — são colunas diferentes: um fundo multi-classe tem CNPJ "guarda-chuva" próprio e cada classe tem o seu). Carregamento é best-effort (try/except) — se falhar, o histórico segue confiando no cadastro já persistido de runs anteriores.
+- **Gotcha de produção (FK constraint):** `fundos_historico_cnpj_fkey` exige que o `cnpj` já exista em `fundos_cadastro`. Como `upsert_historico()` agrupa todos os CNPJs de um mês num único upsert, 1 CNPJ sem cadastro resolvido derruba o batch inteiro (não só aquele CNPJ) — expandir `CNPJS_ALVO` sem garantir cadastro completo pra cada CNPJ novo já causou uma regressão real (200 registros salvos → 0). `run()` agora filtra `cnpjs_alvo` pelos CNPJs com cadastro resolvido nesta run antes de chamar o histórico, e reporta `ETLRun` como `"partial"` (não "success" silencioso) quando o `cad_fi.csv` falha totalmente.
 
 ### ANBIMA Feed API (anbima.py)
 - OAuth2 Client Credentials — token via `POST /oauth/access-token`, **`Content-Type: application/x-www-form-urlencoded`** (não JSON — erro comum que gera 401 no token endpoint)
@@ -260,9 +263,10 @@ perf/
 
 ### Fundos de Investimento
 - Modelo próprio, sem herança de RV
-- CNPJs alvos: preferência por feeders (o que o cotista acessa)
+- CNPJs alvos: preferência por feeders (o que o cotista acessa) — 13 CNPJs curados em `CNPJS_ALVO` (duplicado em `etl/fundos.py` e `backend/routes/fundos.py`, sem import cruzado entre deploys)
 - CNPJs com `/` na URL: usar `encodeURIComponent()` — já implementado em `api.ts`
-- Camada analítica futura: Sharpe, Drawdown, Volatilidade, % CDI
+- Camada analítica implementada via `fund_analytics.py`: retornos (1m/3m/6m/12m/ytd), volatilidade_12m, sharpe_12m, max_drawdown, pct_cdi_12m — gravado em `fund_analytics_metrics`, exposto via `GET /fundos/analytics/{cnpj}`. (Não confundir com o módulo Carteira/VibeTrading, que tem Sortino/Calmar/Win Rate — são cálculos diferentes sobre dados diferentes.)
+- `sortear_fundos.py` é ferramenta de curadoria manual (não roda em produção): sorteia candidatos do cadastro pós-RCVM175 fora de `CNPJS_ALVO`, por categoria (`CATEGORIAS_ALVO`), pra apoiar decisão de expansão
 
 ### Renda Fixa
 - Tesouro Direto via `rf_titulos` e `rf_historico`

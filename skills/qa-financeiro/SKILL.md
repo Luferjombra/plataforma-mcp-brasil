@@ -183,11 +183,26 @@ GET /rv/historico/PETR4?limit=5
 - [ ] Fonte: brapi.dev (não yfinance)
 
 ### 3.4 Fundos
+
+A plataforma monitora 13 fundos curados em `CNPJS_ALVO` (`etl/fundos.py` e
+`backend/routes/fundos.py`), cobrindo 5 categorias: Multimercado, Renda Fixa,
+Ações, Cambial e Crédito Privado. Testar pelo menos 1 CNPJ por categoria, não
+só o primeiro da lista — cada categoria tem faixas de `valor_cota` bem
+diferentes e um cadastro resolvido por fonte distinta (`cad_fi.csv` legado ou
+`registro_fundo_classe.zip` pós-Resolução CVM 175).
+
 ```
-GET /fundos/historico/04.222.368%2F0001-55?limit=5
+GET /fundos/                                            # deve retornar 13 fundos (não mais, não menos)
+GET /fundos/historico/04.222.368%2F0001-55?limit=5       # Verde PVT — Multimercado (cadastro legado)
+GET /fundos/historico/00.822.954%2F0001-80?limit=5       # Itaú B Cambial — Cambial (cadastro novo/RCVM175)
+GET /fundos/historico/60.760.008%2F0001-88?limit=5       # Bradesco BKFD — Crédito Privado (cadastro novo/RCVM175)
+GET /fundos/analytics/04.222.368%2F0001-55                # retornos/volatilidade_12m/sharpe_12m/max_drawdown/pct_cdi_12m
 ```
-- [ ] `valor_cota` > 1 (cota do Verde PVT deve ser na casa de R$ 10–1000)
-- [ ] `patrimonio_liq` > 0
+- [ ] `GET /fundos/` retorna exatamente 13 registros (nem mais — vazamento de fundo não-curado — nem menos — CNPJ sem cadastro resolvido)
+- [ ] `valor_cota` > 1 em todos os 3 CNPJs testados (faixa varia por fundo, mas nunca ≤ 1)
+- [ ] `patrimonio_liq` > 0 em todos os 3
+- [ ] Os 2 fundos resolvidos via `registro_fundo_classe.zip` (Itaú B Cambial, Bradesco BKFD) retornam histórico — valida que o fallback de cadastro pós-RCVM175 está funcionando, não só o legado
+- [ ] `GET /fundos/analytics/{cnpj}` retorna 200 com `sharpe_12m`/`max_drawdown`/`pct_cdi_12m` não-nulos (404 é aceitável só se `fund_analytics_metrics` ainda não rodou para aquele CNPJ). **Não confundir** com o módulo Carteira/VibeTrading (Sortino/Calmar/Win Rate) — são cálculos e endpoints diferentes.
 
 ---
 
