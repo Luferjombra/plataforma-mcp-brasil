@@ -36,21 +36,51 @@ pra parsear a coluna de CNPJ de verdade (csv.DictReader) e comparar só
 dígitos dos dois lados -- também evita falso positivo por concatenação
 acidental de dígitos entre colunas vizinhas, que um substring cru arriscaria.
 
+Achado de 3 rodadas (de 5 dispatches): o runner do GitHub Actions às vezes
+sobe sem conseguir alcançar NENHUM host externo (`[Errno 101] Network is
+unreachable` em toda URL testada, do começo ao fim do job) -- não é
+específico da CVM. Antes, isso derrubava o job inteiro no timeout de 5min
+sem nenhuma conclusão (só descobria a falha 60s por URL, 1 tentativa cada,
+até o tempo acabar). Agora `tentar()`/`consultar_ckan()` distinguem
+"não encontrado" (404/403, resposta definitiva do servidor, não retenta) de
+falha de conexão (retenta algumas vezes com pausa curta) e, se a falha de
+conexão persistir mesmo após as tentativas, `run()` aborta cedo com uma
+mensagem clara em vez de repetir a mesma falha em cada URL seguinte até
+estourar o timeout do job.
+
 Uso: python investigar_cvm_175.py
 """
 
 import csv
 import io
+import time
 import zipfile
 
 import httpx
 
 from fundos import CNPJS_ALVO, DEFAULT_USER_AGENT
-from log_etl import baixar_arquivo_http
 
 BASE_CAD = "https://dados.cvm.gov.br/dados/FI/CAD/DADOS"
 BASE_HIST = "https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS"
 BASE_API = "https://dados.cvm.gov.br/api/3/action"
+
+# CVM responde em <1s quando alcançável (zip de 6,7MB baixou em <1s numa
+# rodada bem-sucedida) -- 15s de timeout por tentativa é folga generosa sem
+# desperdiçar o orçamento de 5min do job numa URL que não vai responder.
+# Exceção: o zip, historicamente mais pesado, mantém timeout maior (ver item 5).
+TIMEOUT_PADRAO = 15.0
+MAX_TENTATIVAS_CONEXAO = 3
+PAUSA_ENTRE_TENTATIVAS = 3.0
+
+
+class FalhaDeConexao(Exception):
+    """Sinaliza que uma URL falhou por problema de conexão (ENETUNREACH,
+    timeout) mesmo após todas as tentativas -- diferente de 404/403 (resposta
+    definitiva do servidor, "não publicado"). `run()` usa isso como circuit
+    breaker: se a primeira URL já falhar assim, provavelmente o runner
+    inteiro está sem saída de rede nesta execução (já visto: quando
+    acontece, acontece em TODA URL, não só numa) -- não adianta insistir nas
+    próximas, é melhor abortar e relatar cedo."""
 
 # Coluna que identifica o CNPJ do próprio fundo/classe em cada arquivo --
 # nomes confirmados nos headers reais (rodada anterior). registro_subclasse.csv
@@ -66,23 +96,37 @@ def normalizar_cnpj(cnpj: str) -> str:
     return "".join(c for c in cnpj if c.isdigit())
 
 
-def tentar(url: str, client: httpx.Client, nome: str, timeout: float = 60.0) -> bytes | None:
+def tentar(url: str, client: httpx.Client, nome: str, timeout: float = TIMEOUT_PADRAO) -> bytes | None:
+    """Baixa `url`. 404/403 é resposta definitiva do servidor ("não
+    publicado") -- não retenta. Falha de conexão retenta até
+    MAX_TENTATIVAS_CONEXAO vezes com pausa curta; se persistir em todas,
+    levanta FalhaDeConexao (ver docstring do módulo e `run()`)."""
     print(f"\n--- {nome} ---\n  {url}")
-    conteudo = baixar_arquivo_http(
-        url, client,
-        # timeout do httpx é por operação (connect/read/write), não um teto
-        # de duração total -- um arquivo grande que não trava mas transfere
-        # devagar em pedacinhos pode passar disso sem nunca "estourar".
-        # 60s por tentativa, 1 tentativa só -- é diagnóstico, não produção;
-        # melhor falhar rápido e reportar "não deu" do que travar minutos.
-        user_agent=DEFAULT_USER_AGENT, max_attempts=1, timeout=timeout,
-        not_found_status=(404, 403),
-    )
-    if conteudo is None:
-        print("  -> não encontrado / não publicado")
-        return None
-    print(f"  -> OK: {len(conteudo):,} bytes")
-    return conteudo
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
+    for tentativa in range(1, MAX_TENTATIVAS_CONEXAO + 1):
+        try:
+            resp = client.get(url, timeout=timeout, headers=headers)
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            print(f"  [aviso] tentativa {tentativa}/{MAX_TENTATIVAS_CONEXAO} — falha de conexão: {e}")
+            if tentativa < MAX_TENTATIVAS_CONEXAO:
+                time.sleep(PAUSA_ENTRE_TENTATIVAS)
+            continue
+
+        if resp.status_code in (404, 403):
+            print(f"  -> não encontrado / não publicado (HTTP {resp.status_code})")
+            return None
+        if resp.status_code in (500, 502, 503, 504):
+            print(f"  [aviso] tentativa {tentativa}/{MAX_TENTATIVAS_CONEXAO} — HTTP {resp.status_code}")
+            if tentativa < MAX_TENTATIVAS_CONEXAO:
+                time.sleep(PAUSA_ENTRE_TENTATIVAS)
+            continue
+
+        resp.raise_for_status()
+        print(f"  -> OK: {len(resp.content):,} bytes")
+        return resp.content
+
+    print(f"  -> falha de conexão persistente após {MAX_TENTATIVAS_CONEXAO} tentativas")
+    raise FalhaDeConexao(nome)
 
 
 def inspecionar_csv(conteudo: bytes, nome: str, n_amostras: int = 2) -> None:
@@ -116,26 +160,45 @@ def checar_cnpjs_curados(conteudo: bytes, nome: str) -> None:
         print(f"  [{nome}] {cnpj}: {'PRESENTE' if achou else 'ausente'}")
 
 
-def consultar_ckan(client: httpx.Client, endpoint: str, params: dict, nome: str, timeout: float = 30.0) -> dict | None:
+def consultar_ckan(client: httpx.Client, endpoint: str, params: dict, nome: str, timeout: float = TIMEOUT_PADRAO) -> dict | None:
     """Consulta a API CKAN do portal (o mesmo motor por trás das páginas de
     dataset) -- fonte de verdade sobre quais recursos/arquivos existem de
-    fato, em vez de adivinhar nome de arquivo. Chamada direta (não usa
-    baixar_arquivo_http) porque a resposta é JSON pequeno, não CSV/zip."""
+    fato, em vez de adivinhar nome de arquivo. Mesma semântica de retry de
+    `tentar()`: HTTP de resposta definitiva (404 = pacote/grupo inexistente,
+    não retenta) vs. falha de conexão (retenta, levanta FalhaDeConexao se
+    persistir)."""
     url = f"{BASE_API}/{endpoint}"
     print(f"\n--- CKAN API: {nome} ---\n  {url} params={params}")
-    try:
-        resp = client.get(url, params=params, timeout=timeout, headers={"User-Agent": DEFAULT_USER_AGENT})
-    except (httpx.TimeoutException, httpx.ConnectError) as e:
-        print(f"  -> falha de conexão: {e}")
-        return None
-    if resp.status_code != 200:
-        print(f"  -> HTTP {resp.status_code}")
-        return None
-    dados = resp.json()
-    if not dados.get("success"):
-        print(f"  -> success=false: {dados.get('error')}")
-        return None
-    return dados["result"]
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
+    for tentativa in range(1, MAX_TENTATIVAS_CONEXAO + 1):
+        try:
+            resp = client.get(url, params=params, timeout=timeout, headers=headers)
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            print(f"  [aviso] tentativa {tentativa}/{MAX_TENTATIVAS_CONEXAO} — falha de conexão: {e}")
+            if tentativa < MAX_TENTATIVAS_CONEXAO:
+                time.sleep(PAUSA_ENTRE_TENTATIVAS)
+            continue
+
+        if resp.status_code == 404:
+            print("  -> HTTP 404 (pacote/grupo não existe)")
+            return None
+        if resp.status_code in (500, 502, 503, 504):
+            print(f"  [aviso] tentativa {tentativa}/{MAX_TENTATIVAS_CONEXAO} — HTTP {resp.status_code}")
+            if tentativa < MAX_TENTATIVAS_CONEXAO:
+                time.sleep(PAUSA_ENTRE_TENTATIVAS)
+            continue
+
+        if resp.status_code != 200:
+            print(f"  -> HTTP {resp.status_code}")
+            return None
+        dados = resp.json()
+        if not dados.get("success"):
+            print(f"  -> success=false: {dados.get('error')}")
+            return None
+        return dados["result"]
+
+    print(f"  -> falha de conexão persistente após {MAX_TENTATIVAS_CONEXAO} tentativas")
+    raise FalhaDeConexao(nome)
 
 
 def inspecionar_resources(resultado: dict) -> None:
@@ -158,65 +221,74 @@ def inspecionar_pacotes_do_grupo(resultado: dict) -> None:
 def run() -> None:
     print("=== Investigação CVM Resolução 175 (fundos/classes/subclasses) ===")
 
-    with httpx.Client() as client:
-        # 1. API CKAN primeiro -- é a pergunta ainda em aberto (fonte de
-        # série diária de cotas pós-RCVM175 pra fundos_historico/
-        # fund_analytics.py). Os passos 2-5 abaixo já têm resposta
-        # confirmada de uma rodada anterior bem-sucedida; se o runner desta
-        # vez tiver a mesma instabilidade de rede já vista 2x ("Network is
-        # unreachable", 60s por URL, come o timeout de 5min inteiro antes de
-        # chegar ao fim do script), pelo menos a pergunta nova é respondida
-        # primeiro em vez de ficar de novo sem resposta.
-        resultado = consultar_ckan(
-            client, "package_show", {"id": "fi-doc-inf_diario"},
-            "fi-doc-inf_diario (recursos do informe diário atual)",
-        )
-        if resultado:
-            inspecionar_resources(resultado)
+    try:
+        with httpx.Client() as client:
+            # 1. API CKAN primeiro -- é a pergunta ainda em aberto (fonte de
+            # série diária de cotas pós-RCVM175 pra fundos_historico/
+            # fund_analytics.py). Os passos 2-5 abaixo já têm resposta
+            # confirmada de uma rodada anterior bem-sucedida.
+            resultado = consultar_ckan(
+                client, "package_show", {"id": "fi-doc-inf_diario"},
+                "fi-doc-inf_diario (recursos do informe diário atual)",
+            )
+            if resultado:
+                inspecionar_resources(resultado)
 
-        resultado = consultar_ckan(
-            client, "group_show", {"id": "fundos-de-investimento", "include_datasets": "true"},
-            "grupo fundos-de-investimento (todos os datasets)",
-        )
-        if resultado:
-            inspecionar_pacotes_do_grupo(resultado)
+            resultado = consultar_ckan(
+                client, "group_show", {"id": "fundos-de-investimento", "include_datasets": "true"},
+                "grupo fundos-de-investimento (todos os datasets)",
+            )
+            if resultado:
+                inspecionar_pacotes_do_grupo(resultado)
 
-        # 2. cad_fi.csv -- confirma tamanho/estrutura e se os 8 CNPJs curados
-        # ainda estão no dataset "não adaptados" que fundos.py usa hoje.
-        c = tentar(f"{BASE_CAD}/cad_fi.csv", client, "cad_fi.csv (legado / não-adaptados)")
-        if c:
-            inspecionar_csv(c, "cad_fi.csv")
-            checar_cnpjs_curados(c, "cad_fi.csv")
-
-        # 3. Tentativas diretas dos CSVs novos (talvez não existam soltos,
-        # só dentro do zip -- ver item 5).
-        for nome_arq in ["registro_fundo.csv", "registro_classe.csv", "registro_subclasse.csv"]:
-            c = tentar(f"{BASE_CAD}/{nome_arq}", client, nome_arq)
+            # 2. cad_fi.csv -- confirma tamanho/estrutura e se os 8 CNPJs curados
+            # ainda estão no dataset "não adaptados" que fundos.py usa hoje.
+            c = tentar(f"{BASE_CAD}/cad_fi.csv", client, "cad_fi.csv (legado / não-adaptados)")
             if c:
-                inspecionar_csv(c, nome_arq)
-                checar_cnpjs_curados(c, nome_arq)
+                inspecionar_csv(c, "cad_fi.csv")
+                checar_cnpjs_curados(c, "cad_fi.csv")
 
-        # 4. Sonda inf_diario_fi legado em vários meses -- descontinuado de
-        # vez, ou só os 2 mais recentes têm lag maior que o esperado?
-        for aaaamm in ["202607", "202605", "202601", "202412"]:
-            tentar(f"{BASE_HIST}/inf_diario_fi_{aaaamm}.csv", client, f"inf_diario_fi_{aaaamm}.csv")
+            # 3. Tentativas diretas dos CSVs novos (talvez não existam soltos,
+            # só dentro do zip -- ver item 5).
+            for nome_arq in ["registro_fundo.csv", "registro_classe.csv", "registro_subclasse.csv"]:
+                c = tentar(f"{BASE_CAD}/{nome_arq}", client, nome_arq)
+                if c:
+                    inspecionar_csv(c, nome_arq)
+                    checar_cnpjs_curados(c, nome_arq)
 
-        # 5. Bundle em zip, conforme documentado no portal -- por último e
-        # com timeout mais curto (ver comentário histórico no git blame:
-        # a CVM já ficou >8min sem responder nem falhar numa tentativa,
-        # timeout do httpx não é teto de duração total, só por operação).
-        c = tentar(
-            f"{BASE_CAD}/registro_fundo_classe.zip", client,
-            "registro_fundo_classe.zip", timeout=20.0,
+            # 4. Sonda inf_diario_fi legado em vários meses -- descontinuado de
+            # vez, ou só os 2 mais recentes têm lag maior que o esperado?
+            for aaaamm in ["202607", "202605", "202601", "202412"]:
+                tentar(f"{BASE_HIST}/inf_diario_fi_{aaaamm}.csv", client, f"inf_diario_fi_{aaaamm}.csv")
+
+            # 5. Bundle em zip, conforme documentado no portal -- zip maior
+            # que os CSVs soltos, mantém timeout mais folgado por tentativa
+            # (ver comentário histórico no git blame: a CVM já ficou >8min
+            # sem responder nem falhar numa tentativa com um arquivo bem
+            # maior que este).
+            c = tentar(
+                f"{BASE_CAD}/registro_fundo_classe.zip", client,
+                "registro_fundo_classe.zip", timeout=20.0,
+            )
+            if c:
+                with zipfile.ZipFile(io.BytesIO(c)) as zf:
+                    print(f"  [registro_fundo_classe.zip] conteúdo: {zf.namelist()}")
+                    for nome_interno in zf.namelist():
+                        with zf.open(nome_interno) as f:
+                            dados = f.read()
+                        inspecionar_csv(dados, nome_interno)
+                        checar_cnpjs_curados(dados, nome_interno)
+    except FalhaDeConexao as e:
+        print(
+            f"\n!!! Falha de conexão persistente em '{e}' mesmo após "
+            f"{MAX_TENTATIVAS_CONEXAO} tentativas -- runner provavelmente sem "
+            f"conectividade externa nesta execução (já visto antes: quando "
+            f"acontece, acontece em TODA URL testada, não é específico da "
+            f"CVM). Abortando o restante da investigação em vez de repetir a "
+            f"mesma falha até o timeout do job -- redisparar deve pegar um "
+            f"runner novo."
         )
-        if c:
-            with zipfile.ZipFile(io.BytesIO(c)) as zf:
-                print(f"  [registro_fundo_classe.zip] conteúdo: {zf.namelist()}")
-                for nome_interno in zf.namelist():
-                    with zf.open(nome_interno) as f:
-                        dados = f.read()
-                    inspecionar_csv(dados, nome_interno)
-                    checar_cnpjs_curados(dados, nome_interno)
+        return
 
     print("\n=== Fim da investigação ===")
 
