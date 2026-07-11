@@ -89,8 +89,14 @@ def main():
     ano_atual = hoje_brt().year
     conteudo = None
     ano_usado = None
+    # Achado do 1º dispatch: dfp_cia_aberta_{ano_atual}.zip existe e baixa
+    # com 200 (não cai no fallback), mas o ano fiscal corrente ainda não
+    # fechou -- só 7 empresas tinham arquivo, nenhuma das 3 de teste. O
+    # zip.csv é indexado por ano de REFERÊNCIA (exercício), não de
+    # submissão -- ano_atual-1 é o mais recente com temporada de
+    # apresentação já encerrada (prazo CVM é ~abril do ano seguinte).
     with httpx.Client(follow_redirects=True) as client:
-        for ano in (ano_atual, ano_atual - 1, ano_atual - 2):
+        for ano in (ano_atual - 1, ano_atual - 2, ano_atual):
             conteudo = _baixar_zip_dfp(ano, client)
             if conteudo:
                 ano_usado = ano
