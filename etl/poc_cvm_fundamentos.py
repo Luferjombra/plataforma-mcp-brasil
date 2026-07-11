@@ -48,22 +48,37 @@ URL_BASE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS"
 # ticker -> termo de busca pra descoberta do CD_CVM. Os 16 ações reais
 # rastreadas em rv_historico.py::ATIVOS (as FIIs da mesma lista não valem --
 # DFP é pra companhias abertas, não fundos imobiliários).
+#
+# Achados do 1º dispatch pros 16 tickers (achados reais, não hipotéticos):
+# - "BANCO DO BRASIL" não achou nada -- a CVM abrevia "Banco" como "BCO"
+#   (confirmado: Bradesco aparece como "BCO BRADESCO S.A."), corrigido pra
+#   "BCO BRASIL".
+# - "REDE D OR" não achou nada -- o nome oficial tem apóstrofo ("D'OR"),
+#   substring sem apóstrofo não bate. Corrigido pra termo mais curto "REDE D".
+# - "ELETROBRAS" não achou nada -- corrigido pra "ELETRICAS BRASILEIRAS"
+#   (nome-base da holding, igual ao campo `nome` já usado em ATIVOS).
+# - "LOCALIZA" e "SUZANO" deram AMBÍGUO de verdade (2 CD_CVM distintos cada
+#   -- ex: "LOCALIZA RENT A CAR S.A." vs "LOCALIZA FLEET S.A.", "SUZANO S.A."
+#   vs "SUZANO HOLDING S.A.") -- mantidos como estão de propósito. Resolver
+#   isso exige cruzar com o cadastro oficial ticker->CNPJ da B3/CVM (não
+#   dá pra adivinhar qual das duas é a listada sob RENT3/SUZB3 só pelo nome
+#   -- exatamente o tipo de "não tentar adivinhar" que a revisão pediu).
 EMPRESAS_ALVO = {
     "PETR4": "PETROBRAS",
     "VALE3": "VALE",
     "ITUB4": "ITAU UNIBANCO",
     "BBDC4": "BRADESCO",
-    "BBAS3": "BANCO DO BRASIL",
+    "BBAS3": "BCO BRASIL",
     "WEGE3": "WEG S.A.",
     "RENT3": "LOCALIZA",
     "LREN3": "LOJAS RENNER",
     "MGLU3": "MAGAZINE LUIZA",
     "ABEV3": "AMBEV",
     "SUZB3": "SUZANO",
-    "RDOR3": "REDE D OR",
+    "RDOR3": "REDE D",
     "HAPV3": "HAPVIDA",
     "CSAN3": "COSAN",
-    "ELET3": "ELETROBRAS",
+    "ELET3": "ELETRICAS BRASILEIRAS",
     "VIVT3": "TELEFONICA BRASIL",
 }
 
@@ -193,10 +208,21 @@ def main():
     resultados = []
     for ticker, (cd_cvm, nome) in resolvidos.items():
         print(f"--- {ticker} ({nome}, CD_CVM {cd_cvm}) ---")
-        lucro = _extrair_valor(dre, cd_cvm, "lucro/prejuízo consolidado do período") \
+        # BBDC4 (achado real do 1º dispatch dos 16 tickers): CD_CVM resolvido
+        # sem ambiguidade, mas nenhum dos 2 termos batia com DS_CONTA -- mais
+        # variantes de fallback pra cobrir fraseado diferente por empresa.
+        lucro = (
+            _extrair_valor(dre, cd_cvm, "lucro/prejuízo consolidado do período")
             or _extrair_valor(dre, cd_cvm, "lucro/prejuízo do período")
-        pl = _extrair_valor(bpp, cd_cvm, "patrimônio líquido consolidado") \
+            or _extrair_valor(dre, cd_cvm, "lucro líquido consolidado do período")
+            or _extrair_valor(dre, cd_cvm, "lucro líquido do período")
+            or _extrair_valor(dre, cd_cvm, "resultado líquido consolidado do período")
+            or _extrair_valor(dre, cd_cvm, "resultado líquido do período")
+        )
+        pl = (
+            _extrair_valor(bpp, cd_cvm, "patrimônio líquido consolidado")
             or _extrair_valor(bpp, cd_cvm, "patrimônio líquido")
+        )
 
         if lucro is None or pl is None:
             print("  [FALHA] não consegui extrair Lucro Líquido e/ou Patrimônio Líquido.")

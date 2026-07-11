@@ -1,9 +1,9 @@
 name: POC — Fundamentos CVM (DFP/ITR)
 
-# Workflow temporário, só workflow_dispatch -- valida se dá pra parsear o
-# plano de contas real da CVM (DFP consolidado) e extrair Lucro
-# Líquido/Patrimônio Líquido pros 16 tickers reais de rv_historico.py::ATIVOS.
-# Ver etl/poc_cvm_fundamentos.py. Remover depois da decisão sobre o
+# Workflow temporário, só workflow_dispatch -- (1) extração de fundamentos
+# CVM pros 16 tickers reais de rv_historico.py::ATIVOS e (2) consulta de
+# cobertura de rv_historico por ticker. Ver etl/poc_cvm_fundamentos.py e
+# etl/poc_cobertura_rv_historico.py. Remover depois da decisão sobre o
 # screener fundamentalista.
 
 on:
@@ -11,7 +11,7 @@ on:
 
 jobs:
   poc:
-    name: POC fundamentos CVM
+    name: POC fundamentos CVM + cobertura rv_historico
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -23,9 +23,16 @@ jobs:
           cache-dependency-path: etl/requirements.txt
       - name: Instalar dependências
         run: pip install -r etl/requirements.txt
-      - name: Rodar POC
+      - name: Rodar POC fundamentos CVM
         working-directory: etl
         run: python poc_cvm_fundamentos.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PYTHONUNBUFFERED: '1'
+      - name: Rodar consulta de cobertura rv_historico
+        working-directory: etl
+        run: python poc_cobertura_rv_historico.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
