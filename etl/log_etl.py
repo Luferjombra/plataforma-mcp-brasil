@@ -275,6 +275,62 @@ class ETLRun:
         return False  # não suprime a exceção
 
 
+# ── Paginação e upsert em lotes ────────────────────────────────────────────────
+
+TAMANHO_PAGINA = 1000
+CHUNK_UPSERT = 500
+
+
+def buscar_paginado(
+    tabela: str,
+    colunas: str,
+    filtros: dict | None = None,
+    tamanho_pagina: int = TAMANHO_PAGINA,
+) -> list[dict]:
+    """Pagina com .range() para não bater no limite padrão de 1000 linhas
+    do PostgREST -- já causou bug real neste projeto (GET /rv/ativos antes
+    do hotfix de paginação, validar_cotahist.py, diagnosticar_ticker_sucessor.py).
+    `filtros` só suporta igualdade exata (.eq); filtros mais complexos (ex:
+    IN de múltiplos valores) precisam ser aplicados no lado do chamador
+    sobre o resultado. Promovido pra cá a partir de promover_cotahist.py e
+    aplicar_ajuste_proventos.py, que tinham a mesma função duplicada."""
+    todos: list[dict] = []
+    inicio = 0
+    while True:
+        q = supabase.table(tabela).select(colunas)
+        if filtros:
+            for campo, valor in filtros.items():
+                q = q.eq(campo, valor)
+        res = q.range(inicio, inicio + tamanho_pagina - 1).execute()
+        if not res.data:
+            break
+        todos.extend(res.data)
+        if len(res.data) < tamanho_pagina:
+            break
+        inicio += tamanho_pagina
+    return todos
+
+
+def upsert_em_lotes(
+    tabela: str,
+    registros: list[dict],
+    on_conflict: str,
+    chunk: int = CHUNK_UPSERT,
+) -> int:
+    """Faz upsert de `registros` em lotes de `chunk` (evita payload único
+    gigante). Retorna o total de linhas upsertadas. Mesmo idioma
+    `range(0, len(x), CHUNK)` repetido em promover_cotahist.py e
+    aplicar_ajuste_proventos.py, promovido pra cá."""
+    if not registros:
+        return 0
+    total = 0
+    for i in range(0, len(registros), chunk):
+        lote = registros[i : i + chunk]
+        res = supabase.table(tabela).upsert(lote, on_conflict=on_conflict).execute()
+        total += len(res.data)
+    return total
+
+
 def log_partial(job: str, rows: int, error_msg: str):
     """Registra run parcialmente bem-sucedido (alguns itens falharam)."""
     try:

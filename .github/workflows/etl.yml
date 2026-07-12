@@ -42,6 +42,12 @@ on:
     # cedo. Desligar quando a operação paralela terminar e rv_historico.py
     # for aposentado para preço.
     - cron: '15 11 * * 2-6'   # 08h15 BRT do dia seguinte
+    # Crosswalk CVM (B3) + Fundamentos CVM (DFP): dia 1 do mês, 12h/13h BRT
+    # (15h/16h UTC) — cadastro de empresas e DFP são quase estáticos,
+    # cadência mensal basta. 1h de offset entre os dois (fundamentos
+    # depende de cd_cvm já populado pelo crosswalk).
+    - cron: '0 15 1 * *'
+    - cron: '0 16 1 * *'
   workflow_dispatch:
     inputs:
       etl:
@@ -69,6 +75,10 @@ on:
           - promover_cotahist_dry_run
           - promover_cotahist
           - sortear_fundos
+          - crosswalk_cvm
+          - crosswalk_cvm_dry_run
+          - fundamentos_cvm
+          - fundamentos_cvm_dry_run
 
 jobs:
   # R7 (backlog): os ~16 jobs eram quase idênticos (checkout, setup-python,
@@ -276,6 +286,57 @@ jobs:
             # mesmo risco de hang de 'fundos' (chama as mesmas funções
             # garantir_cadastro_local/garantir_historico_local) -- mesmo teto
             # (ver comentário em 'fundos' sobre por que 30min, não 20).
+            timeout: 30
+
+          # ── Crosswalk CVM (B3 GetInitialCompanies) — popula
+          # rv_ativos.cd_cvm. Fonte quase estática (cadastro de empresas
+          # listadas) — cadência mensal é suficiente; upsert idempotente
+          # torna reprocessar seguro. Precede fundamentos_cvm via offset
+          # de cron (não `needs:` — matrix jobs são independentes, mesmo
+          # padrão de fund_analytics/fundos). NÃO entra em 'all' — jobs
+          # derivados/secundários, mesmo padrão de eventos_corporativos.
+          - id: crosswalk_cvm
+            label: 'ETL Crosswalk CVM (B3 -> cd_cvm)'
+            script: crosswalk_cvm.py
+            args: ''
+            crons: ['0 15 1 * *']   # dia 1 do mês, 12h BRT
+            in_all: false
+
+          # ── Crosswalk CVM — dry-run. Só leitura, imprime quantos
+          # tickers seriam resolvidos sem escrever em rv_ativos. Rodar
+          # antes do cron mensal ficar ativo sem supervisão.
+          - id: crosswalk_cvm_dry_run
+            label: 'Crosswalk CVM (dry-run)'
+            script: crosswalk_cvm.py
+            args: '--dry-run'
+            crons: []
+            in_all: false
+
+          # ── Fundamentos CVM (DFP: Lucro Líquido/PL/ROE) — depende de
+          # rv_ativos.cd_cvm já populado (offset de 1h sobre crosswalk_cvm).
+          # DFP é anual, mas retificações (VERSAO) ocorrem ao longo do ano
+          # — cadência mensal reprocessa o ano vigente e converge via
+          # upsert idempotente. timeout explícito: mesma classe de risco
+          # do job 'fundos' (download + parsing pandas de um zip CVM).
+          - id: fundamentos_cvm
+            label: 'ETL Fundamentos CVM (DFP: Lucro Líquido/PL/ROE)'
+            script: fundamentos_cvm.py
+            args: ''
+            crons: ['0 16 1 * *']   # dia 1 do mês, 13h BRT (1h após crosswalk_cvm)
+            in_all: false
+            timeout: 30
+
+          # ── Fundamentos CVM — dry-run. Só leitura, imprime os valores
+          # extraídos (Lucro Líquido/PL/ROE) sem escrever em
+          # rv_fundamentos -- riscos abertos (ESCALA_MOEDA, DT_REFER) não
+          # foram validados contra CSV real, rodar isto antes de confiar
+          # no cron mensal.
+          - id: fundamentos_cvm_dry_run
+            label: 'Fundamentos CVM (dry-run)'
+            script: fundamentos_cvm.py
+            args: '--dry-run'
+            crons: []
+            in_all: false
             timeout: 30
 
           # ── Notícias RSS ──────────────────────────────────────────────
