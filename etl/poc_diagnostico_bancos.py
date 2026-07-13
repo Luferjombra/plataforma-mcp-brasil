@@ -91,8 +91,12 @@ def main():
         if linhas_dre.empty:
             print("  [nenhuma linha encontrada -- CD_CVM pode não ter DRE nesse ano]")
         for _, row in linhas_dre.iterrows():
-            print(f"  CD_CONTA={row['CD_CONTA']:10s} VERSAO={row['VERSAO']:>2} "
-                  f"VL_CONTA={row['VL_CONTA']:>18,.2f}  DS_CONTA={row['DS_CONTA']}")
+            try:
+                valor = f"{float(row['VL_CONTA']):>18,.2f}"
+            except (TypeError, ValueError):
+                valor = f"{row['VL_CONTA']!r:>18}"
+            print(f"  CD_CONTA={row['CD_CONTA']:10s} VERSAO={row['VERSAO']!s:>2} "
+                  f"VL_CONTA={valor}  DS_CONTA={row['DS_CONTA']}")
 
         print("-- BPP (ORDEM_EXERC='ÚLTIMO') --")
         mask_bpp = (bpp["CD_CVM"] == cd_cvm) & (bpp["ORDEM_EXERC"] == "ÚLTIMO")
@@ -100,8 +104,12 @@ def main():
         if linhas_bpp.empty:
             print("  [nenhuma linha encontrada]")
         for _, row in linhas_bpp.iterrows():
-            print(f"  CD_CONTA={row['CD_CONTA']:10s} VERSAO={row['VERSAO']:>2} "
-                  f"VL_CONTA={row['VL_CONTA']:>18,.2f}  DS_CONTA={row['DS_CONTA']}")
+            try:
+                valor = f"{float(row['VL_CONTA']):>18,.2f}"
+            except (TypeError, ValueError):
+                valor = f"{row['VL_CONTA']!r:>18}"
+            print(f"  CD_CONTA={row['CD_CONTA']:10s} VERSAO={row['VERSAO']!s:>2} "
+                  f"VL_CONTA={valor}  DS_CONTA={row['DS_CONTA']}")
         print()
 
 
