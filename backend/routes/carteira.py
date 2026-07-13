@@ -1,16 +1,27 @@
 """
 Rotas de Carteira — rastreamento de posições e métricas de performance.
 POST   /carteira/posicoes           → adicionar posição
+POST   /carteira/posicoes/importar  → importar posições em lote via CSV ou XLSX (extrato de outra corretora)
 GET    /carteira/posicoes           → listar posições com preço atual e P&L
 DELETE /carteira/posicoes/{id}      → remover posição
 GET    /carteira/analise            → P&L consolidado + métricas de risco
 """
+import asyncio
+import csv
+import io
 import logging
+import re
+import unicodedata
 import uuid
+import zipfile
 from collections import defaultdict
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Path, Query
+import defusedxml.ElementTree as ET
+from xml.etree.ElementTree import Element  # só tipagem -- parsing de verdade sempre via defusedxml
+
+from fastapi import APIRouter, File, HTTPException, Path, Query, UploadFile
+from postgrest.exceptions import APIError
 from pydantic import BaseModel, Field
 
 from carteira.metricas import calcular_todas
@@ -63,6 +74,371 @@ def add_posicao(
     row = result.data[0]
     row["id"] = str(row["id"])  # normaliza UUID ou BIGSERIAL para string
     return row
+
+
+TIPOS_VALIDOS = {"acao", "fii", "etf"}
+COLUNAS_OBRIGATORIAS = {"ticker", "tipo", "quantidade", "preco_medio"}
+
+# Formatos numéricos aceitos, do mais específico pro mais genérico -- achado
+# real de pair-review: `"1.500".replace(",", ".")` vira 1.5 (não 1500), uma
+# corrupção SILENCIOSA de quantidade real de usuário se o CSV vier no
+# padrão BR de milhar (comum em extrato exportado do Excel). "1.500" sozinho
+# (1 grupo de 3 dígitos após um único ponto, sem vírgula) é genuinamente
+# ambíguo -- pode ser milhar BR (1500) ou uma fração de 3 casas (1.5 com um
+# zero a mais não faria sentido, mas não dá pra saber com certeza) -- por
+# isso vira erro explícito em vez de um chute.
+_NUM_BR_MILHAR = re.compile(r"^-?\d{1,3}(\.\d{3})+,\d+$")     # 1.500,50
+_NUM_US_MILHAR = re.compile(r"^-?\d{1,3}(,\d{3})+(\.\d+)?$")  # 1,500.50 ou 1,500
+_NUM_DECIMAL_VIRGULA = re.compile(r"^-?\d+,\d+$")             # 38,50
+_NUM_AMBIGUO = re.compile(r"^-?\d{1,3}\.\d{3}$")              # 1.500 -- ambíguo
+
+
+def _parse_numero(texto: str, campo: str) -> float:
+    texto = texto.strip()
+    if _NUM_BR_MILHAR.match(texto):
+        return float(texto.replace(".", "").replace(",", "."))
+    if _NUM_US_MILHAR.match(texto):
+        return float(texto.replace(",", ""))
+    if _NUM_DECIMAL_VIRGULA.match(texto):
+        return float(texto.replace(",", "."))
+    if _NUM_AMBIGUO.match(texto):
+        raise ValueError(
+            f"{campo} '{texto}' é ambíguo (separador de milhar ou casas decimais?) "
+            f"-- escreva sem separador de milhar, ex: 1500 ou 1500.00"
+        )
+    try:
+        return float(texto)
+    except ValueError:
+        raise ValueError(f"{campo} '{texto}' não é um número válido")
+
+
+def _decodificar_csv(bruto: bytes) -> str:
+    """Extrato de outra corretora/banco (Excel PT-BR) costuma salvar CSV em
+    cp1252/latin-1, não UTF-8 -- decodificar direto sem fallback quebrava
+    com UnicodeDecodeError não tratado (500 cru sem mensagem útil, achado
+    de pair-review). latin-1 nunca falha (mapeamento 1:1 de byte), então
+    serve de último recurso garantido."""
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            return bruto.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return bruto.decode("latin-1")
+
+
+# --- Suporte a XLSX real de corretora/banco (ex: relatório de custódia do
+# BTG) -- achado ao vivo, testado contra um relatório real do usuário: o
+# arquivo vem com extensão .xls mas é na verdade .xlsx (OOXML/zip), então a
+# extensão não é confiável -- detecção é pelo conteúdo (zipfile.is_zipfile).
+# Parser via zipfile + xml.etree (stdlib, sem pandas/openpyxl -- mantém o
+# backend enxuto pro free tier do Render) em vez de mandar o usuário
+# reformatar manualmente num CSV.
+_NS_SPREADSHEET = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+_NS_RELATIONSHIPS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+
+# Cabeçalho real confirmado no relatório de custódia BTG (aba "Renda
+# Variavel"): Código, Ativo, Tipo, Qtde., Preço Fechamento R$, Preço Médio
+# R$, Saldo Bruto R$ -- só as colunas que a carteira precisa entram aqui.
+_COLUNAS_XLSX = {
+    "codigo": "ticker",
+    "tipo": "tipo",
+    "qtde.": "quantidade", "qtde": "quantidade",
+    "preco medio r$": "preco_medio",
+}
+
+
+def _normalizar_texto(texto: str) -> str:
+    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return sem_acento.strip().lower()
+
+
+def _mapear_tipo_xlsx(bruto: str | None) -> str:
+    """BTG usa 'FII' pra fundos listados (único caso confirmado ao vivo).
+    Aceita também ETF/Ação por extensão do vocabulário já usado no resto da
+    plataforma -- sem confirmação real desses dois no relatório, mas 'acao'
+    é o mesmo termo (sem acento) já usado no formulário manual de
+    /carteira. Comparação por igualdade exata, não substring (achado de
+    pair-review: "in" bateria falso-positivo em algo como "Fração" ->
+    "fracao", que também contém "aca"). Qualquer outra coisa passa adiante
+    sem tradução e vira erro de validação explícito em _validar_linha, não
+    um chute silencioso."""
+    n = _normalizar_texto(bruto or "")
+    if n == "fii":
+        return "fii"
+    if n == "etf":
+        return "etf"
+    if n in ("acao", "acoes"):
+        return "acao"
+    return n
+
+
+def _shared_strings_xlsx(zf: zipfile.ZipFile) -> list[str]:
+    if "xl/sharedStrings.xml" not in zf.namelist():
+        return []
+    root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+    return [
+        "".join(t.text or "" for t in si.iter(f"{_NS_SPREADSHEET}t"))
+        for si in root.findall(f"{_NS_SPREADSHEET}si")
+    ]
+
+
+def _indice_coluna_xlsx(ref_celula: str) -> int:
+    """Converte referência de célula OOXML ('B13', 'AA5') pro índice de
+    coluna 0-based ('B'->1, 'AA'->26). Necessário porque o Excel OMITE do
+    XML o <c> de células genuinamente vazias -- indexar pela ORDEM DE
+    APARIÇÃO das células (em vez da coluna real) desloca todas as colunas
+    seguintes quando uma célula do meio da linha vem vazia. Achado real de
+    pair-review: no próprio relatório de teste, a coluna A de toda linha
+    vem vazia e sem <c> nenhum no XML -- um bug de deslocamento silencioso
+    de preco_medio/quantidade em produção, não hipotético."""
+    letras = "".join(ch for ch in ref_celula if ch.isalpha())
+    indice = 0
+    for ch in letras:
+        indice = indice * 26 + (ord(ch.upper()) - ord("A") + 1)
+    return indice - 1
+
+
+def _valor_celula_xlsx(c: Element, strings: list[str]) -> str | None:
+    v = c.find(f"{_NS_SPREADSHEET}v")
+    if v is None or v.text is None:
+        return None
+    if c.get("t") == "s":
+        return strings[int(v.text)]
+    return v.text
+
+
+def _linhas_planilha_xlsx(zf: zipfile.ZipFile, caminho: str, strings: list[str]) -> list[dict[int, str]]:
+    """Cada linha vira um dict {índice_de_coluna: valor}, não uma lista
+    posicional -- ver _indice_coluna_xlsx."""
+    root = ET.fromstring(zf.read(caminho))
+    linhas = []
+    for row in root.iter(f"{_NS_SPREADSHEET}row"):
+        linha = {}
+        for c in row.findall(f"{_NS_SPREADSHEET}c"):
+            ref = c.get("r")
+            if not ref:
+                continue
+            valor = _valor_celula_xlsx(c, strings)
+            if valor is not None:
+                linha[_indice_coluna_xlsx(ref)] = valor
+        linhas.append(linha)
+    return linhas
+
+
+# Guardas contra zip bomb / arquivo hostil -- endpoint público, upload de
+# usuário, achado de pair-review: sem isso, um zip pequeno mas malicioso
+# (poucos KB comprimidos, GBs descomprimidos) travaria o único worker
+# uvicorn do Render (ver comentário de asyncio.to_thread em get_analise
+# logo abaixo neste arquivo) e junto todas as requisições em voo da
+# plataforma, não só a do atacante.
+TAMANHO_MAX_UPLOAD = 5 * 1024 * 1024                # 5 MB -- relatório de carteira real não chega perto disso
+TAMANHO_MAX_ENTRY_DESCOMPRIMIDO = 20 * 1024 * 1024  # 20 MB por arquivo dentro do zip
+
+
+def _validar_tamanho_zip(zf: zipfile.ZipFile) -> None:
+    for info in zf.infolist():
+        if info.file_size > TAMANHO_MAX_ENTRY_DESCOMPRIMIDO:
+            raise ValueError(
+                f"arquivo '{info.filename}' dentro do XLSX é grande demais ao descomprimir "
+                f"-- suspeito de zip bomb, upload rejeitado"
+            )
+
+
+def _extrair_linhas_xlsx(bruto: bytes) -> list[dict]:
+    """Varre todas as abas do arquivo procurando uma tabela com cabeçalho
+    reconhecível (Código/Tipo/Qtde./Preço Médio) -- não depende do nome da
+    aba (confirmado como "Renda Variavel" no BTG, mas outras
+    corretoras/bancos podem nomear diferente). Para na primeira linha sem
+    ticker ou que comece com "total" (linha de subtotal, ex: "Total em
+    Fundos Listados R$") -- não tenta ler Conta Corrente/Valores em
+    Trânsito (saldo em caixa, não posição de ativo, fora do escopo de
+    carteira_posicoes). Só a primeira aba com tabela reconhecível é
+    importada -- se uma segunda aba também bater, isso é logado como aviso
+    em vez de ignorado sem rastro (achado de pair-review: mesma classe de
+    risco do truncamento silencioso de paginação já sofrido no projeto)."""
+    with zipfile.ZipFile(io.BytesIO(bruto)) as zf:
+        _validar_tamanho_zip(zf)
+        strings = _shared_strings_xlsx(zf)
+
+        rels_root = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+        sheet_targets = {
+            rel.get("Id"): rel.get("Target")
+            for rel in rels_root
+            if "worksheet" in rel.get("Type", "")
+        }
+        workbook_root = ET.fromstring(zf.read("xl/workbook.xml"))
+
+        resultado: list[dict] | None = None
+        nome_aba_resultado: str | None = None
+        for sheet in workbook_root.iter(f"{_NS_SPREADSHEET}sheet"):
+            target = sheet_targets.get(sheet.get(f"{_NS_RELATIONSHIPS}id"))
+            if not target:
+                continue
+            linhas = _linhas_planilha_xlsx(zf, f"xl/{target}", strings)
+
+            for i, linha in enumerate(linhas):
+                idx = {}
+                for col, celula in linha.items():
+                    chave = _COLUNAS_XLSX.get(_normalizar_texto(celula))
+                    if chave:
+                        idx[chave] = col
+                if not {"ticker", "tipo", "quantidade", "preco_medio"} <= idx.keys():
+                    continue  # não é o cabeçalho da tabela de posições
+
+                registros = []
+                for dado in linhas[i + 1:]:
+                    if not dado:
+                        break
+                    ticker_bruto = dado.get(idx["ticker"])
+                    if not ticker_bruto or _normalizar_texto(ticker_bruto).startswith("total"):
+                        break
+                    registros.append({
+                        "ticker": ticker_bruto.rstrip("*").strip(),
+                        "tipo": _mapear_tipo_xlsx(dado.get(idx["tipo"])),
+                        "quantidade": dado.get(idx["quantidade"]),
+                        "preco_medio": dado.get(idx["preco_medio"]),
+                    })
+                if registros:
+                    if resultado is None:
+                        resultado, nome_aba_resultado = registros, sheet.get("name")
+                    else:
+                        logger.warning(
+                            f"importação de carteira: aba '{sheet.get('name')}' também tem uma "
+                            f"tabela de posições reconhecível -- só '{nome_aba_resultado}' foi "
+                            f"importada, essa segunda foi ignorada"
+                        )
+                break  # já achou (ou não) o cabeçalho desta aba -- não procura outro na mesma aba
+        return resultado or []
+
+
+def _validar_linha(linha: dict) -> dict:
+    """Valida uma linha de CSV nos mesmos moldes de PosicaoCreate, mas
+    linha a linha (não via Pydantic) -- assim uma linha ruim vira um erro
+    reportado pro usuário, em vez de derrubar o INSERT em lote inteiro por
+    violar o CHECK constraint de `tipo`/`quantidade`/`preco_medio` no banco."""
+    ticker = (linha.get("ticker") or "").strip().upper()
+    if not ticker:
+        raise ValueError("ticker vazio")
+
+    tipo = (linha.get("tipo") or "").strip().lower()
+    if tipo not in TIPOS_VALIDOS:
+        raise ValueError(f"tipo '{tipo}' inválido -- use acao, fii ou etf")
+
+    quantidade = _parse_numero(linha.get("quantidade") or "", "quantidade")
+    preco_medio = _parse_numero(linha.get("preco_medio") or "", "preco_medio")
+    if quantidade <= 0 or preco_medio <= 0:
+        raise ValueError("quantidade e preco_medio devem ser maiores que zero")
+
+    data_entrada = (linha.get("data_entrada") or "").strip() or date.today().isoformat()
+    try:
+        date.fromisoformat(data_entrada)
+    except ValueError:
+        raise ValueError(f"data_entrada '{data_entrada}' inválida -- use AAAA-MM-DD")
+
+    return {
+        "ticker": ticker, "tipo": tipo, "quantidade": quantidade,
+        "preco_medio": preco_medio, "data_entrada": data_entrada,
+    }
+
+
+@router.post("/posicoes/importar")
+async def importar_posicoes(
+    session_id: str = Query(..., description="ID da sessão. Isola carteiras entre usuários."),
+    arquivo: UploadFile = File(
+        ...,
+        description="CSV (ticker,tipo,quantidade,preco_medio,data_entrada) ou XLSX de "
+                    "relatório de custódia de corretora/banco (ex: BTG)",
+    ),
+):
+    """
+    Importa várias posições de uma vez a partir de um arquivo -- pensado
+    pra trazer o extrato de outra corretora/banco sem cadastrar posição
+    por posição (Fase 1 do roadmap de importação de carteira).
+
+    Aceita dois formatos, detectados pelo conteúdo (não pela extensão --
+    relatórios de corretora costumam vir com extensão .xls mesmo sendo
+    XLSX de verdade, achado ao vivo):
+
+    1. CSV (separador vírgula, cabeçalho obrigatório):
+    `ticker,tipo,quantidade,preco_medio,data_entrada` -- `tipo` é 'acao',
+    'fii' ou 'etf'; `data_entrada` é opcional (AAAA-MM-DD, padrão hoje se
+    ausente). `quantidade`/`preco_medio` aceitam formato simples (1500,
+    38.50) ou BR/US com separador de milhar (1.500,50 ou 1,500.50) -- um
+    número tipo "1.500" sozinho (1 ponto, sem vírgula) é rejeitado por ser
+    ambíguo entre milhar e casas decimais.
+
+    2. XLSX de relatório de custódia (testado ao vivo contra um relatório
+    real do BTG): procura automaticamente, em qualquer aba, uma tabela com
+    cabeçalho Código/Tipo/Qtde./Preço Médio -- não depende do nome da aba
+    nem da corretora ser especificamente o BTG. Não tem coluna de data de
+    entrada (BTG não expõe isso no relatório de custódia), então todas as
+    posições importadas por XLSX usam a data de hoje -- séries históricas
+    de performance calculadas a partir daí não refletem a data de compra
+    real.
+
+    Cada linha/posição vale as mesmas regras de POST /carteira/posicoes.
+
+    Use quando o usuário quiser subir um extrato/relatório com várias
+    posições de uma corretora ou banco (ex: BTG, XP, Itaú) em vez de
+    cadastrar uma por uma.
+
+    Retorna: { inseridas, total_linhas, erros: [{ linha, motivo }] }
+    -- linhas inválidas são reportadas em `erros`, não derrubam as válidas.
+    """
+    # Lê no máximo TAMANHO_MAX_UPLOAD+1 bytes -- limita o custo de memória/CPU
+    # do parse abaixo independente de quão grande o arquivo enviado seja
+    # (achado de pair-review: sem isso, um upload hostil de poucos KB
+    # comprimidos mas GBs descomprimidos travava o único worker uvicorn do
+    # Render, derrubando toda a plataforma, não só essa requisição).
+    bruto = await arquivo.read(TAMANHO_MAX_UPLOAD + 1)
+    if len(bruto) > TAMANHO_MAX_UPLOAD:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Arquivo muito grande (máx {TAMANHO_MAX_UPLOAD // (1024 * 1024)}MB).",
+        )
+
+    if zipfile.is_zipfile(io.BytesIO(bruto)):
+        try:
+            # Parse de XML/zip é CPU-bound e síncrono -- roda em thread pra
+            # não travar o event loop do único worker (mesmo padrão de
+            # asyncio.to_thread já usado em get_posicoes/get_analise/search.py
+            # neste projeto), reforçado pelos guards de tamanho acima.
+            linhas = await asyncio.to_thread(_extrair_linhas_xlsx, bruto)
+        except (KeyError, ValueError, ET.ParseError, zipfile.BadZipFile) as e:
+            raise HTTPException(status_code=400, detail=f"Não consegui ler o XLSX: {e}")
+        if not linhas:
+            raise HTTPException(
+                status_code=400,
+                detail="Não encontrei uma tabela de posições reconhecível no arquivo "
+                       "(esperado colunas tipo Código/Tipo/Qtde./Preço Médio).",
+            )
+    else:
+        conteudo = _decodificar_csv(bruto)
+        leitor = csv.DictReader(io.StringIO(conteudo))
+        faltando = COLUNAS_OBRIGATORIAS - set(c.strip().lower() for c in (leitor.fieldnames or []))
+        if faltando:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV sem as colunas obrigatórias: {sorted(faltando)}. "
+                       f"Esperado: ticker,tipo,quantidade,preco_medio,data_entrada (data_entrada é opcional).",
+            )
+        linhas = list(leitor)
+
+    posicoes_validas = []
+    erros = []
+    for numero, linha in enumerate(linhas, start=2):  # linha 1 é o cabeçalho
+        try:
+            posicoes_validas.append({"session_id": session_id, **_validar_linha(linha)})
+        except ValueError as e:
+            erros.append({"linha": numero, "motivo": str(e)})
+
+    if posicoes_validas:
+        try:
+            supabase.table("carteira_posicoes").insert(posicoes_validas).execute()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Erro ao inserir posições: {e}")
+
+    return {"inseridas": len(posicoes_validas), "total_linhas": len(linhas), "erros": erros}
 
 
 @router.get("/posicoes")
@@ -180,7 +556,7 @@ def delete_posicao(
 
 
 @router.get("/analise")
-def get_analise(
+async def get_analise(
     session_id: str = Query(..., description="ID da sessão."),
     periodo_dias: int = Query(
         252, ge=21, le=1260,
@@ -201,12 +577,20 @@ def get_analise(
                sharpe, sortino, calmar, drawdown_max, win_rate,
                posicoes_count, valor_total, serie_carteira }
     """
-    res = (
-        supabase.table("carteira_posicoes")
-        .select("*")
-        .eq("session_id", session_id)
-        .execute()
-    )
+    def _buscar_posicoes():
+        return (
+            supabase.table("carteira_posicoes")
+            .select("*")
+            .eq("session_id", session_id)
+            .execute()
+        )
+
+    # Toda chamada bloqueante ao Supabase nesta rota async precisa passar por
+    # asyncio.to_thread -- rodar `.execute()` (síncrono) direto aqui travaria
+    # o event loop inteiro (achado de pair-review: o app sobe com 1 worker
+    # uvicorn, então isso travaria TODAS as outras requisições em voo, pior
+    # que o problema que o P7 tentou resolver).
+    res = await asyncio.to_thread(_buscar_posicoes)
     posicoes = res.data or []
     metricas_vazias = {
         "sharpe": None, "sortino": None, "calmar": None,
@@ -219,38 +603,64 @@ def get_analise(
             **metricas_vazias,
         }
 
-    tickers = list({p["ticker"] for p in posicoes})
+    # Série histórica do valor da carteira via RPC (migration 015): alinha
+    # por ticker/data e faz forward-fill (as-of join) no banco -- um ticker
+    # ilíquido que não negociou num dia usa o último preço conhecido, em vez
+    # de contribuir 0 pro valor daquele dia (ver E3b).
+    datas: list[str] = []
+    serie: list[float] = []
+    def _buscar_serie_rpc():
+        return supabase.rpc("carteira_serie_valor", {
+            "p_tickers":       [p["ticker"] for p in posicoes],
+            "p_quantidades":   [float(p["quantidade"]) for p in posicoes],
+            "p_data_entradas": [p["data_entrada"] for p in posicoes],
+            "p_periodo_dias":  periodo_dias,
+        }).execute()
 
-    # Histórico de preços para reconstruir série da carteira.
-    # desc=True para pegar os pregões MAIS RECENTES (com asc, o limit trazia
-    # as linhas mais antigas da tabela — série da carteira ficava defasada
-    # conforme rv_historico acumulava histórico). A reordenação para o
-    # cálculo é feita via sorted() logo abaixo, então a ordem aqui não afeta.
-    res_hist = (
-        supabase.table("rv_historico")
-        .select("ticker,data,fechamento_adj,fechamento")
-        .in_("ticker", tickers)
-        .order("data", desc=True)
-        .limit(periodo_dias * len(tickers))
-        .execute()
-    )
-    hist_por_ticker: dict[str, list] = defaultdict(list)
-    for row in res_hist.data or []:
-        hist_por_ticker[row["ticker"]].append(row)
+    try:
+        res_serie = await asyncio.to_thread(_buscar_serie_rpc)
+        for row in res_serie.data or []:
+            datas.append(row["data"])
+            serie.append(float(row["valor"]))
+    except APIError as e:
+        # PGRST202 = função não encontrada no schema cache do PostgREST --
+        # migration 015 ainda não foi aplicada nesse ambiente. Qualquer outro
+        # erro (bug na função SQL, dado inválido, etc.) sobe como 500 em vez
+        # de cair silenciosamente no fallback abaixo, que é sabidamente
+        # impreciso (dado financeiro -- não dá pra mascarar um bug real aqui).
+        if e.code != "PGRST202":
+            raise
+        logger.warning(f"carteira_serie_valor indisponivel (migration 015 nao aplicada); usando fallback sem forward-fill: {e}")
+        # Fallback: reconstrução antiga em Python -- sem forward-fill, LIMIT
+        # global sem ORDER BY por ticker (o bug que a migration 015 resolve).
+        # Mantido só pra não quebrar a rota enquanto a migration não roda.
+        tickers_unicos = list({p["ticker"] for p in posicoes})
 
-    # Reconstruir série histórica do valor total da carteira
-    valor_por_data: dict[str, float] = defaultdict(float)
-    for p in posicoes:
-        ticker = p["ticker"]
-        qtd = float(p["quantidade"])
-        data_entrada = p["data_entrada"]
-        for row in hist_por_ticker.get(ticker, []):
-            if row["data"] >= data_entrada:
-                preco = float(row.get("fechamento_adj") or row.get("fechamento") or 0)
-                valor_por_data[row["data"]] += preco * qtd
+        def _buscar_historico_fallback():
+            return (
+                supabase.table("rv_historico")
+                .select("ticker,data,fechamento_adj,fechamento")
+                .in_("ticker", tickers_unicos)
+                .order("data", desc=True)
+                .limit(periodo_dias * len(tickers_unicos))
+                .execute()
+            )
 
-    datas = sorted(valor_por_data.keys())[-periodo_dias:]
-    serie = [valor_por_data[d] for d in datas]
+        res_hist = await asyncio.to_thread(_buscar_historico_fallback)
+        hist_por_ticker: dict[str, list] = defaultdict(list)
+        for row in res_hist.data or []:
+            hist_por_ticker[row["ticker"]].append(row)
+        valor_por_data: dict[str, float] = defaultdict(float)
+        for p in posicoes:
+            ticker = p["ticker"]
+            qtd = float(p["quantidade"])
+            data_entrada = p["data_entrada"]
+            for row in hist_por_ticker.get(ticker, []):
+                if row["data"] >= data_entrada:
+                    preco = float(row.get("fechamento_adj") or row.get("fechamento") or 0)
+                    valor_por_data[row["data"]] += preco * qtd
+        datas = sorted(valor_por_data.keys())[-periodo_dias:]
+        serie = [valor_por_data[d] for d in datas]
 
     # P&L e rentabilidade
     valor_atual = serie[-1] if serie else 0.0
@@ -258,10 +668,10 @@ def get_analise(
     pl_total = valor_atual - custo_total
     rentabilidade_pct = (pl_total / custo_total * 100) if custo_total > 0 else 0.0
 
-    # vs CDI
-    vs_cdi_pp = None
-    try:
-        res_cdi = (
+    # vs CDI e vs IBOV não dependem uma da outra -- rodam em paralelo (P7,
+    # mesmo padrão de routes/search.py) em vez de 2 round-trips sequenciais.
+    def _buscar_cdi():
+        return (
             supabase.table("indicadores_economicos")
             .select("valor")
             .eq("serie", "cdi")
@@ -269,18 +679,9 @@ def get_analise(
             .limit(len(datas))
             .execute()
         )
-        if res_cdi.data:
-            cdi_acc = 1.0
-            for row in res_cdi.data:
-                cdi_acc *= (1 + float(row["valor"]) / 100)
-            vs_cdi_pp = round(rentabilidade_pct - (cdi_acc - 1) * 100, 4)
-    except Exception:
-        pass
 
-    # vs IBOV
-    vs_ibov_pp = None
-    try:
-        res_ibov = (
+    def _buscar_ibov():
+        return (
             supabase.table("rv_historico")
             .select("data,fechamento")
             .eq("ticker", "IBOV")
@@ -288,14 +689,28 @@ def get_analise(
             .limit(len(datas))
             .execute()
         )
-        rows = res_ibov.data or []
+
+    res_cdi_result, res_ibov_result = await asyncio.gather(
+        asyncio.to_thread(_buscar_cdi),
+        asyncio.to_thread(_buscar_ibov),
+        return_exceptions=True,
+    )
+
+    vs_cdi_pp = None
+    if not isinstance(res_cdi_result, BaseException) and res_cdi_result.data:
+        cdi_acc = 1.0
+        for row in res_cdi_result.data:
+            cdi_acc *= (1 + float(row["valor"]) / 100)
+        vs_cdi_pp = round(rentabilidade_pct - (cdi_acc - 1) * 100, 4)
+
+    vs_ibov_pp = None
+    if not isinstance(res_ibov_result, BaseException):
+        rows = res_ibov_result.data or []
         if len(rows) >= 2:
             inicio = float(rows[-1]["fechamento"])
             fim = float(rows[0]["fechamento"])
             if inicio > 0:
                 vs_ibov_pp = round(rentabilidade_pct - (fim - inicio) / inicio * 100, 4)
-    except Exception:
-        pass
 
     metricas = calcular_todas(serie) if len(serie) >= 22 else metricas_vazias
 

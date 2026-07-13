@@ -82,6 +82,43 @@ export function getHistoricoRV(ticker: string, limit = 252) {
   return fetchAPI<{ ticker: string; data: Historico[] }>(`/rv/historico/${ticker}?limit=${limit}`)
 }
 
+// Screener fundamentalista (DFP CVM, ver etl/fundamentos_cvm.py)
+export interface FundamentoRV {
+  ticker: string
+  ano_referencia: number
+  lucro_liquido: number | null
+  patrimonio_liquido: number | null
+  roe: number | null
+  nome: string | null
+  setor: string | null
+  subsetor: string | null
+  tipo: string | null
+  market_cap: number | null
+  p_l: number | null
+}
+
+export interface ScreenerParams {
+  q?: string
+  setor?: string
+  roeMin?: number
+  sort?: 'roe' | 'lucro_liquido' | 'patrimonio_liquido'
+  order?: 'asc' | 'desc'
+  page?: number
+  perPage?: number
+}
+
+export function getScreener(params: ScreenerParams = {}) {
+  const qs = new URLSearchParams()
+  if (params.q) qs.set('q', params.q)
+  if (params.setor) qs.set('setor', params.setor)
+  if (params.roeMin != null) qs.set('roe_min', String(params.roeMin))
+  qs.set('sort', params.sort ?? 'roe')
+  qs.set('order', params.order ?? 'desc')
+  qs.set('page', String(params.page ?? 1))
+  qs.set('per_page', String(params.perPage ?? 50))
+  return fetchAPI<{ data: FundamentoRV[]; total: number; page: number; per_page: number }>(`/rv/screener?${qs}`)
+}
+
 // Fundos
 export interface Fundo {
   cnpj: string
@@ -257,6 +294,29 @@ export function addPosicao(
     `/carteira/posicoes?session_id=${encodeURIComponent(sessionId)}`,
     { method: 'POST', body: JSON.stringify(body) }
   )
+}
+
+export interface ImportacaoPosicoes {
+  inseridas: number
+  total_linhas: number
+  erros: { linha: number; motivo: string }[]
+}
+
+export async function importarPosicoes(sessionId: string, arquivo: File): Promise<ImportacaoPosicoes> {
+  const formData = new FormData()
+  formData.append('arquivo', arquivo)
+  // Sem Content-Type manual -- o browser define o boundary do multipart
+  // sozinho; fetchAPI() força application/json e quebraria o upload.
+  const res = await fetch(
+    `${API_URL}/carteira/posicoes/importar?session_id=${encodeURIComponent(sessionId)}`,
+    { method: 'POST', body: formData }
+  )
+  if (!res.ok) {
+    let detail: string | null = null
+    try { detail = (await res.json())?.detail ?? null } catch { /* corpo não-JSON */ }
+    throw new APIError(res.status, detail, '/carteira/posicoes/importar')
+  }
+  return res.json()
 }
 
 export async function deletePosicao(sessionId: string, posicaoId: string): Promise<void> {

@@ -7,12 +7,13 @@ import { useEffect, useState } from 'react'
 import {
   TrendingUp, BarChart2, Briefcase, MessageSquare,
   Activity, Sun, Moon, Landmark, ServerCog, LayoutDashboard, Newspaper,
-  BriefcaseBusiness, Building2,
+  BriefcaseBusiness, Building2, Filter,
 } from 'lucide-react'
 
 const links = [
   { href: '/indicadores',  label: 'Indicadores',     icon: Activity,          tag: 'MACRO'  },
   { href: '/rv',           label: 'Renda Variável',  icon: TrendingUp,        tag: 'B3'     },
+  { href: '/screener',     label: 'Screener',        icon: Filter,            tag: 'NOVO'   },
   { href: '/rf',           label: 'Tesouro Direto',  icon: Landmark,          tag: 'TD'     },
   { href: '/renda-fixa',   label: 'Renda Fixa',      icon: Building2,         tag: 'ANBIMA' },
   { href: '/fundos',       label: 'Fundos',          icon: Briefcase,         tag: 'CVM'    },

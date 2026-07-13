@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Query, HTTPException
+from cache_utils import cache_ttl
 from db import supabase
 from postgrest_utils import sanitizar_busca
 
@@ -8,7 +9,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# P7: rv_ativos e rv_historico só mudam 1x/dia (ETL noturno) -- cache TTL em
+# memória evita bater no Supabase a cada carregamento de página. maxsize
+# folgado porque `q` (busca livre) pode gerar bastante combinação de chave.
 @router.get("/ativos")
+@cache_ttl(ttl_seconds=300, maxsize=500)
 def get_ativos(
     setor: str = Query(None),
     ativo: bool = Query(True),
@@ -67,6 +72,83 @@ def get_ativos(
     return {"data": data, "total": result.count or 0, "page": page, "per_page": per_page}
 
 
+CAMPOS_ORDENAVEIS_SCREENER = {"roe", "lucro_liquido", "patrimonio_liquido"}
+
+
+@router.get("/screener")
+@cache_ttl(ttl_seconds=300, maxsize=200)
+def get_screener(
+    setor: str = Query(None, description="Filtra por setor de rv_ativos"),
+    q: str = Query(None, description="Busca por ticker"),
+    roe_min: float = Query(None, description="ROE mínimo, em %"),
+    sort: str = Query("roe", description="Campo de ordenação: roe, lucro_liquido ou patrimonio_liquido"),
+    order: str = Query("desc", description="asc ou desc"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+):
+    """Screener fundamentalista -- Lucro Líquido/Patrimônio Líquido/ROE
+    extraídos do DFP da CVM (etl/fundamentos_cvm.py), cruzados com o
+    cadastro de rv_ativos (nome/setor/tipo/market_cap).
+
+    Cobertura é parcial -- nem toda ação ON/PN com cd_cvm resolvido tem
+    Lucro/PL localizável no DFP consolidado do ano corrente (fraseado de
+    conta divergente ou empresa sem relatório consolidado nesse ano); ver
+    kanban do projeto pro funil completo, não hardcoded aqui pra não
+    ficar desatualizado a cada nova safra do ETL.
+
+    P/L é calculado aqui na resposta, não persistido em rv_fundamentos
+    (decisão da migration 016): `market_cap / lucro_liquido`, só quando
+    lucro_liquido > 0 -- P/L negativo não é comparável entre empresas."""
+    if sort not in CAMPOS_ORDENAVEIS_SCREENER:
+        raise HTTPException(status_code=400, detail=f"sort deve ser um de {sorted(CAMPOS_ORDENAVEIS_SCREENER)}")
+    if order not in ("asc", "desc"):
+        raise HTTPException(status_code=400, detail="order deve ser asc ou desc")
+
+    # !inner só quando `setor` filtra o lado rv_ativos -- mesmo padrão de
+    # anbima.py::get_debentures (evita descartar fundamentos sem filtro).
+    ativos_embed = "rv_ativos" + ("!inner" if setor else "") + "(nome,setor,subsetor,tipo,market_cap)"
+
+    query = (
+        supabase.table("rv_fundamentos")
+        .select(f"ticker,ano_referencia,lucro_liquido,patrimonio_liquido,roe,{ativos_embed}", count="exact")
+        # roe pode ser NULL (patrimonio_liquido == 0, ver fundamentos_cvm.py) --
+        # sem esse filtro, NULLS FIRST (padrão do Postgres em ORDER BY ... DESC)
+        # jogava essas linhas pro topo do screener, na frente das ações com
+        # maior ROE de verdade (achado de pair-review).
+        .not_().is_(sort, "null")
+        .order(sort, desc=(order != "asc"))
+    )
+    if setor:
+        query = query.eq("rv_ativos.setor", setor)
+    if q:
+        termo = sanitizar_busca(q.strip())
+        if termo:
+            query = query.ilike("ticker", f"%{termo}%")
+    if roe_min is not None:
+        query = query.gte("roe", roe_min)
+
+    inicio = (page - 1) * per_page
+    result = query.range(inicio, inicio + per_page - 1).execute()
+
+    data = []
+    for r in result.data:
+        ativo = r.pop("rv_ativos", None) or {}
+        lucro = r.get("lucro_liquido")
+        market_cap = ativo.get("market_cap")
+        p_l = round(market_cap / lucro, 2) if (market_cap and lucro and lucro > 0) else None
+        data.append({
+            **r,
+            "nome": ativo.get("nome"),
+            "setor": ativo.get("setor"),
+            "subsetor": ativo.get("subsetor"),
+            "tipo": ativo.get("tipo"),
+            "market_cap": market_cap,
+            "p_l": p_l,
+        })
+
+    return {"data": data, "total": result.count or 0, "page": page, "per_page": per_page}
+
+
 TAMANHO_PAGINA_HISTORICO = 1000
 
 
@@ -97,6 +179,7 @@ def _buscar_historico(ticker: str, limit: int) -> list[dict]:
 
 
 @router.get("/historico/{ticker}")
+@cache_ttl(ttl_seconds=300, maxsize=500)
 def get_historico(ticker: str, limit: int = Query(252, ge=1, le=2000, description="Número de registros de pregão. Padrão: 252 (≈1 ano útil). Máx: 2000.")):
     """Retorna historico de pregao de um ativo."""
     ticker = ticker.upper()
