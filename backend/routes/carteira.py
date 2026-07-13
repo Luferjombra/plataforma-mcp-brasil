@@ -663,10 +663,24 @@ async def get_analise(
         serie = [valor_por_data[d] for d in datas]
 
     # P&L e rentabilidade
-    valor_atual = serie[-1] if serie else 0.0
     custo_total = sum(float(p["quantidade"]) * float(p["preco_medio"]) for p in posicoes)
-    pl_total = valor_atual - custo_total
-    rentabilidade_pct = (pl_total / custo_total * 100) if custo_total > 0 else 0.0
+    # `serie` vem vazia quando NENHUM ticker da carteira tem preço histórico
+    # disponível (ex: posição recém-importada de ticker sem rv_historico
+    # ainda) -- achado real (não hipotético): valor_atual = serie[-1] if
+    # serie else 0.0 fazia pl_total = 0 - custo_total virar -100% de
+    # "prejuízo", uma mentira (não sabemos o valor atual, não é que a
+    # posição zerou). `valor_total` (valor absoluto) usa custo_total como
+    # fallback, mesma convenção já usada em list_posicoes::valor_pos
+    # (`preco_atual if preco_atual else pm`) -- mas pl_total/
+    # rentabilidade_pct (delta/percentual) viram None, não 0, seguindo a
+    # convenção que list_posicoes já usa pra pl_valor/pl_pct nesse mesmo
+    # arquivo (achado de pair-review).
+    sem_preco = not serie
+    valor_atual = serie[-1] if serie else custo_total
+    pl_total = None if sem_preco else (valor_atual - custo_total)
+    rentabilidade_pct = None if sem_preco else (
+        (pl_total / custo_total * 100) if custo_total > 0 else 0.0
+    )
 
     # vs CDI e vs IBOV não dependem uma da outra -- rodam em paralelo (P7,
     # mesmo padrão de routes/search.py) em vez de 2 round-trips sequenciais.
@@ -696,15 +710,17 @@ async def get_analise(
         return_exceptions=True,
     )
 
+    # vs_cdi/vs_ibov comparam contra a rentabilidade da própria carteira --
+    # sem rentabilidade_pct (sem_preco=True) não tem com o que comparar.
     vs_cdi_pp = None
-    if not isinstance(res_cdi_result, BaseException) and res_cdi_result.data:
+    if rentabilidade_pct is not None and not isinstance(res_cdi_result, BaseException) and res_cdi_result.data:
         cdi_acc = 1.0
         for row in res_cdi_result.data:
             cdi_acc *= (1 + float(row["valor"]) / 100)
         vs_cdi_pp = round(rentabilidade_pct - (cdi_acc - 1) * 100, 4)
 
     vs_ibov_pp = None
-    if not isinstance(res_ibov_result, BaseException):
+    if rentabilidade_pct is not None and not isinstance(res_ibov_result, BaseException):
         rows = res_ibov_result.data or []
         if len(rows) >= 2:
             inicio = float(rows[-1]["fechamento"])
@@ -715,8 +731,8 @@ async def get_analise(
     metricas = calcular_todas(serie) if len(serie) >= 22 else metricas_vazias
 
     return {
-        "pl_total":          round(pl_total, 2),
-        "rentabilidade_pct": round(rentabilidade_pct, 4),
+        "pl_total":          None if pl_total is None else round(pl_total, 2),
+        "rentabilidade_pct": None if rentabilidade_pct is None else round(rentabilidade_pct, 4),
         "vs_cdi_pp":         vs_cdi_pp,
         "vs_ibov_pp":        vs_ibov_pp,
         "valor_total":       round(valor_atual, 2),

@@ -266,8 +266,8 @@ export interface Posicao {
 }
 
 export interface AnaliseCarteira {
-  pl_total: number
-  rentabilidade_pct: number
+  pl_total: number | null
+  rentabilidade_pct: number | null
   vs_cdi_pp: number | null
   vs_ibov_pp: number | null
   sharpe: number | null

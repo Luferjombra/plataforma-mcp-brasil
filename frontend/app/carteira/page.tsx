@@ -178,8 +178,8 @@ export default function CarteiraPage() {
   }
 
   const kpis = analise ? [
-    { label: 'P&L Total',      valor: fmtBRL(analise.pl_total),              num: analise.pl_total },
-    { label: 'Rentabilidade',  valor: fmtPct(analise.rentabilidade_pct),      num: analise.rentabilidade_pct },
+    { label: 'P&L Total',      valor: analise.pl_total !== null ? fmtBRL(analise.pl_total) : '—', num: analise.pl_total },
+    { label: 'Rentabilidade',  valor: analise.rentabilidade_pct !== null ? fmtPct(analise.rentabilidade_pct) : '—', num: analise.rentabilidade_pct },
     { label: 'vs CDI',         valor: analise.vs_cdi_pp !== null ? fmtPP(analise.vs_cdi_pp) : '—', num: analise.vs_cdi_pp },
     { label: 'vs IBOV',        valor: analise.vs_ibov_pp !== null ? fmtPP(analise.vs_ibov_pp) : '—', num: analise.vs_ibov_pp },
   ] : []
