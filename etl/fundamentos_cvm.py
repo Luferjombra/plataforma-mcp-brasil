@@ -55,8 +55,13 @@ from log_etl import (
 
 URL_BASE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS"
 
-# Fraseados de DS_CONTA já validados na POC contra dados reais (empresas
+# Fraseados de DS_CONTA já validados contra dados reais (empresas
 # financeiras e não-financeiras) -- ordem importa, primeira que casar vence.
+# As 2 últimas variantes cobrem o padrão COSIF de bancos/instituições
+# financeiras (achado real via diagnóstico ao vivo: BBAS3/BRSR3/BRSR5/BRSR6
+# usam "Lucro OU Prejuízo Líquido Consolidado do Período" -- "ou" em vez de
+# "/", e "Líquido" inserido entre "Prejuízo" e "Consolidado" -- fraseado
+# que nenhuma das variantes anteriores cobria).
 VARIANTES_LUCRO = [
     "lucro/prejuízo consolidado do período",
     "lucro/prejuízo do período",
@@ -64,6 +69,8 @@ VARIANTES_LUCRO = [
     "lucro líquido do período",
     "resultado líquido consolidado do período",
     "resultado líquido do período",
+    "lucro ou prejuízo líquido consolidado do período",
+    "lucro ou prejuízo líquido do período",
 ]
 VARIANTES_PL = [
     "patrimônio líquido consolidado",
