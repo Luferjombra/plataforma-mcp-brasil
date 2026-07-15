@@ -278,6 +278,7 @@ export interface AnaliseCarteira {
   posicoes_count: number
   valor_total: number
   serie_carteira: { data: string; valor: number }[]
+  tickers_sem_preco_atual: string[]
 }
 
 export function getPosicoes(sessionId: string) {

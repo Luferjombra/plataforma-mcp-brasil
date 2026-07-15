@@ -503,6 +503,12 @@ export default function CarteiraPage() {
               ))}
             </div>
 
+            {analise.tickers_sem_preco_atual.length > 0 && (
+              <p style={{ fontSize: 11, color: 'var(--cl-ink3)' }}>
+                Sem preço atual disponível pra {analise.tickers_sem_preco_atual.join(', ')} — valor considerado pelo preço médio de compra (não é P&amp;L real dessa posição).
+              </p>
+            )}
+
             {/* Chart */}
             {analise.serie_carteira.length > 1 && (
               <div style={cardStyle}>

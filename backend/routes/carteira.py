@@ -600,8 +600,11 @@ async def get_analise(
         return {
             "pl_total": 0, "rentabilidade_pct": 0, "vs_cdi_pp": None, "vs_ibov_pp": None,
             "posicoes_count": 0, "valor_total": 0, "serie_carteira": [],
+            "tickers_sem_preco_atual": [],
             **metricas_vazias,
         }
+
+    tickers_unicos = list({p["ticker"] for p in posicoes})
 
     # Série histórica do valor da carteira via RPC (migration 015): alinha
     # por ticker/data e faz forward-fill (as-of join) no banco -- um ticker
@@ -634,7 +637,6 @@ async def get_analise(
         # Fallback: reconstrução antiga em Python -- sem forward-fill, LIMIT
         # global sem ORDER BY por ticker (o bug que a migration 015 resolve).
         # Mantido só pra não quebrar a rota enquanto a migration não roda.
-        tickers_unicos = list({p["ticker"] for p in posicoes})
 
         def _buscar_historico_fallback():
             return (
@@ -676,7 +678,63 @@ async def get_analise(
     # convenção que list_posicoes já usa pra pl_valor/pl_pct nesse mesmo
     # arquivo (achado de pair-review).
     sem_preco = not serie
+
+    # Achado de pair-review (cobertura PARCIAL, não coberto pelo fix acima):
+    # carteira_serie_valor faz COALESCE(preco, 0) por ticker/data -- um
+    # ticker SEM preço nenhum (mas outros da carteira COM) não zera `serie`
+    # inteira, só subestima o último ponto silenciosamente, sem o sintoma
+    # óbvio do -100%. Corrige só valor_atual (o último ponto, que é o que
+    # pl_total/rentabilidade_pct usam) -- serie_carteira completa (usada no
+    # gráfico e nas métricas de risco) pode ainda subestimar dias mais
+    # antigos pra esses tickers; corrigir isso exigiria a própria função
+    # SQL devolver cobertura por ticker/data, fora do escopo deste fix.
+    def _buscar_cobertura_precos():
+        return supabase.rpc("rv_variacao_diaria").in_("ticker", tickers_unicos).execute()
+
+    def _tickers_sem_preco_algum(tickers: list[str]) -> list[str]:
+        """Confirma ponto a ponto (mesmo padrão de list_posicoes, poucas
+        linhas acima) se cada ticker tem QUALQUER linha em rv_historico --
+        não só dentro da janela de 10 dias (global, não da carteira) de
+        rv_variacao_diaria. carteira_serie_valor faz forward-fill SEM
+        limite de janela (migration 015: `h.data <= c.data`, sem corte de
+        tempo) -- um ticker fora da janela de 10 dias mas com preço real
+        mais antigo já está corretamente refletido em serie[-1]; tratá-lo
+        como "sem preço" e somar o custo em cima seria dupla contagem real
+        (achado de pair-review, confirmado lendo as duas funções SQL)."""
+        sem_preco = []
+        for t in tickers:
+            res = (
+                supabase.table("rv_historico")
+                .select("data")
+                .eq("ticker", t)
+                .order("data", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if not res.data:
+                sem_preco.append(t)
+        return sem_preco
+
+    tickers_sem_preco_atual: list[str] = []
+    if not sem_preco:
+        tickers_com_preco_recente: set[str] = set()
+        try:
+            res_cobertura = await asyncio.to_thread(_buscar_cobertura_precos)
+            tickers_com_preco_recente = {row["ticker"] for row in (res_cobertura.data or [])}
+        except APIError as e:
+            logger.warning(f"rv_variacao_diaria indisponivel pra checagem de cobertura de carteira: {e}")
+
+        tickers_sem_confirmar = sorted(set(tickers_unicos) - tickers_com_preco_recente)
+        if tickers_sem_confirmar:
+            tickers_sem_preco_atual = await asyncio.to_thread(_tickers_sem_preco_algum, tickers_sem_confirmar)
+
     valor_atual = serie[-1] if serie else custo_total
+    if tickers_sem_preco_atual:
+        custo_sem_preco = sum(
+            float(p["quantidade"]) * float(p["preco_medio"])
+            for p in posicoes if p["ticker"] in tickers_sem_preco_atual
+        )
+        valor_atual += custo_sem_preco
     pl_total = None if sem_preco else (valor_atual - custo_total)
     rentabilidade_pct = None if sem_preco else (
         (pl_total / custo_total * 100) if custo_total > 0 else 0.0
@@ -738,5 +796,6 @@ async def get_analise(
         "valor_total":       round(valor_atual, 2),
         "posicoes_count":    len(posicoes),
         "serie_carteira":    [{"data": d, "valor": round(v, 2)} for d, v in zip(datas, serie)],
+        "tickers_sem_preco_atual": tickers_sem_preco_atual,
         **metricas,
     }
