@@ -120,7 +120,13 @@ def _num(campo: str) -> int | None:
 def classificar(ticker: str, especi: str, codbdi: str) -> str:
     especi = especi.strip()
     codbdi = codbdi.strip()
-    if especi == "BDR":
+    # BDR: o layout do COTAHIST nunca usa a string literal "BDR" em ESPECI --
+    # os valores reais são DRN/DRE/DR1/DR2/DR3 (+ variantes com sufixo " ED"),
+    # confirmado ao vivo em rv_ativos_staging (achado da investigação de
+    # tipo='OUTROS', ver etl/investigar_outros.py no histórico do git). O
+    # check antigo (especi == "BDR") nunca batia com dado real -- ~1.096
+    # tickers (46% do universo) caíam em OUTROS por causa disso.
+    if especi.startswith("DR"):
         return "BDR"
     if codbdi == CODBDI_FII:
         return "FII"
