@@ -4,8 +4,6 @@ on:
   schedule:
     # Tesouro Direto: 10h BRT (13h UTC) — dados do dia anterior disponíveis
     - cron: '0 13 * * 1-5'
-    # Renda Variável (B3): 17h30 BRT (20h30 UTC) — após fechamento pregão
-    - cron: '30 20 * * 1-5'
     # Fundos CVM: 18h BRT (21h UTC) — CVM publica D-1 à tarde
     - cron: '0 21 * * 1-5'
     # Métricas analíticas de fundos: 19h BRT (22h UTC), 1h depois de 'fundos'
@@ -36,11 +34,14 @@ on:
     # obrigatório. Horários em BRT (UTC-3), com rollover de dia:
     - cron: '10 0 * * 2-6'    # 21h10 BRT (rollover: UTC já é o dia seguinte)
     - cron: '10 10 * * 2-6'   # 07h10 BRT do dia seguinte — fallback/manhã
-    # Validação cruzada COTAHIST vs brapi: diária durante a operação paralela
-    # (ADR-001, Passo 6) — roda depois dos dois pipelines de preço (brapi às
-    # 17h30 BRT, COTAHIST às 21h10/07h10 BRT) para pegar divergência nova
-    # cedo. Desligar quando a operação paralela terminar e rv_historico.py
-    # for aposentado para preço.
+    # Promoção COTAHIST -> produção: ADR-001, Passo 6 concluído (2026-07-20)
+    # -- a operação paralela (validação cruzada, 0 divergências) já validou
+    # o COTAHIST como fonte confiável; rv_historico.py (brapi) aposentado
+    # como driver diário de preço (mantido só como fallback manual, ver
+    # workflow_dispatch). Reaproveita o horário que era da validação cruzada
+    # diária (agora manual-only, ver job validar_cotahist) -- roda depois
+    # dos dois crons de staging (21h10/07h10 BRT), dando tempo do arquivo
+    # do dia (ou o fallback D-1) já estar processado em staging.
     - cron: '15 11 * * 2-6'   # 08h15 BRT do dia seguinte
     # Crosswalk CVM (B3) + Fundamentos CVM (DFP): dia 1 do mês, 12h/13h BRT
     # (15h/16h UTC) — cadastro de empresas e DFP são quase estáticos,
@@ -125,13 +126,17 @@ jobs:
             crons: ['0 13 * * 1-5']
             in_all: true
 
-          # ── Renda Variável (B3) ──────────────────────────────────────
+          # ── Renda Variável (B3) — aposentado como driver diário de preço
+          # em 2026-07-20 (ADR-001, Passo 6 concluído): COTAHIST/promover_cotahist
+          # assumiu esse papel pro universo completo. Mantido só como
+          # fallback manual (workflow_dispatch), não entra mais em 'all'
+          # nem tem cron -- mesma classe dos outros jobs manuais deste arquivo.
           - id: rv_historico
             label: 'ETL Renda Variável (B3)'
             script: rv_historico.py
             args: ''
-            crons: ['30 20 * * 1-5']
-            in_all: true
+            crons: []
+            in_all: false
 
           # ── Fundos de Investimento (CVM) ─────────────────────────────
           # timeout de job explícito (achado real via workflow_dispatch): a
@@ -206,17 +211,19 @@ jobs:
             in_all: false
             timeout: 30
 
-          # ── Validação cruzada COTAHIST vs brapi — diária + manual.
-          # Compara staging (COTAHIST) com produção (brapi) nos tickers já
-          # cobertos. Só leitura — não escreve em nenhuma tabela. Cron
-          # diário durante a operação paralela (ADR-001, Passo 6) —
-          # qualquer divergência nova > 1% aparece no log deste job.
-          # NÃO entra em 'all' (mesmo comportamento de sempre).
+          # ── Validação cruzada COTAHIST vs brapi — só manual desde
+          # 2026-07-20. Era diária durante a operação paralela (ADR-001,
+          # Passo 6), mas com rv_historico.py aposentado como driver de
+          # produção, "produção" deixa de ser uma fonte brapi independente
+          # -- a comparação perde a função de cross-check contínuo (viraria
+          # staging fresco vs. produção que É o próprio COTAHIST, só
+          # levemente atrasado). Mantido como ferramenta de conferência
+          # pontual (workflow_dispatch), não como guarda automática.
           - id: validar_cotahist
             label: 'Validação cruzada COTAHIST vs brapi'
             script: validar_cotahist.py
             args: ''
-            crons: ['15 11 * * 2-6']
+            crons: []
             in_all: false
 
           # ── Validação cruzada (fechamento_adj) — só manual. Mesma
@@ -240,13 +247,18 @@ jobs:
 
           # ── Promoção COTAHIST -> produção (ADR-001, Fase 2, Passo 5) —
           # real. ESCREVE em rv_ativos/rv_historico (produção). Requer
-          # migration 012_widen_ticker_producao.sql executada antes. Só
-          # disparar depois do dry-run revisado e aprovado.
+          # migration 012_widen_ticker_producao.sql executada antes (já
+          # aplicada). Recorrente desde 2026-07-20 -- até então só rodava
+          # via workflow_dispatch (o corte inicial de 08/07 foi único, sem
+          # promoção diária depois, deixando os ~2.337 tickers exclusivos
+          # do COTAHIST sem atualização de preço por 12 dias -- achado
+          # real, corrigido junto com esta mudança). Continua disparável
+          # manualmente também.
           - id: promover_cotahist
             label: 'Promoção COTAHIST -> produção'
             script: promover_cotahist.py
             args: ''
-            crons: []
+            crons: ['15 11 * * 2-6']
             in_all: false
 
           # ── Eventos Corporativos (brapi dividendsData) — cron diário +

@@ -40,6 +40,7 @@ Uso:
 """
 
 import argparse
+from collections import defaultdict
 
 from config import supabase
 from log_etl import ETLRun
@@ -73,13 +74,6 @@ def contar(tabela: str) -> int:
     return supabase.table(tabela).select("*", count="exact").limit(1).execute().count or 0
 
 
-def buscar_datas(tabela: str, ticker: str) -> set:
-    """Datas de um ticker específico, paginado — mesmo cuidado do limite de
-    1000 linhas, já que tickers líquidos de vários anos podem passar disso."""
-    linhas = buscar_paginado(tabela, "data", filtros={"ticker": ticker})
-    return {r["data"] for r in linhas}
-
-
 # ── Dry-run ───────────────────────────────────────────────────────────────────
 
 def dry_run():
@@ -101,18 +95,38 @@ def dry_run():
         # PRODUÇÃO HOJE (fato do banco, não a lista ATIVOS[] do código — um
         # ticker removido de ATIVOS mas ainda com linhas em rv_historico, ex.
         # BCFF11, ainda seria sobrescrito de verdade e precisa entrar na conta).
+        #
+        # Achado real (não hipotético): a versão anterior fazia 2 chamadas
+        # paginadas por ticker de ja_existentes -- rápido quando só existiam
+        # os ~31 tickers curados em produção (contexto original, pré-corte),
+        # mas ja_existentes passou a ser quase o universo inteiro (~2.335
+        # tickers) depois que o corte de 2026-07-08 promoveu tudo pra
+        # produção. Isso virou ~4.670 round-trips sequenciais -- um dry-run
+        # que devia levar segundos travou por dezenas de minutos. Corrigido
+        # pra 2 buscas em bloco (staging inteiro + produção inteira, cada
+        # uma já paginada com segurança) seguidas de agrupamento em memória
+        # -- poucas centenas de páginas no total, não milhares de chamadas.
         print("Overlap de histórico (só possível nos tickers já em produção hoje):")
+        staging_rows = buscar_paginado("rv_historico_staging", "ticker,data,fechamento_adj")
+        producao_rows = buscar_paginado("rv_historico", "ticker,data")
+
+        datas_staging_por_ticker: dict[str, set] = defaultdict(set)
+        ajuste_por_ticker: dict[str, int] = defaultdict(int)
+        for r in staging_rows:
+            datas_staging_por_ticker[r["ticker"]].add(r["data"])
+            if r.get("fechamento_adj") is not None:
+                ajuste_por_ticker[r["ticker"]] += 1
+
+        datas_producao_por_ticker: dict[str, set] = defaultdict(set)
+        for r in producao_rows:
+            datas_producao_por_ticker[r["ticker"]].add(r["data"])
+
         total_overlap = 0
         total_com_ajuste = 0
-        for ticker in sorted(ja_existentes):
-            datas_staging_row = buscar_paginado(
-                "rv_historico_staging", "data,fechamento_adj", filtros={"ticker": ticker}
-            )
-            datas_staging = {r["data"] for r in datas_staging_row}
-            datas_producao = buscar_datas("rv_historico", ticker)
-            overlap = datas_staging & datas_producao
+        for ticker in ja_existentes:
+            overlap = datas_staging_por_ticker[ticker] & datas_producao_por_ticker[ticker]
             total_overlap += len(overlap)
-            total_com_ajuste += sum(1 for r in datas_staging_row if r.get("fechamento_adj") is not None)
+            total_com_ajuste += ajuste_por_ticker[ticker]
 
         print(f"  Linhas que serão SOBRESCRITAS (mesmo ticker+data já em produção): ~{total_overlap}")
         print("  (já validado em validar_cotahist.py --usar-ajustado: 0 divergências nessas linhas)")
