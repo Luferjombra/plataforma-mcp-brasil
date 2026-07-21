@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, Newsreader, Source_Serif_4, Space_Mono } from 'next/font/google'
+import { Inter, Source_Serif_4, Space_Mono } from 'next/font/google'
 import './globals.css'
 import { ClientLayout } from '@/components/ClientLayout'
 import { ThemeProvider } from '@/components/ThemeProvider'
@@ -10,20 +10,13 @@ const inter = Inter({
   display: 'swap',
 })
 
-const newsreader = Newsreader({
+// Fonte de destaque ("papel editorial") — usada em todo o produto via
+// var(--font-display), não só na landing.
+const sourceSerif = Source_Serif_4({
   subsets: ['latin'],
   variable: '--font-display',
   display: 'swap',
   style: ['normal', 'italic'],
-  weight: ['400', '500', '600'],
-})
-
-// Usadas só na landing (design "papel editorial") — variáveis próprias,
-// não substituem --font-inter/--font-display usados no resto do produto.
-const sourceSerif = Source_Serif_4({
-  subsets: ['latin'],
-  variable: '--font-serif-editorial',
-  display: 'swap',
   weight: ['400', '600', '700'],
 })
 
@@ -41,7 +34,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${newsreader.variable} ${sourceSerif.variable} ${spaceMono.variable}`} suppressHydrationWarning>
+    <html lang="pt-BR" className={`${inter.variable} ${sourceSerif.variable} ${spaceMono.variable}`} suppressHydrationWarning>
       <body className="bg-background text-foreground antialiased">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           <ClientLayout>{children}</ClientLayout>

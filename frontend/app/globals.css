@@ -49,24 +49,28 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ── Clarity design tokens ──────────────────────────────── */
+/* ── Clarity design tokens ──────────────────────────────────────────
+   Repaletados pra identidade "papel editorial" (mesmos valores de
+   --lp-* abaixo) — todo o produto lê cor via var(--cl-*) inline, então
+   trocar os valores aqui já reskina indicadores/rv/rf/fundos/dashboard/
+   noticias/status/Sidebar/MobileTabBar sem tocar em nenhum componente. */
 :root {
-  --cl-bg: #f5f7fb;
+  --cl-bg: #F6F2EA;
   --cl-card: #ffffff;
-  --cl-ink: #0c1118;
-  --cl-ink2: #374151;
-  --cl-ink3: #6b7280;
-  --cl-line: #e5e7eb;
-  --cl-line2: #f3f4f6;
-  --cl-navy: #13315c;
-  --cl-accent: #1f6feb;
-  --cl-accent-soft: rgba(31, 111, 235, 0.08);
-  --cl-up: #0f9d58;
-  --cl-up-soft: rgba(15, 157, 88, 0.10);
-  --cl-down: #d93838;
-  --cl-down-soft: rgba(217, 56, 56, 0.10);
-  --cl-amber: #b9770a;
-  --cl-amber-soft: rgba(185, 119, 10, 0.10);
+  --cl-ink: #1E1C17;
+  --cl-ink2: #26251F;
+  --cl-ink3: #77746A;
+  --cl-line: #E4DECF;
+  --cl-line2: rgba(30, 28, 23, .08);
+  --cl-navy: #151B27;
+  --cl-accent: #C24A1C;
+  --cl-accent-soft: rgba(194, 74, 28, 0.08);
+  --cl-up: #3E8A57;
+  --cl-up-soft: rgba(62, 138, 87, 0.10);
+  --cl-down: #C05334;
+  --cl-down-soft: rgba(192, 83, 52, 0.10);
+  --cl-amber: #a6791f;
+  --cl-amber-soft: rgba(166, 121, 31, 0.10);
   --cl-radius: 14px;
   --cl-radius-sm: 9px;
   --cl-radius-xs: 6px;
@@ -78,13 +82,20 @@
 }
 
 .dark {
-  --cl-bg: #0c1118;
-  --cl-card: #121a26;
-  --cl-ink: #f0f4f8;
-  --cl-ink2: #c5cfe0;
-  --cl-ink3: #6b7c96;
-  --cl-line: rgba(255,255,255,.08);
-  --cl-line2: rgba(255,255,255,.04);
+  --cl-bg: #0b1320;
+  --cl-card: #14202f;
+  --cl-ink: #f1f5fa;
+  --cl-ink2: #c6cfdb;
+  --cl-ink3: #818c9d;
+  --cl-line: rgba(255,255,255,.10);
+  --cl-line2: rgba(255,255,255,.06);
+  --cl-navy: #070d16;
+  --cl-accent: #ec7c39;
+  --cl-accent-soft: rgba(236, 124, 57, 0.10);
+  --cl-up: #49bd7d;
+  --cl-up-soft: rgba(73, 189, 125, 0.10);
+  --cl-down: #e2805f;
+  --cl-down-soft: rgba(226, 128, 95, 0.10);
   --cl-shadow: 0 1px 4px rgba(0,0,0,.30), 0 4px 16px rgba(0,0,0,.20);
   --cl-shadow-hover: 0 4px 12px rgba(0,0,0,.40), 0 8px 32px rgba(0,0,0,.30);
 }
@@ -124,9 +135,13 @@
 }
 
 /* ── shadcn base tokens ─────────────────────────────────── */
+/* --background/--foreground alinhados aos --cl-* (papel editorial) —
+   é o que body/ClientLayout usam via bg-background/text-foreground pro
+   fundo por trás do padding do shell; o resto do bloco (oklch) é
+   dívida técnica do shadcn, não consumida pelas páginas reais. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: var(--cl-bg);
+  --foreground: var(--cl-ink2);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -160,8 +175,8 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
+  --background: var(--cl-bg);
+  --foreground: var(--cl-ink2);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -249,7 +264,7 @@
   font-family: var(--font-inter), system-ui, sans-serif;
   line-height: 1.55;
 }
-.lp-serif { font-family: var(--font-serif-editorial), Georgia, serif; }
+.lp-serif { font-family: var(--font-display), Georgia, serif; }
 .lp-mono { font-family: var(--font-mono-editorial), ui-monospace, monospace; }
 
 .lp-wrap { max-width: 1160px; margin: 0 auto; padding: 0 30px; }
