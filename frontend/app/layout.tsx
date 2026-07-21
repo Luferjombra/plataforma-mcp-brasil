@@ -17,7 +17,7 @@ const sourceSerif = Source_Serif_4({
   variable: '--font-display',
   display: 'swap',
   style: ['normal', 'italic'],
-  weight: ['400', '600', '700'],
+  weight: ['400', '500', '600', '700'],
 })
 
 const spaceMono = Space_Mono({
