@@ -49,24 +49,28 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ── Clarity design tokens ──────────────────────────────── */
+/* ── Clarity design tokens ──────────────────────────────────────────
+   Repaletados pra identidade "papel editorial" (mesmos valores de
+   --lp-* abaixo) — todo o produto lê cor via var(--cl-*) inline, então
+   trocar os valores aqui já reskina indicadores/rv/rf/fundos/dashboard/
+   noticias/status/Sidebar/MobileTabBar sem tocar em nenhum componente. */
 :root {
-  --cl-bg: #f5f7fb;
+  --cl-bg: #F6F2EA;
   --cl-card: #ffffff;
-  --cl-ink: #0c1118;
-  --cl-ink2: #374151;
-  --cl-ink3: #6b7280;
-  --cl-line: #e5e7eb;
-  --cl-line2: #f3f4f6;
-  --cl-navy: #13315c;
-  --cl-accent: #1f6feb;
-  --cl-accent-soft: rgba(31, 111, 235, 0.08);
-  --cl-up: #0f9d58;
-  --cl-up-soft: rgba(15, 157, 88, 0.10);
-  --cl-down: #d93838;
-  --cl-down-soft: rgba(217, 56, 56, 0.10);
-  --cl-amber: #b9770a;
-  --cl-amber-soft: rgba(185, 119, 10, 0.10);
+  --cl-ink: #1E1C17;
+  --cl-ink2: #26251F;
+  --cl-ink3: #77746A;
+  --cl-line: #E4DECF;
+  --cl-line2: rgba(30, 28, 23, .08);
+  --cl-navy: #151B27;
+  --cl-accent: #C24A1C;
+  --cl-accent-soft: rgba(194, 74, 28, 0.08);
+  --cl-up: #3E8A57;
+  --cl-up-soft: rgba(62, 138, 87, 0.10);
+  --cl-down: #C05334;
+  --cl-down-soft: rgba(192, 83, 52, 0.10);
+  --cl-amber: #a6791f;
+  --cl-amber-soft: rgba(166, 121, 31, 0.10);
   --cl-radius: 14px;
   --cl-radius-sm: 9px;
   --cl-radius-xs: 6px;
@@ -78,13 +82,20 @@
 }
 
 .dark {
-  --cl-bg: #0c1118;
-  --cl-card: #121a26;
-  --cl-ink: #f0f4f8;
-  --cl-ink2: #c5cfe0;
-  --cl-ink3: #6b7c96;
-  --cl-line: rgba(255,255,255,.08);
-  --cl-line2: rgba(255,255,255,.04);
+  --cl-bg: #0b1320;
+  --cl-card: #14202f;
+  --cl-ink: #f1f5fa;
+  --cl-ink2: #c6cfdb;
+  --cl-ink3: #818c9d;
+  --cl-line: rgba(255,255,255,.10);
+  --cl-line2: rgba(255,255,255,.06);
+  --cl-navy: #070d16;
+  --cl-accent: #ec7c39;
+  --cl-accent-soft: rgba(236, 124, 57, 0.10);
+  --cl-up: #49bd7d;
+  --cl-up-soft: rgba(73, 189, 125, 0.10);
+  --cl-down: #e2805f;
+  --cl-down-soft: rgba(226, 128, 95, 0.10);
   --cl-shadow: 0 1px 4px rgba(0,0,0,.30), 0 4px 16px rgba(0,0,0,.20);
   --cl-shadow-hover: 0 4px 12px rgba(0,0,0,.40), 0 8px 32px rgba(0,0,0,.30);
 }
@@ -124,9 +135,13 @@
 }
 
 /* ── shadcn base tokens ─────────────────────────────────── */
+/* --background/--foreground alinhados aos --cl-* (papel editorial) —
+   é o que body/ClientLayout usam via bg-background/text-foreground pro
+   fundo por trás do padding do shell; o resto do bloco (oklch) é
+   dívida técnica do shadcn, não consumida pelas páginas reais. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: var(--cl-bg);
+  --foreground: var(--cl-ink2);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -160,8 +175,8 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
+  --background: var(--cl-bg);
+  --foreground: var(--cl-ink2);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -204,3 +219,126 @@
     @apply font-sans;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Landing page (identidade "papel editorial") — escopado sob .lp.
+   Não redefine --cl-*: o resto do produto continua no Clarity de hoje.
+   Paleta/tokens vêm dos protótipos aprovados (papel creme + laranja
+   queimado, Source Serif 4 + Space Mono). .dark .lp reusa a MESMA
+   classe .dark que o next-themes já aplica em <html> — o botão de tema
+   da landing chama o mesmo setTheme() do Sidebar, não um estado à parte.
+   ══════════════════════════════════════════════════════════════════ */
+.lp {
+  --lp-bg: #F6F2EA;
+  --lp-bg2: #EFEADD;
+  --lp-card: #FFFFFF;
+  --lp-ink: #26251F;
+  --lp-head: #1E1C17;
+  --lp-navy: #151B27;
+  --lp-muted: #77746A;
+  --lp-line: #E4DECF;
+  --lp-line2: rgba(30, 28, 23, .10);
+  --lp-accent: #C24A1C;
+  --lp-up: #3E8A57;
+  --lp-down: #C05334;
+  --lp-radius: 12px;
+}
+.dark .lp {
+  --lp-bg: #0b1320;
+  --lp-bg2: #101b2a;
+  --lp-card: #14202f;
+  --lp-ink: #c6cfdb;
+  --lp-head: #f1f5fa;
+  --lp-navy: #070d16;
+  --lp-muted: #818c9d;
+  --lp-line: rgba(255, 255, 255, .10);
+  --lp-line2: rgba(255, 255, 255, .06);
+  --lp-accent: #ec7c39;
+  --lp-up: #49bd7d;
+  --lp-down: #e2805f;
+}
+
+.lp {
+  background: var(--lp-bg);
+  color: var(--lp-ink);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  line-height: 1.55;
+}
+.lp-serif { font-family: var(--font-display), Georgia, serif; }
+.lp-mono { font-family: var(--font-mono-editorial), ui-monospace, monospace; }
+
+.lp-wrap { max-width: 1160px; margin: 0 auto; padding: 0 30px; }
+@media (max-width: 767px) { .lp-wrap { padding: 0 18px; } }
+
+.lp-top {
+  background: color-mix(in srgb, var(--lp-bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--lp-line);
+  position: sticky; top: 0; z-index: 30;
+}
+.lp-nav a { opacity: .72; transition: opacity .15s; }
+.lp-nav a:hover { opacity: 1; }
+@media (max-width: 860px) { .lp-nav { display: none; } }
+
+.lp-btn { transition: filter .15s, background .15s, border-color .15s, color .15s; cursor: pointer; }
+.lp-btn:hover { filter: brightness(1.12); }
+.lp-btn.ghost:hover { background: var(--lp-card); border-color: var(--lp-muted) !important; }
+.lp-themebtn:hover { color: var(--lp-accent) !important; border-color: var(--lp-accent) !important; }
+
+.lp-hero { display: grid; grid-template-columns: 1.02fr 1fr; gap: 56px; align-items: center; padding: 68px 0 52px; }
+@media (max-width: 900px) { .lp-hero { grid-template-columns: 1fr; gap: 36px; padding: 42px 0; } }
+
+.lp-panel { box-shadow: 0 18px 40px -28px rgba(0, 0, 0, .35); }
+.lp-icard { border-right: 1px solid var(--lp-line); border-bottom: 1px solid var(--lp-line); }
+.lp-icard:nth-child(2n) { border-right: none; }
+.lp-icard:nth-last-child(-n+2) { border-bottom: none; }
+
+.lp-ticker { background: var(--lp-navy); overflow: hidden; }
+.lp-ticker-run { display: flex; white-space: nowrap; will-change: transform; animation: lp-slide 44s linear infinite; }
+.lp-ticker:hover .lp-ticker-run { animation-play-state: paused; }
+@keyframes lp-slide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.lp-tick { border-right: 1px solid rgba(246, 242, 234, .1); }
+
+.lp-cards3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+@media (max-width: 820px) { .lp-cards3 { grid-template-columns: 1fr; } }
+.lp-pcard { transition: transform .18s, border-color .18s; }
+.lp-pcard:hover { transform: translateY(-2px); border-color: var(--lp-accent) !important; }
+
+.lp-mod-menu { display: flex; gap: 8px; flex-wrap: wrap; }
+.lp-mod-tab { transition: background .15s, border-color .15s, color .15s; cursor: pointer; }
+.lp-mod-tab:hover:not(.on) { border-color: var(--lp-muted) !important; color: var(--lp-head) !important; }
+.lp-mod-stage { display: grid; grid-template-columns: .9fr 1.1fr; gap: 44px; align-items: center; box-shadow: 0 18px 44px -30px rgba(0, 0, 0, .3); }
+@media (max-width: 860px) { .lp-mod-stage { grid-template-columns: 1fr; gap: 26px; } }
+.lp-fade { animation: lp-fade .25s ease; }
+@keyframes lp-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.lp-chat-grid { display: grid; grid-template-columns: .95fr 1.1fr; gap: 52px; align-items: center; }
+@media (max-width: 900px) { .lp-chat-grid { grid-template-columns: 1fr; gap: 32px; } }
+.lp-chat-copy li::before { content: "—"; color: var(--lp-accent); margin-right: 2px; }
+
+.lp-spec { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+@media (max-width: 820px) { .lp-spec { grid-template-columns: 1fr 1fr; } }
+
+.lp-states { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+@media (max-width: 820px) { .lp-states { grid-template-columns: 1fr 1fr; } }
+.lp-sk {
+  height: 10px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--lp-bg2) 25%, var(--lp-line) 40%, var(--lp-bg2) 60%);
+  background-size: 300% 100%; animation: lp-shimmer 1.5s ease infinite;
+}
+@keyframes lp-shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.lp-btn-sm:hover { border-color: var(--lp-accent) !important; color: var(--lp-accent) !important; }
+
+.lp-tblock { display: grid; grid-template-columns: 1.3fr 1fr 1fr .7fr; }
+@media (max-width: 820px) { .lp-tblock { grid-template-columns: 1fr 1fr; } }
+.lp-tblock a { transition: opacity .15s, color .15s; cursor: pointer; }
+.lp-tblock a:hover { opacity: 1 !important; color: var(--lp-accent) !important; }
+
+.lp-reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
+.lp-reveal.in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-ticker-run, .lp-reveal { animation: none !important; transition: none !important; opacity: 1 !important; transform: none !important; }
+  .lp-sk { animation: none !important; }
+}
+.lp a:focus-visible, .lp button:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 3px; border-radius: 4px; }

@@ -376,8 +376,8 @@ function RVInner() {
               <AreaChart data={chartData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="grad-rv-cl" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor={varDay >= 0 ? '#0f9d58' : '#d93838'} stopOpacity={0.15} />
-                    <stop offset="95%" stopColor={varDay >= 0 ? '#0f9d58' : '#d93838'} stopOpacity={0}    />
+                    <stop offset="5%"  stopColor={chartColor} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={chartColor} stopOpacity={0}    />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--cl-line)" vertical={false} />
