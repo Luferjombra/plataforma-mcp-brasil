@@ -11,6 +11,12 @@ LIBRECHAT_SERVICE_SENHA = os.getenv("LIBRECHAT_SERVICE_SENHA")
 LIBRECHAT_AGENT_ID = os.getenv("LIBRECHAT_AGENT_ID", "agent_YGaq4dos8YWdj1ws4sCAX")  # Analista Quant
 LIBRECHAT_AGENT_NOME = os.getenv("LIBRECHAT_AGENT_NOME", "Analista Quant")
 
+# O User-Agent padrao do httpx ("python-httpx/...") leva "Illegal request" do
+# LibreChat/Cloudflare em alguns endpoints -- usar um UA de navegador.
+_HEADERS_NAVEGADOR = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+}
+
 # JWT do LibreChat expira em ~15min (visto em produção); relogamos com folga.
 _TOKEN_TTL_SEGUNDOS = 12 * 60
 
@@ -74,7 +80,7 @@ async def perguntar_librechat(mensagem: str) -> dict:
         "error": False,
     }
 
-    async with httpx.AsyncClient(timeout=90) as http:
+    async with httpx.AsyncClient(timeout=90, headers=_HEADERS_NAVEGADOR) as http:
         token, cookies = await _obter_sessao(http)
         headers = {"Authorization": f"Bearer {token}"}
         http.cookies.update(cookies)
