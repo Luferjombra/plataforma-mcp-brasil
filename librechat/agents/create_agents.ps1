@@ -1,9 +1,17 @@
 # Criar os 3 agents do LibreChat via API
-# Rodar no PowerShell: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\librechat\agents\create_agents.ps1
+# Uso: definir as env vars abaixo antes de rodar (nao hardcodar credenciais aqui).
+#   $env:LIBRECHAT_SERVICE_EMAIL = "..."
+#   $env:LIBRECHAT_SERVICE_SENHA = "..."
+#   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\librechat\agents\create_agents.ps1
 
 $BASE  = "https://librechat-rfev.onrender.com"
-$EMAIL = "lufer.jom@gmail.com"
-$SENHA = "Technno804512"   # trocar se ja alterou a senha
+$EMAIL = $env:LIBRECHAT_SERVICE_EMAIL
+$SENHA = $env:LIBRECHAT_SERVICE_SENHA
+
+if (-not $EMAIL -or -not $SENHA) {
+  Write-Host "ERRO: defina LIBRECHAT_SERVICE_EMAIL e LIBRECHAT_SERVICE_SENHA como variaveis de ambiente antes de rodar."
+  exit 1
+}
 
 $ErrorActionPreference = "Stop"
 

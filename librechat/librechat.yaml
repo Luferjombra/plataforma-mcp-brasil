@@ -30,6 +30,12 @@ mcpServers:
   #   type: sse
   #   url: https://plataforma-mcp-brasil-api.onrender.com/sse
 
+  # Bright Data — pesquisa na internet (search_engine + scrape_as_markdown, free tier 5k req/mês)
+  # URL copiada direto do painel Bright Data (dashboard > Quick start for developers)
+  bright-data:
+    type: streamable-http
+    url: "https://mcp.brightdata.com/mcp?token=${BRIGHTDATA_API_TOKEN}"
+
 endpoints:
   custom:
     # ── 1. DeepSeek (recomendado: 5M tokens grátis, melhor custo) ──────────
