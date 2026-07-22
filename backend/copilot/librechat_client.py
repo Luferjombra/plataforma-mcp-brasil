@@ -14,13 +14,20 @@ LIBRECHAT_AGENT_NOME = os.getenv("LIBRECHAT_AGENT_NOME", "Analista Quant")
 # JWT do LibreChat expira em ~15min (visto em produção); relogamos com folga.
 _TOKEN_TTL_SEGUNDOS = 12 * 60
 
-_token_cache: dict = {"token": None, "expira_em": 0.0}
+_token_cache: dict = {"token": None, "cookies": None, "expira_em": 0.0}
 
 
-async def _obter_token(http: httpx.AsyncClient) -> str:
+async def _obter_sessao(http: httpx.AsyncClient) -> tuple[str, dict]:
+    """Retorna (token, cookies) autenticados no LibreChat.
+
+    O LibreChat exige tanto o Bearer token quanto o cookie httpOnly
+    "refreshToken" (setado no login) -- só o token dá "Illegal request".
+    Por isso cacheamos os dois juntos; usar um client HTTP novo por chamada
+    sem propagar o cookie cacheado quebra a autenticação.
+    """
     agora = time.monotonic()
     if _token_cache["token"] and agora < _token_cache["expira_em"]:
-        return _token_cache["token"]
+        return _token_cache["token"], _token_cache["cookies"]
 
     if not LIBRECHAT_SERVICE_EMAIL or not LIBRECHAT_SERVICE_SENHA:
         raise RuntimeError("LIBRECHAT_SERVICE_EMAIL/LIBRECHAT_SERVICE_SENHA não configurados.")
@@ -35,9 +42,11 @@ async def _obter_token(http: httpx.AsyncClient) -> str:
     if not token:
         raise RuntimeError("Login no LibreChat não retornou token.")
 
+    cookies = {"refreshToken": resp.cookies.get("refreshToken"), "token_provider": resp.cookies.get("token_provider")}
     _token_cache["token"] = token
+    _token_cache["cookies"] = cookies
     _token_cache["expira_em"] = agora + _TOKEN_TTL_SEGUNDOS
-    return token
+    return token, cookies
 
 
 async def perguntar_librechat(mensagem: str) -> dict:
@@ -66,8 +75,9 @@ async def perguntar_librechat(mensagem: str) -> dict:
     }
 
     async with httpx.AsyncClient(timeout=90) as http:
-        token = await _obter_token(http)
+        token, cookies = await _obter_sessao(http)
         headers = {"Authorization": f"Bearer {token}"}
+        http.cookies.update(cookies)
 
         async with http.stream(
             "POST",
