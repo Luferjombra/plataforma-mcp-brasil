@@ -1,10 +1,18 @@
 # Status — Plataforma Investimento
 
-_Atualizado em: 2026-07-09_
+_Atualizado em: 2026-07-21_
 
 ---
 
 ## ✅ Atividades Realizadas (mais recentes primeiro)
+
+33. **Landing unificada + design "papel editorial" em toda a plataforma** _(2026-07-21)_ — landing reescrita como página única com switcher de 7 módulos inline (Indicadores, Renda Variável, Tesouro Direto, Fundos, Dashboard, Notícias, Status ETL). Paleta Clarity repaletada pra cream/laranja queimado e fonte trocada de Newsreader pra Source Serif 4 — aplicado a **todo o produto** (indicadores, rv, screener, rf, renda-fixa, fundos, dashboard, noticias, status, carteira, copilot) via troca dos valores dos tokens CSS, sem alterar nenhum componente. PR #15 mergeado em `main` após pair-review (2 achados corrigidos, ver `docs/erros_e_solucoes.md`) e QA de produção (97%, 72/74 — as 2 falhas são staleness de ETL pré-existente, não relacionada ao design).
+
+34. **Auditoria de arquitetura via graphify** _(2026-07-21)_ — instalado o skill `graphify` (grafo de conhecimento de código via tree-sitter) e mapeado o backend inteiro (162 nós, 224 arestas, 13 comunidades, zero ciclos de import). Achados: `carteira.py` e `anbima.py` com a pior coesão do backend (0.09), e `_extrair_linhas_xlsx()` (parser de XLSX de importação de carteira) como o nó mais conectado de todo o grafo.
+
+35. **Refactor: extração de `carteira/importacao.py`** _(2026-07-21)_ — parsing de CSV/XLSX de importação de carteira (11 funções, ~250 linhas) extraído de `routes/carteira.py` (801→549 linhas) pro módulo dedicado, puro e testável isoladamente. 15 testes unitários novos (`carteira/test_importacao.py`, stdlib `unittest`) — primeira cobertura de teste automatizado desse código, motivada diretamente pelo achado do graphify.
+
+36. **Planejamento: agente de tool use pro Copilot** _(2026-07-21)_ — decisão de substituir a classificação de intenção por regex (`copilot/context_builder.py`) por tool use nativo (o LLM decide qual consulta rodar, em vez de `_identificar_ativo()`/`_classificar_intencao()`), ainda não implementado. Avaliados repositórios externos (LangChain, Dify, ECC, Graphify) como possíveis bases — nenhum recomendado pro caso de uso; tool use nativo da API (Anthropic ou Gemini) já resolve sem framework adicional.
 
 21. **COTAHIST — Fase 2 concluída (corte staging → produção)** _(2026-07-08)_ — ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md). Validação cruzada com brapi feita, ambiguidade `ETF_OU_FUNDO` resolvida, corte por `fonte` em produção.
 
@@ -61,6 +69,10 @@ _Atualizado em: 2026-07-09_
 ---
 
 ## 🔜 Próximos Passos
+
+0. **Implementar tool use no Copilot** — trocar `context_builder.py` (regex) por tool use nativo decidindo qual tabela consultar. Decisão pendente: Claude (custo ~$0,01/pergunta nova, melhor maturidade de tool-calling) ou Gemini (gratuito, precisa de loop escrito na mão).
+
+0b. **Decidir sobre os ~42 commits que ficaram fora do merge de hoje** — a branch de trabalho tinha acumulado histórico de sessões anteriores (BDR, `eventos_economicos`, agent `copy-reviewer`, importação de carteira já mergeada acima) que divergiu de `main`; o PR #15 foi escopado só pro design pra evitar reconciliar histórico não relacionado. Esse histórico segue recuperável via reflog, não perdido.
 
 1. **ANBIMA — resolver autorização de produto** — contatar suporte ANBIMA (`suporte.developers@anbima.com.br`) para habilitar o app no Feed de Preços e Índices. Token OAuth2 já funciona; falta autorização por produto.
 

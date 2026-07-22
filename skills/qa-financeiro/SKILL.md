@@ -48,10 +48,13 @@ ETL Pipeline (GitHub Actions, roda dias úteis em UTC):
 
 ## Protocolo de execução
 
-Execute as quatro seções em ordem. O script `qa_run.py` cobre as Seções 1, 2, 3 e 4 automaticamente:
+Execute as cinco seções em ordem. O script `qa_run.py` cobre as Seções 1, 2, 3 e 4
+automaticamente (contra produção, via HTTP):
 ```bash
 python qa_run.py
 ```
+A Seção 5 é separada — roda local (`unittest`), sem rede, e cobre lógica pura que não
+passa por nenhum endpoint isoladamente testável.
 
 Para cada achado, classifique:
 - 🔴 **CRÍTICO** — quebra funcionalidade ou expõe dados sensíveis
@@ -256,6 +259,32 @@ GET /health/etl/rv_historico_batch?limit=10
 - [ ] Secrets configurados: `SUPABASE_URL`, `SUPABASE_KEY`, `BRAPI_TOKEN`
 - [ ] Secret opcional: `DISCORD_WEBHOOK_URL` (para notificações de falha)
 - [ ] Último run do workflow com status `success`
+
+---
+
+## Seção 5 — Testes unitários (backend) ⚡ NOVO
+
+Diferente das Seções 1–4 (que testam a API implantada, via HTTP, contra produção), esta
+seção roda **local**, contra o código-fonte, sem precisar de rede nem de Supabase — cobre
+lógica pura que `qa_run.py` não alcança porque não passa por nenhum endpoint diretamente
+testável isoladamente.
+
+### 5.1 Parsing de importação de carteira
+
+```bash
+cd backend
+python -m unittest carteira.test_importacao -v
+```
+
+- [ ] Todos os testes passam (15 no total: CSV, XLSX, números ambíguos, zip bomb)
+- [ ] Nenhum teste passou por `unittest.skip` ou `expectedFailure` sem justificativa
+
+Essa suíte existe desde 2026-07-21 — antes disso, o parsing de CSV/XLSX de
+`carteira/importacao.py` (extraído de `routes/carteira.py`) não tinha nenhuma cobertura
+automatizada, apesar de ser o código mais complexo/conectado do backend (achado via
+graphify — ver `docs/erros_e_solucoes.md`). Ao adicionar nova lógica de parsing/validação
+pura em outros módulos, prefira este padrão (testes `unittest` sem dependência nova,
+zero FastAPI/DB) em vez de só cobrir via `qa_run.py` contra produção.
 
 ---
 

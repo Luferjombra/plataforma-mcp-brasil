@@ -448,6 +448,40 @@ const tickColor = theme === 'dark' ? '#9ca3af' : '#6b7280'
 
 ---
 
+### AreaChart — gradiente com cor antiga hardcoded após repaletagem global _(2026-07-21)_
+
+**Sintoma:** Depois de repaletar os tokens Clarity de azul/verde/vermelho pra cream/laranja queimado (design "papel editorial"), a linha do gráfico em `/rv` mudou de cor corretamente, mas o preenchimento (`fill`) abaixo dela continuou no verde/vermelho saturado antigo — um mismatch visível entre linha e área.
+
+**Causa:** `frontend/app/rv/page.tsx` tinha os dois `stopColor` do `<linearGradient>` hardcoded em hex (`#0f9d58`/`#d93838`), enquanto a linha (`stroke`) do mesmo gráfico já lia a variável `chartColor` (`var(--cl-up)`/`var(--cl-down)`). Uma repaletagem que só troca os *valores* dos tokens CSS não alcança nenhum hex escrito diretamente em JS/JSX — só os lugares que já liam a variável.
+
+**Solução:** Trocar os dois `stopColor` pra usar a mesma variável `chartColor` já calculada no componente, em vez de hex duplicado. Achado durante pair-review, antes do merge — vale grep por hex literal (`#[0-9a-f]{6}`) em componentes de chart sempre que uma repaletagem global for feita, já que esses valores não aparecem numa varredura de CSS.
+
+---
+
+## Frontend — next/font
+
+### Troca de fonte perde peso usado em `fontWeight` inline _(2026-07-21)_
+
+**Sintoma:** Depois de trocar a fonte de destaque de Newsreader pra Source Serif 4 (`--font-display`), os números de KPI grandes em quase toda página (indicadores, rv, rf, fundos, status, copilot) renderizaram visivelmente mais finos que antes — sem erro no console, sem quebra de layout.
+
+**Causa:** O Newsreader anterior foi carregado com `weight: ['400', '500', '600']`; o Source Serif 4 que o substituiu foi carregado só com `weight: ['400', '600', '700']` — sem o **500**, que é exatamente o peso usado em `fontWeight: 500` inline em vários componentes (`fontFamily: 'var(--font-display)', fontWeight: 500`). Sem essa face carregada, o algoritmo de font-matching do CSS casa `font-weight: 500` com a face disponível mais próxima abaixo (400), silenciosamente.
+
+**Solução:** Adicionar `'500'` ao array de `weight` do `next/font/google` ao trocar de fonte — não basta portar os pesos "óbvios" (400/600/700), é preciso auditar todos os `fontWeight` usados inline no código antes de decidir quais faces carregar.
+
+---
+
+## Ambiente de desenvolvimento — Next.js / Turbopack
+
+### Cache do Turbopack serve CSS antigo mesmo após editar o arquivo _(2026-07-21)_
+
+**Sintoma:** Depois de editar `globals.css` (trocar valores de paleta de cor) e reiniciar o `next dev`, o navegador continuava mostrando as cores ANTIGAS — em um caso, um estado misto (metade dos valores novos, metade antigos) dentro do mesmo arquivo CSS compilado servido.
+
+**Causa:** O cache de build do Turbopack (dentro de `.next/`) não invalidou corretamente entre reinícios do processo `next dev` — reiniciar o processo sozinho não é suficiente pra garantir que o conteúdo compilado reflita o código-fonte atual em disco.
+
+**Solução:** Rodar `rm -rf .next` antes de reiniciar o `next dev` sempre que uma mudança em CSS/tema não aparecer no navegador (ou aparecer parcialmente/inconsistente) — não confiar em restart de processo sozinho pra invalidar cache de build do Turbopack.
+
+---
+
 ## ETL — Renda Fixa (Tesouro Direto)
 
 ### CSV do Tesouro Transparente — URL com 404
@@ -565,3 +599,6 @@ data={"grant_type": "client_credentials"},
 | ANBIMA 401 nos feeds (token OK) | etl/anbima.py | App sem autorização de produto — contatar suporte ANBIMA |
 | Cron não dispara (skipped) | .github/workflows/etl.yml | Conferir espaços idênticos entre `cron:` e `if: ... == '...'` |
 | QA IPCA frescor falso positivo | qa_run.py | Threshold de 60d → 75d (indicador mensal, fim de ciclo) |
+| Gradiente de chart com hex antigo após repaletagem | frontend/app/rv/page.tsx | Usar a variável `chartColor`, não hex duplicado |
+| KPIs mais finos após trocar fonte | frontend/app/layout.tsx | Auditar todo `fontWeight` inline antes de decidir quais pesos carregar |
+| CSS antigo servido após editar globals.css | Turbopack (.next/) | `rm -rf .next` antes de reiniciar `next dev` |
