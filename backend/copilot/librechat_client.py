@@ -48,14 +48,11 @@ async def perguntar_librechat(mensagem: str) -> dict:
     stateless por pergunta (o frontend não envia histórico), então não há
     continuidade de conversa a preservar aqui.
 
-    NOTA DE IMPLEMENTAÇÃO: o envio (POST /api/agents/chat) e o streaming da
-    resposta (GET /api/agents/chat/stream/:id, formato SSE) foram confirmados
-    via console do navegador, mas o schema exato dos eventos SSE não estava
-    documentado em lugar nenhum do repo — a leitura abaixo segue o formato
-    padrão do LibreChat (eventos `data: {...}` com campo incremental "text" e
-    um evento final com "final": true / "responseMessage"). Validar com uma
-    chamada real antes de considerar isso pronto; ajustar o parsing conforme o
-    payload observado se divergir.
+    NOTA DE IMPLEMENTAÇÃO: confirmado em produção que POST /api/agents/chat
+    responde direto com Content-Type: text/event-stream (SSE) -- não é um
+    JSON pequeno seguido de um GET separado. Mantemos o fallback JSON e o
+    GET /api/agents/chat/stream/:id como segurança caso o comportamento
+    varie (ex: resposta cacheada, agent sem streaming).
     """
     response_message_id = str(uuid.uuid4())
     submissao = {
@@ -73,21 +70,25 @@ async def perguntar_librechat(mensagem: str) -> dict:
         token = await _obter_token(http)
         headers = {"Authorization": f"Bearer {token}"}
 
-        resp = await http.post(
+        texto_resposta = None
+        async with http.stream(
+            "POST",
             f"{LIBRECHAT_BASE_URL}/api/agents/chat",
             headers=headers,
             json=submissao,
-        )
-        resp.raise_for_status()
-        body = resp.json() if resp.content else {}
-        stream_id = body.get("responseMessageId") or response_message_id
+        ) as resp:
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "")
 
-        texto_resposta = _extrair_texto(body)
-        if texto_resposta:
-            return {"resposta": texto_resposta, "fonte": LIBRECHAT_AGENT_NOME}
-
-        # POST não trouxe o texto final -> consumir o stream SSE.
-        texto_resposta = await _consumir_stream(http, headers, stream_id)
+            if "text/event-stream" in content_type:
+                texto_resposta = await _ler_sse(resp.aiter_lines())
+            else:
+                corpo_bruto = b"".join([chunk async for chunk in resp.aiter_bytes()])
+                body = json.loads(corpo_bruto) if corpo_bruto else {}
+                texto_resposta = _extrair_texto(body)
+                stream_id = body.get("responseMessageId") or response_message_id
+                if not texto_resposta:
+                    texto_resposta = await _consumir_stream(http, headers, stream_id)
 
     if not texto_resposta:
         raise RuntimeError("LibreChat não retornou texto de resposta (POST nem stream SSE).")
@@ -103,31 +104,35 @@ def _extrair_texto(body: dict) -> str | None:
     )
 
 
-async def _consumir_stream(http: httpx.AsyncClient, headers: dict, stream_id: str) -> str | None:
+async def _ler_sse(linhas) -> str | None:
     texto_final = None
     texto_acumulado = ""
+    async for linha in linhas:
+        if not linha.startswith("data:"):
+            continue
+        payload = linha[len("data:"):].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            evento = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        if evento.get("final") or "responseMessage" in evento:
+            texto_final = _extrair_texto(evento) or texto_acumulado
+            break
+        delta = evento.get("text")
+        if delta:
+            texto_acumulado += delta
+
+    return texto_final or texto_acumulado or None
+
+
+async def _consumir_stream(http: httpx.AsyncClient, headers: dict, stream_id: str) -> str | None:
     async with http.stream(
         "GET",
         f"{LIBRECHAT_BASE_URL}/api/agents/chat/stream/{stream_id}",
         headers=headers,
         timeout=90,
     ) as stream:
-        async for linha in stream.aiter_lines():
-            if not linha.startswith("data:"):
-                continue
-            payload = linha[len("data:"):].strip()
-            if not payload or payload == "[DONE]":
-                continue
-            try:
-                evento = json.loads(payload)
-            except json.JSONDecodeError:
-                continue
-
-            if evento.get("final") or "responseMessage" in evento:
-                texto_final = _extrair_texto(evento) or texto_acumulado
-                break
-            delta = evento.get("text")
-            if delta:
-                texto_acumulado += delta
-
-    return texto_final or texto_acumulado or None
+        return await _ler_sse(stream.aiter_lines())
