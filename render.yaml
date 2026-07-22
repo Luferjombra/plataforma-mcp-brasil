@@ -10,11 +10,15 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: LIBRECHAT_BASE_URL
+        value: https://librechat-rfev.onrender.com
+      - key: LIBRECHAT_SERVICE_EMAIL
         sync: false
-      - key: LLM_PROVIDER
-        value: gemini
-      - key: GEMINI_API_KEY
+      - key: LIBRECHAT_SERVICE_SENHA
         sync: false
+      - key: LIBRECHAT_AGENT_ID
+        value: agent_YGaq4dos8YWdj1ws4sCAX
+      - key: LIBRECHAT_AGENT_NOME
+        value: Analista Quant
       - key: ENV
         value: production

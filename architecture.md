@@ -49,25 +49,35 @@ Next.js — Frontend (Vercel)
 
 ## Arquitetura do Chat Finance (Copilot)
 
+O `/copilot` deixou de ter lógica própria de LLM/contexto (o antigo `context_builder.py` — classificador por regex — foi removido por ser frágil: qualquer pergunta fora dos padrões fixos retornava dados vazios). Ele agora é um **proxy** para um agent do LibreChat já deployado (Épico B), que faz tool-calling real sobre os dados via `/mcp` — sem depender de regex para saber o que consultar.
+
 ```
 Usuário (pergunta)
     ↓
-POST /copilot/pergunta
+POST /copilot/pergunta  (backend/routes/copilot.py)
     ↓
-Orquestrador
-  ├── SHA256(pergunta) → busca copilot_cache → hit → retorna resposta cacheada
-  └── miss → context_builder → Gemini Flash → salva no cache → retorna
+backend/copilot/orchestrator.py
     ↓
-context_builder.py
-  ├── Identifica ativo (PETR4, CNPJ de fundo...)
-  ├── Classifica intenção (performance / risco / comparação / explicação)
-  └── Query Supabase → contexto estruturado
+backend/copilot/librechat_client.py
+  ├── login (conta de serviço) → JWT cacheado em memória
+  ├── POST https://librechat-rfev.onrender.com/api/agents/chat
+  │     {endpoint: "agents", agent_id, text, conversationId: null, ...}
+  └── se a resposta não vier no POST → consome SSE em
+        GET /api/agents/chat/stream/:id
     ↓
-Google Gemini (gemini-2.5-flash / gemini-2.0-flash-lite fallback)
-  └── contexto + pergunta → resposta em linguagem natural
+LibreChat (agent "Analista Quant", DeepSeek/Groq)
+  ├── mcpServers.plataforma-mcp-brasil → tools sobre Supabase (via fastapi-mcp)
+  └── mcpServers.bright-data → search_engine / scrape_as_markdown (pesquisa web)
     ↓
-Frontend (Chat Finance UI)
+Frontend (Chat Finance UI) — contrato inalterado: {resposta, fonte, cached}
 ```
+
+Cada pergunta abre uma conversa nova no LibreChat (sem `conversationId` persistido) — o `/copilot` já era stateless por pergunta antes dessa mudança, então não há regressão de continuidade.
+
+**Pendências conhecidas dessa integração** (marcar como resolvidas após validar em produção):
+- Schema exato dos eventos SSE de `/api/agents/chat/stream/:id` foi inferido pelo padrão do LibreChat, não confirmado por trace completo — validar `backend/copilot/librechat_client.py::_consumir_stream`.
+- Nomenclatura dos MCP tools do Bright Data nos agents (`librechat/agents/attach_bright_data_tool.ps1`) assume o padrão `<tool>_mcp_<server>` — confirmar antes de rodar em produção.
+- `librechat/agents/create_agents.ps1` tem senha pessoal em texto puro commitada — rotacionar e usar conta de serviço dedicada (`LIBRECHAT_SERVICE_EMAIL`/`LIBRECHAT_SERVICE_SENHA`).
 
 ## Regras fundamentais de arquitetura
 
@@ -76,7 +86,7 @@ Frontend (Chat Finance UI)
 | Fontes públicas apenas em ETL | Usuário nunca dispara chamada externa |
 | Dados sempre persistidos | Frontend só consome APIs FastAPI internas |
 | LLM não calcula | Cálculos feitos na camada analítica (Python/SQL) |
-| LLM não acessa fontes externas | Copilot usa apenas dados do Supabase |
+| LLM acessa web só via tool explícito | Copilot usa dados do Supabase (via MCP) e pesquisa web (via Bright Data MCP), nunca fetch direto do LLM |
 | Atualização incremental | ETL faz upsert idempotente (on_conflict) com overlap de 5 dias |
 | Custo previsível | Prompt enxuto + cache SHA256 de respostas |
 | ETL resiliente | ETLRun context manager + log_partial em erro parcial |
@@ -108,7 +118,7 @@ Frontend (Chat Finance UI)
 | anbima_cra_historico | time series | Preços/taxas indicativos diários |
 | noticias | relacional | Feed financeiro |
 | etl_runs | operacional | Auditoria de jobs ETL (status, rows_upserted, error_detail) |
-| copilot_cache | cache | Respostas Gemini por hash SHA256 |
+| copilot_cache | cache | Não usado mais pelo `/copilot` (proxy LibreChat) — mantido no schema, sem escrita ativa |
 | carteira_posicoes | relacional | Posições por session_id (anônimo) |
 | carteira_snapshots | time series | Snapshots diários de valor e métricas de risco |
 
@@ -281,7 +291,7 @@ perf/
 | Render | Free | plataforma-mcp-brasil-api.onrender.com |
 | Vercel | Free | plataforma-mcp-brasil.vercel.app |
 | GitHub | Free | github.com/Luferjombra/plataforma-mcp-brasil |
-| Google AI | Free tier | Gemini 2.5 Flash (copilot) |
+| Bright Data | Free tier (5k req/mês) | MCP de pesquisa web (agents LibreChat) |
 | ANBIMA Feed API | Free (registro) | developers.anbima.com.br — requer app aprovado por produto |
 | **Render** | **Free** | **LibreChat — librechat-rlev.onrender.com** |
 | **MongoDB Atlas** | **Free (512MB)** | **Banco do LibreChat — cluster0.ksxkolr.mongodb.net** |

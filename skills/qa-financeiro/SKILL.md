@@ -92,14 +92,22 @@ GET /rf/titulos
 - [ ] `GET /fundos/historico/cnpj_sem_encode` → deve retornar 200 ou 404 (não 500)
 - [ ] `limit=99999` em qualquer endpoint → deve respeitar o máximo configurado (não explodir)
 
-### 1.4 POST Copilot
+### 1.4 POST Copilot (proxy LibreChat — ver [[plataforma-mcp-brasil]])
 ```json
 POST /copilot/pergunta
 {"pergunta": "Qual a taxa SELIC atual?"}
 ```
 - [ ] Status 200
 - [ ] Campo `resposta` presente e não vazio
+- [ ] Campo `fonte` presente (nome do agent, ex: "Analista Quant")
 - [ ] Campo `cached` booleano presente
+
+- [ ] Pergunta livre fora de padrão fixo (regressão do bug do regex antigo):
+  `{"pergunta": "Como foi o mercado hoje?"}` → resposta com dado real, não "dados vazios `{}`"
+- [ ] Pergunta que exige dado atual da plataforma (ex: "Qual o preço atual da PETR4?") → resposta usa tool MCP `plataforma-mcp-brasil`, não alucina
+- [ ] Pergunta que exige pesquisa na web (ex: notícia recente não coberta pelo RSS interno) → resposta usa tool Bright Data (`search_engine`/`scrape_as_markdown`), evidenciado por citar fonte/URL
+- [ ] Timeout/erro do LibreChat (serviço acordando do free tier, ~50s) → backend retorna erro tratado (502/503), não 500 cru
+- [ ] Login no LibreChat falha (credencial errada/expirada) → erro claro no log do backend, não trava a request indefinidamente
 
 ---
 
