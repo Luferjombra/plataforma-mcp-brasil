@@ -87,7 +87,7 @@ async def perguntar_librechat(mensagem: str) -> dict:
 
         async with http.stream(
             "POST",
-            f"{LIBRECHAT_BASE_URL}/api/agents/chat",
+            f"{LIBRECHAT_BASE_URL}/api/agents/chat/agents",
             headers=headers,
             json=submissao,
         ) as resp:
