@@ -48,11 +48,10 @@ async def perguntar_librechat(mensagem: str) -> dict:
     stateless por pergunta (o frontend não envia histórico), então não há
     continuidade de conversa a preservar aqui.
 
-    NOTA DE IMPLEMENTAÇÃO: confirmado em produção que POST /api/agents/chat
-    responde direto com Content-Type: text/event-stream (SSE) -- não é um
-    JSON pequeno seguido de um GET separado. Mantemos o fallback JSON e o
-    GET /api/agents/chat/stream/:id como segurança caso o comportamento
-    varie (ex: resposta cacheada, agent sem streaming).
+    NOTA DE IMPLEMENTAÇÃO: o header Content-Type da resposta não é confiável
+    (o serviço está atrás de Cloudflare/Render) -- em vez de decidir o parsing
+    pelo header, detectamos o formato pelo conteúdo real do corpo (SSE tem
+    linhas "data: ..."; senão tentamos JSON puro).
     """
     response_message_id = str(uuid.uuid4())
     submissao = {
@@ -70,7 +69,6 @@ async def perguntar_librechat(mensagem: str) -> dict:
         token = await _obter_token(http)
         headers = {"Authorization": f"Bearer {token}"}
 
-        texto_resposta = None
         async with http.stream(
             "POST",
             f"{LIBRECHAT_BASE_URL}/api/agents/chat",
@@ -78,20 +76,16 @@ async def perguntar_librechat(mensagem: str) -> dict:
             json=submissao,
         ) as resp:
             resp.raise_for_status()
-            content_type = resp.headers.get("content-type", "")
+            corpo_bruto = b"".join([chunk async for chunk in resp.aiter_bytes()]).decode(
+                "utf-8", errors="replace"
+            )
 
-            if "text/event-stream" in content_type:
-                texto_resposta = await _ler_sse(resp.aiter_lines())
-            else:
-                corpo_bruto = b"".join([chunk async for chunk in resp.aiter_bytes()])
-                body = json.loads(corpo_bruto) if corpo_bruto else {}
-                texto_resposta = _extrair_texto(body)
-                stream_id = body.get("responseMessageId") or response_message_id
-                if not texto_resposta:
-                    texto_resposta = await _consumir_stream(http, headers, stream_id)
+        texto_resposta, stream_id = _parsear_corpo(corpo_bruto, response_message_id)
+        if not texto_resposta and stream_id:
+            texto_resposta = await _consumir_stream(http, headers, stream_id)
 
     if not texto_resposta:
-        raise RuntimeError("LibreChat não retornou texto de resposta (POST nem stream SSE).")
+        raise RuntimeError(f"LibreChat não retornou texto de resposta. Corpo bruto: {corpo_bruto[:500]!r}")
 
     return {"resposta": texto_resposta, "fonte": LIBRECHAT_AGENT_NOME}
 
@@ -104,10 +98,32 @@ def _extrair_texto(body: dict) -> str | None:
     )
 
 
-async def _ler_sse(linhas) -> str | None:
+def _parsear_corpo(corpo_bruto: str, response_message_id: str) -> tuple[str | None, str | None]:
+    """Detecta se o corpo é SSE (linhas "data: ...") ou JSON puro e extrai o texto.
+
+    Retorna (texto_resposta, stream_id) -- stream_id é usado como fallback para
+    tentar o GET /api/agents/chat/stream/:id se nada foi extraído.
+    """
+    if "data:" in corpo_bruto:
+        texto = _ler_sse_linhas(corpo_bruto.splitlines())
+        return texto, response_message_id
+
+    corpo_stripped = corpo_bruto.strip()
+    if not corpo_stripped:
+        return None, response_message_id
+    try:
+        body = json.loads(corpo_stripped)
+    except json.JSONDecodeError:
+        return None, response_message_id
+
+    stream_id = body.get("responseMessageId") or response_message_id
+    return _extrair_texto(body), stream_id
+
+
+def _ler_sse_linhas(linhas) -> str | None:
     texto_final = None
     texto_acumulado = ""
-    async for linha in linhas:
+    for linha in linhas:
         if not linha.startswith("data:"):
             continue
         payload = linha[len("data:"):].strip()
@@ -135,4 +151,5 @@ async def _consumir_stream(http: httpx.AsyncClient, headers: dict, stream_id: st
         headers=headers,
         timeout=90,
     ) as stream:
-        return await _ler_sse(stream.aiter_lines())
+        corpo = "".join([chunk async for chunk in stream.aiter_text()])
+    return _ler_sse_linhas(corpo.splitlines())
