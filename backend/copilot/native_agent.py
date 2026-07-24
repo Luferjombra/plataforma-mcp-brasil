@@ -142,6 +142,10 @@ async def perguntar(pergunta: str, agent: str = "quant", session_id: str | None 
             async for message in runner:
                 final = message
 
+    # Fallback amigavel em vez de 500 cru: o runner pode nao emitir mensagem
+    # nenhuma, ou parar num bloco tool_use sem texto final (edge cases raros).
+    _FALLBACK = "Não consegui gerar uma resposta agora. Tente reformular a pergunta."
     if final is None:
-        raise RuntimeError("tool_runner nao retornou nenhuma mensagem.")
-    return next((bloco.text for bloco in final.content if bloco.type == "text"), "")
+        return _FALLBACK
+    texto = next((bloco.text for bloco in final.content if bloco.type == "text"), "").strip()
+    return texto or _FALLBACK

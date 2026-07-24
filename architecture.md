@@ -83,9 +83,9 @@ teste automatizado que lista as tools de fato expostas).
 | Fontes públicas apenas em ETL | Usuário nunca dispara chamada externa |
 | Dados sempre persistidos | Frontend só consome APIs FastAPI internas |
 | LLM não calcula | Cálculos feitos na camada analítica (Python/SQL) |
-| LLM acessa web só via tool explícito | Copilot usa dados do Supabase (via MCP) e pesquisa web (via Bright Data MCP), nunca fetch direto do LLM |
+| LLM acessa dados só via tool explícito | Copilot usa as tools do `/mcp` (rotas FastAPI sobre o Supabase), nunca fetch direto do LLM |
 | Atualização incremental | ETL faz upsert idempotente (on_conflict) com overlap de 5 dias |
-| Custo previsível | Prompt enxuto + cache SHA256 de respostas |
+| Custo previsível | Tool use nativo com prompt enxuto; ~$0,01/pergunta nova (Anthropic) |
 | ETL resiliente | ETLRun context manager + log_partial em erro parcial |
 | Formatação padronizada | Todos os valores monetários e taxas: 2 casas decimais |
 
@@ -288,12 +288,20 @@ perf/
 | Render | Free | plataforma-mcp-brasil-api.onrender.com |
 | Vercel | Free | plataforma-mcp-brasil.vercel.app |
 | GitHub | Free | github.com/Luferjombra/plataforma-mcp-brasil |
-| Bright Data | Free tier (5k req/mês) | MCP de pesquisa web (agents LibreChat) |
+| Anthropic API | Pay-as-you-go (~$0,01/pergunta) | Tool use nativo do Copilot (`client.beta.messages.tool_runner`) |
 | ANBIMA Feed API | Free (registro) | developers.anbima.com.br — requer app aprovado por produto |
-| **Render** | **Free** | **LibreChat — librechat-rlev.onrender.com** |
-| **MongoDB Atlas** | **Free (512MB)** | **Banco do LibreChat — cluster0.ksxkolr.mongodb.net** |
+| ~~Bright Data~~ | — | _Aposentado com o LibreChat — busca web do Copilot descontinuada (ver trade-off abaixo)_ |
+| ~~Render (LibreChat)~~ | — | _Aposentado — Copilot migrou pra tool use nativo. Serviço a desligar (pendência #3)_ |
+| ~~MongoDB Atlas~~ | — | _Aposentado com o LibreChat. Cluster a desligar (pendência #3)_ |
 
-### Decisão: LibreChat deploy em Render (2026-06-24)
+> **Trade-off da migração pra tool use nativo (2026-07-24):** o Copilot perdeu a
+> **busca na web** que o LibreChat tinha via Bright Data — o agente nativo só
+> acessa as tools internas do `/mcp` (dados do Supabase). Perguntas que exigem
+> web (ex: notícia recente fora do RSS interno) não são mais cobertas. Pode ser
+> readicionada via a **web search nativa da Anthropic** (`web_search` server
+> tool, suportada pelo SDK) sem reintroduzir o LibreChat, se/quando fizer sentido.
+
+### Decisão histórica: LibreChat deploy em Render (2026-06-24) — aposentado em 2026-07-24
 
 - **Render free tier** escolhido: Koyeb exige $29/mês Pro, Railway usa crédito consumível, Fly.io tem apenas 256MB
 - **MongoDB Atlas free (M0, Sao Paulo)** para persistência do LibreChat (conversas, usuários) — separado do Supabase que guarda dados financeiros
