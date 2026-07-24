@@ -99,5 +99,18 @@ class PerguntarValidacaoTest(unittest.IsolatedAsyncioTestCase):
             await native_agent.perguntar("qualquer pergunta", agent="inexistente")
 
 
+class PerformanceCacheTest(unittest.TestCase):
+    def test_cliente_anthropic_e_singleton(self):
+        # reusa o pool de conexao em vez de recriar o cliente a cada pergunta.
+        c1 = native_agent._get_client()
+        c2 = native_agent._get_client()
+        self.assertIs(c1, c2)
+
+    def test_cache_de_defs_de_tools_existe_e_e_por_persona(self):
+        # o cache e um dict chaveado por persona; comeca vazio (preenchido no
+        # 1o request de cada persona, evitando list_tools nos seguintes).
+        self.assertIsInstance(native_agent._TOOLS_DEFS_CACHE, dict)
+
+
 if __name__ == "__main__":
     unittest.main()
