@@ -291,8 +291,8 @@ perf/
 | Anthropic API | Pay-as-you-go (~$0,01/pergunta) | Tool use nativo do Copilot (`client.beta.messages.tool_runner`) |
 | ANBIMA Feed API | Free (registro) | developers.anbima.com.br — requer app aprovado por produto |
 | ~~Bright Data~~ | — | _Aposentado com o LibreChat — busca web do Copilot descontinuada (ver trade-off abaixo)_ |
-| ~~Render (LibreChat)~~ | — | _Aposentado — Copilot migrou pra tool use nativo. Serviço a desligar (pendência #3)_ |
-| ~~MongoDB Atlas~~ | — | _Aposentado com o LibreChat. Cluster a desligar (pendência #3)_ |
+| ~~Render (LibreChat)~~ | — | _Aposentado — Copilot migrou pra tool use nativo. Arquivos órfãos removidos do repo (PR #26); **serviço no Render ainda a desligar** + rotacionar senha do `create_agents.ps1` (pendência #3)_ |
+| ~~MongoDB Atlas~~ | — | _Aposentado com o LibreChat. **Cluster ainda a desligar** (pendência #3)_ |
 
 > **Trade-off da migração pra tool use nativo (2026-07-24):** o Copilot perdeu a
 > **busca na web** que o LibreChat tinha via Bright Data — o agente nativo só

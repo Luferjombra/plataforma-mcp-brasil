@@ -14,7 +14,7 @@ Permitir que usuários consultem dados financeiros consolidados, realizem análi
 - Módulo Carteira — rastreamento de posições e métricas de risco (Sharpe, Sortino, Calmar, Drawdown)
 - Análise por classe de ativo: RF · RV · Fundos
 - Feed de notícias financeiras classificadas
-- Chat Finance (LLM + RAG sobre dados internos) + LibreChat com agents MCP especializados
+- Chat Finance — Copiloto financeiro com **tool use nativo da Anthropic** (o LLM decide sozinho quais tools do `/mcp` chamar sobre os dados reais da plataforma)
 
 ## URLs de produção
 
@@ -22,7 +22,6 @@ Permitir que usuários consultem dados financeiros consolidados, realizem análi
 |---|---|
 | Frontend | https://plataforma-mcp-brasil.vercel.app |
 | Backend API | https://plataforma-mcp-brasil-api.onrender.com |
-| LibreChat (Copilot avançado) | https://librechat-rlev.onrender.com |
 
 ## Stack
 
@@ -36,8 +35,7 @@ Permitir que usuários consultem dados financeiros consolidados, realizem análi
 | Backend | FastAPI + Render | 0.111.0 |
 | Banco | Supabase (PostgreSQL) | supabase-py 2.4.6 |
 | Python | Python 3.12 (não 3.14) | 3.12.x |
-| Copilot | Gemini 2.5 Flash (free tier) ou Claude (Anthropic) | configurável via `LLM_PROVIDER` |
-| Copilot avançado | LibreChat + MCP (fastapi-mcp) | agents Quant/Macro/RV |
+| Copilot | Tool use nativo da Anthropic (`tool_runner`) sobre `/mcp` (fastapi-mcp) | personas Quant/Macro/RV via sub-servidores MCP |
 | Versionamento | GitHub | — |
 
 > **Atenção:** usar Python 3.12 — `pydantic-core` e outras dependências não têm wheels pré-compilados para Python 3.14 no Windows.
@@ -83,7 +81,7 @@ plataforma-mcp-brasil/
 │   ├── db.py                ← Supabase client (SERVICE_KEY)
 │   ├── requirements.txt
 │   ├── runtime.txt          ← python-3.12.0 (Render)
-│   ├── .env                 ← nunca comitar (SUPABASE_URL, KEYS, GEMINI_API_KEY, ANTHROPIC_API_KEY)
+│   ├── .env                 ← nunca comitar (SUPABASE_URL, KEYS, ANTHROPIC_API_KEY)
 │   ├── .env.example
 │   ├── routes/
 │   │   ├── indicadores.py
@@ -99,8 +97,7 @@ plataforma-mcp-brasil/
 │   ├── carteira/
 │   │   └── metricas.py      ← wrapper VibeTrading (Sharpe, Sortino, Calmar, Drawdown)
 │   └── copilot/
-│       ├── orchestrator.py  ← SHA256 cache + LLM (Gemini default, Anthropic opcional)
-│       └── context_builder.py
+│       └── native_agent.py  ← tool use nativo (tool_runner) conectado aos sub-servidores MCP por persona
 ├── etl/
 │   ├── config.py            ← Supabase client compartilhado
 │   ├── log_etl.py           ← ETLRun (auditoria) + retry_request + log_partial
@@ -144,11 +141,6 @@ plataforma-mcp-brasil/
 │   └── lib/
 │       ├── api.ts           ← funções fetchAPI tipadas + APIError
 │       └── format.ts        ← formatadores pt-BR compartilhados (BRL, %, cota)
-├── librechat/                ← LibreChat + MCP — Copilot avançado (Render + MongoDB Atlas)
-│   ├── docker-compose.yml
-│   ├── librechat.yaml       ← mcpServers apontando para /mcp do backend
-│   ├── Dockerfile
-│   └── agents/              ← configs exportadas: Analista Quant/Macro/RV
 └── database/
     ├── schema.sql           ← schema base (histórico — ver migrations para o estado atual)
     └── migrations/          ← aplicar manualmente no Supabase SQL Editor, em ordem
@@ -187,8 +179,7 @@ _\* tabela pode ter registros além dos 13 curados (herdados de testes) — `GET
 - Node.js 18+ para o frontend
 - Conta Supabase com schema aplicado (`database/schema.sql` + migrations em `database/migrations/`, em ordem)
 - Chaves JWT legadas do Supabase (não as `sb_publishable_`)
-- API Key do Google Gemini (gratuita em https://aistudio.google.com/apikey — criar em projeto **sem** conta de faturamento vinculada, senão retorna 429)
-- (Opcional) API Key da Anthropic, se usar `LLM_PROVIDER=anthropic`
+- API Key da Anthropic (`ANTHROPIC_API_KEY`) — o Chat Finance usa tool use nativo; custo por uso
 - (Opcional) Credenciais ANBIMA (`ANBIMA_CLIENT_ID`/`ANBIMA_CLIENT_SECRET`) — registro gratuito em `developers.anbima.com.br`, requer app aprovado por produto
 
 ### Frontend
@@ -248,7 +239,7 @@ python fund_analytics.py                 # retornos/volatilidade/sharpe_12m/max_
 | 7 | Chat Finance MVP + Feed de notícias | ✅ Concluída |
 | 8 | Redesign Clarity + Mobile + QA | ✅ Concluída |
 | Épico A | Módulo Carteira (VibeTrading) | ✅ Concluída |
-| Épico B | LibreChat + MCP (Copilot avançado) | ✅ Concluída |
+| Épico B | Copilot — tool use nativo da Anthropic (aposentou o proxy LibreChat) | ✅ Concluída |
 | — | ANBIMA (índices/debêntures/CRI/CRA) + Dashboard V3 Renda Fixa | ⚙️ Backend/ETL prontos — acesso de dados pendente no portal ANBIMA |
 | — | COTAHIST (B3) — Fase 1 (staging + descoberta de horário) | ✅ Concluída (2026-07-03) |
 | — | COTAHIST (B3) — Fase 2 (promoção para produção + API/frontend + virtualização) | ✅ Concluída (2026-07-08) — ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md) |
@@ -292,12 +283,13 @@ python fund_analytics.py                 # retornos/volatilidade/sharpe_12m/max_
 </details>
 
 <details>
-<summary>LibreChat + MCP (Épico B)</summary>
+<summary>Copiloto — tool use nativo da Anthropic (Épico B)</summary>
 
-- Backend expõe `/mcp` (Streamable HTTP) e `/sse` (fallback) via `fastapi-mcp`
-- LibreChat deploy: Render free tier + MongoDB Atlas free (M0, São Paulo)
-- 3 agents pré-configurados: Analista Quant, Analista Macro, Analista RV — cada um com tools MCP específicas
-- CI/CD: `.github/workflows/deploy-librechat.yml` (build → GHCR → Render Deploy Hook)
+- Backend expõe `/mcp` (Streamable HTTP) e `/sse` (fallback) via `fastapi-mcp`, mais sub-servidores escopados por persona: `/mcp/rv`, `/mcp/macro`, `/mcp/quant`
+- `backend/copilot/native_agent.py` usa `client.beta.messages.tool_runner`: o LLM vê as tools (as próprias rotas FastAPI expostas pelo fastapi-mcp) e decide sozinho quais chamar — sem classificador de intenção
+- 3 personas: Quant (geral), Macro (indicadores/RF/ANBIMA), RV (renda variável + carteira) — cada uma num sub-servidor MCP com toolset filtrado por tags
+- Segurança: separação de tags `Carteira Leitura`/`Carteira Escrita` mantém a escrita fora das tools do chat
+- **Aposentou** o proxy LibreChat + MongoDB Atlas + Bright Data (2026-07-24) — sem serviço LLM externo, sem Mongo, sem OAuth
 </details>
 
 <details>
@@ -342,7 +334,7 @@ Ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md) para o histórico completo. 
 
 - Fix N+1 em `/rv/ativos`: variação diária calculada no Postgres via `LAG()` (função `rv_variacao_diaria()`, migration 004)
 - `/search` paralelizado: 3 queries simultâneas via `asyncio.gather` (latência ~3x menor)
-- Chat Finance com Gemini 2.5 Flash (free tier) via `LLM_PROVIDER` configurável
+- Chat Finance com tool use nativo da Anthropic (`tool_runner` sobre `/mcp`)
 - Retry automático em 429/503, formatadores pt-BR centralizados
 </details>
 
@@ -359,16 +351,15 @@ Ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md) para o histórico completo. 
 | Variável | Obrigatória | Descrição |
 |---|---|---|
 | `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Sim | Conexão com o banco |
-| `LLM_PROVIDER` | Não (default `gemini`) | `gemini` ou `anthropic` |
-| `GEMINI_API_KEY` | Se provider=gemini | Chave do AI Studio (free tier) |
-| `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | Não | Defaults: `gemini-2.5-flash` / `gemini-2.5-flash-lite` |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | Se provider=anthropic | Default model: `claude-sonnet-4-6` |
+| `ANTHROPIC_API_KEY` | Sim (Copiloto) | Chave da Anthropic — o Chat Finance usa tool use nativo |
+| `ANTHROPIC_MODEL` | Não | Default: `claude-sonnet-5` |
+| `COPILOT_MAX_TOKENS` | Não | Teto de saída por turno do Copiloto (default `2048`) |
 | `ANBIMA_CLIENT_ID` / `ANBIMA_CLIENT_SECRET` | Se usar ETL ANBIMA | Registro em `developers.anbima.com.br` |
 | `BRAPI_TOKEN` | Não (aumenta rate limit) | Token gratuito em `brapi.dev` |
 
 ## Custo estimado (MVP)
 
-**R$ 0/mês** — Supabase, Render, Vercel e Gemini (free tier). Anthropic disponível como alternativa paga via `LLM_PROVIDER=anthropic`.
+**Infra R$ 0/mês** — Supabase, Render e Vercel (free tier). O **Copiloto (Chat Finance)** usa a **API paga da Anthropic** (tool use nativo): o custo é por uso, sob demanda das perguntas no chat — sem serviço LLM sempre-ligado. Modelo default `claude-sonnet-5`, `max_tokens` 2048 por turno.
 
 **Atenção ao crescer o volume de dados:** o backfill histórico do COTAHIST e a eventual expansão do universo de tickers têm potencial de ultrapassar os 500MB do Supabase free tier — ver seção "Backfill histórico" do [ADR-001](docs/adr/001-cotahist-migracao-rv.md).
 
