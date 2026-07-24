@@ -68,6 +68,6 @@ _Atualizado em: 2026-07-24_
 
 2. **(Decisão de negócio)** — avaliar upgrade do Supabase para o plano Pro (~$25/mês, 8GB) caso o backfill do COTAHIST e a eventual expansão do universo de tickers aproximem o banco do limite de 500MB do free tier.
 
-3. **Descomissionar o LibreChat + MongoDB Atlas** — o Copiloto migrou pra tool use nativo (item 37), então o serviço LibreChat no Render e o Mongo Atlas não são mais usados pelo backend. Desligar ambos e rotacionar a senha exposta em `librechat/agents/create_agents.ps1`.
+3. **Descomissionar o LibreChat + MongoDB Atlas** — o Copiloto migrou pra tool use nativo (item 37). Os arquivos órfãos no repo (`librechat/`, workflow `deploy-librechat.yml`) já foram removidos. **Ação manual pendente (fora do repo):** desligar o serviço LibreChat no Render + o cluster MongoDB Atlas, e **rotacionar** a senha que estava em `librechat/agents/create_agents.ps1` — remover o arquivo do HEAD **não** a tira do histórico do git nem do serviço live, então a rotação continua obrigatória.
 
 4. **Investigar variação de volume no COTAHIST** — contagem de ativos caiu a cada dia na primeira semana (1.412 → 1.396 → 1.257); confirmar se é liquidez normal de sexta-feira ou parsing incompleto antes da Fase 2.
