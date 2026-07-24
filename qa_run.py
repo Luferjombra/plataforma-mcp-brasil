@@ -680,6 +680,30 @@ else:
         check("POST /copilot/chat retorna 200", False,
               f"status={r.status_code if r else 'timeout'}")
 
+    # [9.3] caminho REAL do widget do site: /pergunta (contrato antigo, persona
+    # "quant") com pergunta analítica "no ano" -- é exatamente onde o usuário
+    # via o fallback "Não consegui gerar uma resposta agora". A resposta tem que
+    # ser texto de verdade, não a mensagem de fallback.
+    _FALLBACK_MSG = "Não consegui gerar uma resposta"
+    print("\n[9.3] widget /pergunta (quant, pergunta analítica; consome API paga)")
+    r, elapsed = post(
+        "/copilot/pergunta",
+        {"pergunta": "qual o desempenho do PETR4 no ano?"},
+        timeout=90,
+    )
+    if r and r.status_code == 200:
+        body = r.json()
+        resposta = body.get("resposta", "")
+        check("POST /copilot/pergunta retorna 200", True, f"{elapsed:.1f}s")
+        check("Resposta não é o fallback", _FALLBACK_MSG not in resposta,
+              f"len={len(resposta)} | inicio={resposta[:60]!r}")
+    elif r and r.status_code in (429, 502, 503):
+        check_info("POST /copilot/pergunta retorna 200", False,
+                   f"provedor de IA indisponível (status={r.status_code})")
+    else:
+        check("POST /copilot/pergunta retorna 200", False,
+              f"status={r.status_code if r else 'timeout'}")
+
 # ── Resumo ────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
 print("RESUMO")
