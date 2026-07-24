@@ -40,6 +40,24 @@ MCP_PATHS = {
     "quant": "/mcp/quant",
 }
 
+# Cache das DEFINIÇÕES das tools por persona. As tools sao as rotas FastAPI
+# expostas pelo fastapi-mcp -- estaticas enquanto o processo vive. Cachear evita
+# um round-trip `list_tools()` ao /mcp interno a cada pergunta. As defs sao
+# reembrulhadas com a sessao nova a cada request (o `session` muda; a def nao).
+_TOOLS_DEFS_CACHE: dict[str, list] = {}
+
+# Cliente Anthropic unico por processo -- reusa o pool de conexao HTTP em vez de
+# reabrir a cada pergunta. Criado sob demanda (lazy) pra nao exigir a API key no
+# import (testes/inspecao de modulo sem env).
+_client_singleton: "anthropic.AsyncAnthropic | None" = None
+
+
+def _get_client() -> "anthropic.AsyncAnthropic":
+    global _client_singleton
+    if _client_singleton is None:
+        _client_singleton = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    return _client_singleton
+
 SYSTEM_PROMPTS = {
     "rv": (
         "Voce e o Analista RV do Chat Finance, especialista em renda variavel e "
@@ -125,15 +143,17 @@ async def perguntar(pergunta: str, agent: str = "quant", session_id: str | None 
         raise AgentInvalido(f"agent invalido: {agent!r}. Use um de {sorted(MCP_PATHS)}.")
 
     url = _MCP_BASE_URL + MCP_PATHS[agent]
-    client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
     async with streamablehttp_client(url) as (read, write, _get_session_id):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            tools_result = await session.list_tools()
-            tools = _montar_tools(tools_result.tools, session, session_id)
+            defs = _TOOLS_DEFS_CACHE.get(agent)
+            if defs is None:
+                defs = (await session.list_tools()).tools
+                _TOOLS_DEFS_CACHE[agent] = defs
+            tools = _montar_tools(defs, session, session_id)
 
-            runner = client.beta.messages.tool_runner(
+            runner = _get_client().beta.messages.tool_runner(
                 model=ANTHROPIC_MODEL,
                 max_tokens=_MAX_TOKENS,
                 system=[{
