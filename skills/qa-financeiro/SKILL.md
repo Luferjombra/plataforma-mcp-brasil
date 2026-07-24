@@ -48,10 +48,14 @@ ETL Pipeline (GitHub Actions, roda dias úteis em UTC):
 
 ## Protocolo de execução
 
-Execute as quatro seções em ordem. O script `qa_run.py` cobre as Seções 1, 2, 3 e 4 automaticamente:
+Execute as seções em ordem. O script `qa_run.py` cobre contra produção via HTTP
+as Seções 1–4 (Funcional, Segurança, Integridade, ETL), mais Dashboard,
+Carteira e — desde 2026-07-24 — a Seção 9 (Copiloto/PESQUISA-01):
 ```bash
 python qa_run.py
 ```
+Os testes unitários locais do backend (parsing de carteira, segurança do
+Copiloto) rodam separado, sem rede: `cd backend && python -m unittest discover`.
 
 Para cada achado, classifique:
 - 🔴 **CRÍTICO** — quebra funcionalidade ou expõe dados sensíveis
@@ -92,22 +96,23 @@ GET /rf/titulos
 - [ ] `GET /fundos/historico/cnpj_sem_encode` → deve retornar 200 ou 404 (não 500)
 - [ ] `limit=99999` em qualquer endpoint → deve respeitar o máximo configurado (não explodir)
 
-### 1.4 POST Copilot (proxy LibreChat — ver [[plataforma-mcp-brasil]])
+### 1.4 POST Copilot (tool use nativo da Anthropic — ver Seção 9)
 ```json
 POST /copilot/pergunta
 {"pergunta": "Qual a taxa SELIC atual?"}
 ```
 - [ ] Status 200
 - [ ] Campo `resposta` presente e não vazio
-- [ ] Campo `fonte` presente (nome do agent, ex: "Analista Quant")
+- [ ] Campo `fonte` presente (contrato mantido pro widget do frontend)
 - [ ] Campo `cached` booleano presente
 
-- [ ] Pergunta livre fora de padrão fixo (regressão do bug do regex antigo):
-  `{"pergunta": "Como foi o mercado hoje?"}` → resposta com dado real, não "dados vazios `{}`"
-- [ ] Pergunta que exige dado atual da plataforma (ex: "Qual o preço atual da PETR4?") → resposta usa tool MCP `plataforma-mcp-brasil`, não alucina
-- [ ] Pergunta que exige pesquisa na web (ex: notícia recente não coberta pelo RSS interno) → resposta usa tool Bright Data (`search_engine`/`scrape_as_markdown`), evidenciado por citar fonte/URL
-- [ ] Timeout/erro do LibreChat (serviço acordando do free tier, ~50s) → backend retorna erro tratado (502/503), não 500 cru
-- [ ] Login no LibreChat falha (credencial errada/expirada) → erro claro no log do backend, não trava a request indefinidamente
+O `/pergunta` (contrato antigo do widget) e o `/chat` (contrato novo com
+persona + `session_id`) rodam ambos via **tool use nativo** — o LLM decide
+quais tools do `/mcp` chamar. Aposentou o proxy LibreChat. Detalhe dos checks
+de tool use na **Seção 9 (PESQUISA-01)**.
+
+- [ ] Pergunta que exige dado da plataforma (ex: "Qual o último fechamento da PETR4?") → resposta usa tool MCP, não alucina
+- [ ] Erro/limite do provedor de IA (Anthropic) → backend retorna erro tratado (429/502/503), não 500 cru
 
 ---
 
@@ -264,6 +269,32 @@ GET /health/etl/rv_historico_batch?limit=10
 - [ ] Secrets configurados: `SUPABASE_URL`, `SUPABASE_KEY`, `BRAPI_TOKEN`
 - [ ] Secret opcional: `DISCORD_WEBHOOK_URL` (para notificações de falha)
 - [ ] Último run do workflow com status `success`
+
+---
+
+## Seção 9 — Copiloto tool use nativo (PESQUISA-01) ⚡ NOVO
+
+O Copiloto usa **tool use nativo da Anthropic** (o LLM decide quais tools do
+`/mcp` chamar) — aposentou o proxy LibreChat. Dois endpoints, ambos servidos
+pelo mesmo motor: `POST /copilot/pergunta` (contrato antigo do widget:
+`{pergunta}` → `{resposta, fonte, cached}`) e `POST /copilot/chat` (novo:
+`{pergunta, agent, session_id}` → `{resposta, agent}`, com persona
+rv/macro/quant). O `qa_run.py` testa o `/chat` contra produção com **probe de
+404** (pula sem penalizar score enquanto a rota nova não está deployada).
+
+Checks (quando a rota existe em produção):
+- [ ] Pergunta vazia → 400; `agent` inválido → 400 (validações, não consomem API paga)
+- [ ] `POST /copilot/chat {"pergunta": "...PETR4...", "agent": "rv"}` → 200 com
+  `resposta` não-vazia e `agent` ecoado — tool use ponta a ponta (LLM escolhe a
+  tool, consulta o `/mcp` interno, responde com dado real)
+- [ ] Limite/indisponibilidade da IA (429/502/503) é informativo, não bloqueia o score
+
+**Segurança (teste local, `python -m unittest copilot.test_native_agent`):**
+- [ ] Os sub-servidores MCP das personas (`mcp_quant`/`mcp_rv`/`mcp_macro`) **não**
+  expõem as tools de escrita da carteira (`add`/`importar`/`delete` posição) — o
+  chat só lê, nunca escreve via pergunta
+- [ ] Sem `session_id`, as tools de carteira nem são oferecidas ao LLM; com
+  `session_id`, ele é injetado por nós (o modelo não preenche nem forja o de outro usuário)
 
 ---
 

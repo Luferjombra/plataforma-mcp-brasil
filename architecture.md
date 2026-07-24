@@ -26,7 +26,7 @@ FastAPI — APIs Internas (Render)
   ├── GET  /anbima/{indices,debentures,cri,cra}[/sparklines]
   ├── GET  /noticias
   ├── GET  /health/etl
-  ├── POST /copilot/pergunta
+  ├── POST /copilot/pergunta + /copilot/chat  (tool use nativo)
   ├── POST /carteira/posicoes
   ├── GET  /carteira/posicoes?session_id=
   ├── DELETE /carteira/posicoes/{id}?session_id=
@@ -49,35 +49,32 @@ Next.js — Frontend (Vercel)
 
 ## Arquitetura do Chat Finance (Copilot)
 
-O `/copilot` deixou de ter lógica própria de LLM/contexto (o antigo `context_builder.py` — classificador por regex — foi removido por ser frágil: qualquer pergunta fora dos padrões fixos retornava dados vazios). Ele agora é um **proxy** para um agent do LibreChat já deployado (Épico B), que faz tool-calling real sobre os dados via `/mcp` — sem depender de regex para saber o que consultar.
+O `/copilot` usa **tool use nativo da Anthropic** (`client.beta.messages.tool_runner`): o LLM vê as tools disponíveis e decide sozinho qual chamar. Substituiu tanto o classificador por regex antigo (`context_builder.py`, frágil — qualquer pergunta fora dos padrões fixos retornava dados vazios) quanto o proxy intermediário pro LibreChat (aposentado — sem serviço externo, sem Mongo, sem OAuth).
+
+As tools não são escritas à mão: são as mesmas rotas FastAPI já expostas via `fastapi-mcp`, reaproveitadas em sub-servidores MCP escopados por persona.
 
 ```
 Usuário (pergunta)
     ↓
-POST /copilot/pergunta  (backend/routes/copilot.py)
+POST /copilot/pergunta  (contrato antigo do widget: {pergunta} → {resposta, fonte, cached})
+POST /copilot/chat      (novo: {pergunta, agent, session_id} → {resposta, agent})
     ↓
-backend/copilot/orchestrator.py
+backend/copilot/native_agent.py
+  ├── conecta no sub-servidor MCP da persona (loopback, mesmo processo):
+  │     /mcp/rv · /mcp/macro · /mcp/quant  (montados em backend/main.py)
+  ├── async_mcp_tool converte as tools MCP em runnables do tool_runner
+  ├── session_id da carteira: injetado por nós nas tools de carteira
+  │     (removido do schema — o LLM não preenche nem forja o de outro usuário);
+  │     sem session_id, as tools de carteira nem são oferecidas
+  └── client.beta.messages.tool_runner (Claude decide e chama as tools)
     ↓
-backend/copilot/librechat_client.py
-  ├── login (conta de serviço) → JWT cacheado em memória
-  ├── POST https://librechat-rfev.onrender.com/api/agents/chat
-  │     {endpoint: "agents", agent_id, text, conversationId: null, ...}
-  └── se a resposta não vier no POST → consome SSE em
-        GET /api/agents/chat/stream/:id
-    ↓
-LibreChat (agent "Analista Quant", DeepSeek/Groq)
-  ├── mcpServers.plataforma-mcp-brasil → tools sobre Supabase (via fastapi-mcp)
-  └── mcpServers.bright-data → search_engine / scrape_as_markdown (pesquisa web)
-    ↓
-Frontend (Chat Finance UI) — contrato inalterado: {resposta, fonte, cached}
+Frontend (Chat Finance UI) — contrato {resposta, fonte, cached} preservado no /pergunta
 ```
 
-Cada pergunta abre uma conversa nova no LibreChat (sem `conversationId` persistido) — o `/copilot` já era stateless por pergunta antes dessa mudança, então não há regressão de continuidade.
-
-**Pendências conhecidas dessa integração** (marcar como resolvidas após validar em produção):
-- Schema exato dos eventos SSE de `/api/agents/chat/stream/:id` foi inferido pelo padrão do LibreChat, não confirmado por trace completo — validar `backend/copilot/librechat_client.py::_consumir_stream`.
-- Nomenclatura dos MCP tools do Bright Data nos agents (`librechat/agents/attach_bright_data_tool.ps1`) assume o padrão `<tool>_mcp_<server>` — confirmar antes de rodar em produção.
-- `librechat/agents/create_agents.ps1` tem senha pessoal em texto puro commitada — rotacionar e usar conta de serviço dedicada (`LIBRECHAT_SERVICE_EMAIL`/`LIBRECHAT_SERVICE_SENHA`).
+**Segurança:** as personas do chat nunca escrevem na carteira — a separação de
+tags `Carteira Leitura`/`Carteira Escrita` mantém `add`/`importar`/`delete`
+posição fora das tools de todos os sub-servidores do Copilot (verificado por
+teste automatizado que lista as tools de fato expostas).
 
 ## Regras fundamentais de arquitetura
 
