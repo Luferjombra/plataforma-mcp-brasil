@@ -44,6 +44,9 @@ Plataforma de dados financeiros brasileiros (CVM, BCB/BACEN, B3) com stack Next.
 - `.claude/skills/bdi-mental-states/` — modelagem BDI: beliefs, desires, intentions, RDF
 - `.claude/skills/hosted-agents/` — infraestrutura de agentes hosted, warm pools, sandboxes
 
+### Fluxo de trabalho / Git
+- `.claude/skills/guardiao-merge/` — **rodar SEMPRE antes de abrir PR / mergear / "subir pra main"**: verifica que a branch não está desatualizada e que o merge não reverte trabalho já em produção (nasceu de um incidente real de branch divergente)
+
 ## Agents disponíveis
 
 > Agents em `.claude/agents/` são **versionados no repo**, mesma lógica das skills.
