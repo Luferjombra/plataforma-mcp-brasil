@@ -55,6 +55,12 @@
    trocar os valores aqui já reskina indicadores/rv/rf/fundos/dashboard/
    noticias/status/Sidebar/MobileTabBar sem tocar em nenhum componente. */
 :root {
+  /* Anuncia o esquema de cor de cada estado pro navegador. Sem isso, o
+     "Auto Dark Mode for Web Contents" do Chrome (e afins) escurece
+     algoritmicamente o tema claro (creme #F6F2EA) num oliva/marrom
+     muddy — a app já cuida do próprio tema, então declaramos e o
+     navegador para de forçar. */
+  color-scheme: light;
   --cl-bg: #F6F2EA;
   --cl-card: #ffffff;
   --cl-ink: #1E1C17;
@@ -82,6 +88,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --cl-bg: #0b1320;
   --cl-card: #14202f;
   --cl-ink: #f1f5fa;
