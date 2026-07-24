@@ -95,7 +95,7 @@ function TabelaUltimos({ itens }: { itens: UltimoValor[] }) {
             const VarIcon = item.variacao == null ? Minus : item.variacao > 0 ? TrendingUp : TrendingDown
             const varColor = item.variacao == null
               ? 'text-muted-foreground'
-              : item.variacao > 0 ? 'text-green-500' : 'text-red-500'
+              : item.variacao > 0 ? 'text-[var(--cl-up)]' : 'text-[var(--cl-down)]'
             return (
               <div key={item.familia} className="rounded-lg border border-border p-3"
                 style={{ borderLeftColor: item.cor, borderLeftWidth: 3 }}>

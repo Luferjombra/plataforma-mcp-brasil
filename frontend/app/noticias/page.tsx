@@ -8,9 +8,9 @@ import { juroRealFisher, formatPctSinal } from '@/lib/format'
 type Categoria = 'Todos' | 'Macro' | 'Renda Variável' | 'Renda Fixa' | 'Fundos' | 'Outros'
 
 const CAT_STYLES: Record<string, { fg: string; bg: string }> = {
-  'Macro':          { fg: 'var(--cl-accent)',  bg: 'rgba(31,111,235,.12)' },
-  'Renda Variável': { fg: 'var(--cl-up)',      bg: 'rgba(15,157,88,.13)'  },
-  'Renda Fixa':     { fg: 'var(--cl-amber)',   bg: 'rgba(185,119,10,.14)' },
+  'Macro':          { fg: 'var(--cl-accent)',  bg: 'color-mix(in srgb, var(--cl-accent) 12%, transparent)' },
+  'Renda Variável': { fg: 'var(--cl-up)',      bg: 'color-mix(in srgb, var(--cl-up) 13%, transparent)'  },
+  'Renda Fixa':     { fg: 'var(--cl-amber)',   bg: 'color-mix(in srgb, var(--cl-amber) 14%, transparent)' },
   'Fundos':         { fg: '#7c3aed',            bg: 'rgba(124,58,237,.10)' },
   'Outros':         { fg: 'var(--cl-ink3)',     bg: 'rgba(107,124,150,.1)' },
   'Todos':          { fg: 'var(--cl-ink)',      bg: 'transparent'          },
@@ -294,7 +294,7 @@ function FeedItem({ n }: { n: Noticia }) {
             {n.tickers_rel.slice(0, 2).map(t => (
               <span key={t} style={{
                 fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700,
-                color: 'var(--cl-accent)', border: '1px solid rgba(31,111,235,.3)',
+                color: 'var(--cl-accent)', border: '1px solid color-mix(in srgb, var(--cl-accent) 30%, transparent)',
                 padding: '1px 5px', borderRadius: 4,
               }}>{t}</span>
             ))}

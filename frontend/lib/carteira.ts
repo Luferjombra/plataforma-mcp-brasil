@@ -7,7 +7,7 @@ export const fmtPP = (v: number) =>
   `${v >= 0 ? '+' : ''}${v.toFixed(2)}pp`
 
 export const corPL = (v: number | null): string =>
-  v === null ? 'text-muted-foreground' : v >= 0 ? 'text-green-500' : 'text-red-500'
+  v === null ? 'text-muted-foreground' : v >= 0 ? 'text-[var(--cl-up)]' : 'text-[var(--cl-down)]'
 
 export const fmtMetrica = (v: number | null, casas = 2): string =>
   v === null ? '—' : v.toFixed(casas)
