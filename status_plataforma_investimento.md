@@ -1,10 +1,12 @@
 # Status — Plataforma Investimento
 
-_Atualizado em: 2026-07-09_
+_Atualizado em: 2026-07-24_
 
 ---
 
 ## ✅ Atividades Realizadas (mais recentes primeiro)
+
+37. **Copiloto: tool use nativo da Anthropic (aposenta o proxy LibreChat)** _(2026-07-24)_ — `/copilot` reescrito pra usar `client.beta.messages.tool_runner`: o LLM decide sozinho qual tool do `/mcp` chamar, cobrindo os 7 domínios de dados (o regex antigo cobria 3). As tools são as próprias rotas FastAPI expostas via `fastapi-mcp`, em sub-servidores escopados por persona (`/mcp/rv`, `/mcp/macro`, `/mcp/quant`). O proxy pro LibreChat + Bright Data (Épico B, PRs #16–21) foi aposentado — sem serviço externo, sem Mongo, sem OAuth. `/pergunta` (contrato do widget) e `/chat` (novo, com persona + `session_id`) rodam ambos no motor nativo. Segurança: separação de tags `Carteira Leitura`/`Carteira Escrita` mantém escrita fora das tools do chat (teste automatizado). QA cenário PESQUISA-01 escrito (`qa_run.py` Seção 9). 23 testes unitários, 2 pair-reviews.
 
 21. **COTAHIST — Fase 2 concluída (corte staging → produção)** _(2026-07-08)_ — ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md). Validação cruzada com brapi feita, ambiguidade `ETF_OU_FUNDO` resolvida, corte por `fonte` em produção.
 
@@ -66,6 +68,6 @@ _Atualizado em: 2026-07-09_
 
 2. **(Decisão de negócio)** — avaliar upgrade do Supabase para o plano Pro (~$25/mês, 8GB) caso o backfill do COTAHIST e a eventual expansão do universo de tickers aproximem o banco do limite de 500MB do free tier.
 
-3. **LibreChat — pendências operacionais** — OAuth Google (configuração externa no Google Cloud Console) e QA cenário PESQUISA-01 (validar tool call MCP end-to-end).
+3. **Descomissionar o LibreChat + MongoDB Atlas** — o Copiloto migrou pra tool use nativo (item 37), então o serviço LibreChat no Render e o Mongo Atlas não são mais usados pelo backend. Desligar ambos e rotacionar a senha exposta em `librechat/agents/create_agents.ps1`.
 
 4. **Investigar variação de volume no COTAHIST** — contagem de ativos caiu a cada dia na primeira semana (1.412 → 1.396 → 1.257); confirmar se é liquidez normal de sexta-feira ou parsing incompleto antes da Fase 2.
