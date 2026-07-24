@@ -636,6 +636,50 @@ r, _ = delete(f"/carteira/posicoes/999999999?session_id={_session}")
 check("DELETE posição inexistente retorna 404", r and r.status_code == 404,
       f"status={r.status_code if r else 'timeout'}")
 
+# ── Seção 9 — Copiloto tool use nativo (PESQUISA-01) ──────────────────────────
+print("\n▶ SEÇÃO 9 — Copiloto tool use nativo (PESQUISA-01)\n")
+
+# Probe: /copilot/chat é rota nova -- no CI de um PR, a produção ainda roda a
+# main antiga (sem /chat) até o merge. Se 404, pula a seção sem penalizar o
+# score (informativo). Pergunta vazia também exercita a validação 400 quando a
+# rota existe, sem consumir API paga.
+r_probe, _ = post("/copilot/chat", {"pergunta": "", "agent": "quant"})
+rota_existe = r_probe is not None and r_probe.status_code != 404
+
+if not rota_existe:
+    check_info(
+        "POST /copilot/chat disponível em produção", False,
+        f"status={r_probe.status_code if r_probe else 'timeout'} — rota nova ainda não deployada, seção pulada",
+    )
+else:
+    print("[9.1] validações (não consomem API paga)")
+    check("Pergunta vazia retorna 400", r_probe.status_code == 400,
+          f"status={r_probe.status_code}")
+    r, _ = post("/copilot/chat", {"pergunta": "teste", "agent": "inexistente"})
+    check("Agent inválido retorna 400", bool(r) and r.status_code == 400,
+          f"status={r.status_code if r else 'timeout'}")
+
+    print("\n[9.2] pergunta real via tool use (consome API paga; tool use pode ser lento)")
+    r, elapsed = post(
+        "/copilot/chat",
+        {"pergunta": "qual o último fechamento do PETR4?", "agent": "rv"},
+        timeout=90,
+    )
+    if r and r.status_code == 200:
+        body = r.json()
+        check("POST /copilot/chat retorna 200", True, f"{elapsed:.1f}s")
+        check("Campo resposta não-vazio", bool(body.get("resposta", "").strip()),
+              f"len={len(body.get('resposta', ''))}")
+        check("Campo agent ecoa 'rv'", body.get("agent") == "rv",
+              f"agent={body.get('agent')}")
+    elif r and r.status_code in (429, 502, 503):
+        # limite/indisponibilidade do provedor de IA -- informativo, não bloqueia
+        check_info("POST /copilot/chat retorna 200", False,
+                   f"provedor de IA indisponível (status={r.status_code})")
+    else:
+        check("POST /copilot/chat retorna 200", False,
+              f"status={r.status_code if r else 'timeout'}")
+
 # ── Resumo ────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
 print("RESUMO")

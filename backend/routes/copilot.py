@@ -1,3 +1,4 @@
+import anthropic
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -36,6 +37,7 @@ async def fazer_pergunta(body: Pergunta):
 class PerguntaAgent(BaseModel):
     pergunta: str
     agent: str = "quant"  # rv | macro | quant
+    session_id: str | None = None  # da carteira do usuário; injeta nas tools de carteira
 
 
 @router.post("/chat")
@@ -47,7 +49,23 @@ async def chat(body: PerguntaAgent):
     if not body.pergunta.strip():
         raise HTTPException(status_code=400, detail="Pergunta não pode ser vazia.")
     try:
-        resposta = await native_agent.perguntar(body.pergunta, body.agent)
+        resposta = await native_agent.perguntar(body.pergunta, body.agent, body.session_id)
     except native_agent.AgentInvalido as e:
         raise HTTPException(status_code=400, detail=str(e))
+    # O SDK Anthropic levanta anthropic.*Error (não httpx.HTTPStatusError como
+    # o /pergunta via Gemini) -- mesmas mensagens amigáveis, exceções diferentes.
+    except anthropic.RateLimitError:
+        raise HTTPException(
+            status_code=429,
+            detail="Limite de uso da IA atingido no momento. Aguarde alguns minutos e tente novamente.",
+        )
+    except anthropic.APIStatusError as e:
+        if e.status_code >= 500:
+            raise HTTPException(
+                status_code=503,
+                detail="A IA está temporariamente sobrecarregada. Tente novamente em instantes.",
+            )
+        raise HTTPException(status_code=502, detail=f"Erro no provedor de IA (HTTP {e.status_code}).")
+    except anthropic.APIError:
+        raise HTTPException(status_code=502, detail="Erro de conexão com o provedor de IA.")
     return {"resposta": resposta, "agent": body.agent}

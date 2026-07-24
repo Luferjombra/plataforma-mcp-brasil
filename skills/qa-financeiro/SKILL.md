@@ -48,8 +48,9 @@ ETL Pipeline (GitHub Actions, roda dias úteis em UTC):
 
 ## Protocolo de execução
 
-Execute as cinco seções em ordem. O script `qa_run.py` cobre as Seções 1, 2, 3 e 4
-automaticamente (contra produção, via HTTP):
+Execute as seções em ordem. O script `qa_run.py` cobre as seções contra produção via
+HTTP (Funcional, Segurança, Integridade, ETL, Dashboard, Carteira e — desde 2026-07-24 —
+a Seção 9, Copiloto/PESQUISA-01):
 ```bash
 python qa_run.py
 ```
@@ -285,6 +286,42 @@ automatizada, apesar de ser o código mais complexo/conectado do backend (achado
 graphify — ver `docs/erros_e_solucoes.md`). Ao adicionar nova lógica de parsing/validação
 pura em outros módulos, prefira este padrão (testes `unittest` sem dependência nova,
 zero FastAPI/DB) em vez de só cobrir via `qa_run.py` contra produção.
+
+### 5.2 Copiloto tool use nativo — segurança e filtragem de tools
+
+```bash
+cd backend
+python -m unittest copilot.test_native_agent -v
+```
+
+- [ ] Todos os testes passam (config dos agents, filtragem de carteira por `session_id`)
+- [ ] **Segurança:** `test_nenhum_subservidor_do_copilot_expoe_escrita` confirma que os
+  sub-servidores MCP das personas (`mcp_quant`/`mcp_rv`/`mcp_macro`) **não** expõem as
+  tools de escrita da carteira (`add_posicao`/`importar_posicoes`/`delete_posicao`) — o
+  chat só lê, nunca insere/apaga posição via pergunta.
+- [ ] **Filtragem:** sem `session_id` no request, as tools de carteira nem são oferecidas
+  ao LLM; com `session_id`, ele é injetado (o modelo não preenche).
+
+Esse teste verifica a garantia de segurança listando as tools de fato expostas (não só o
+path do mount), então uma tag nova esquecida em `exclude_tags` no `main.py` quebra a
+suíte em vez de vazar escrita silenciosamente.
+
+---
+
+## Seção 9 — Copiloto tool use nativo (PESQUISA-01) ⚡ NOVO
+
+Testa o endpoint `POST /copilot/chat` contra produção via `qa_run.py`. Rota nova: no CI de
+um PR, a produção ainda roda a `main` antiga sem `/chat` — o script faz um **probe** e, se
+receber 404, pula a seção sem penalizar o score (informativo), rodando de verdade só
+depois do deploy.
+
+Checks (quando a rota existe em produção):
+- [ ] Pergunta vazia → 400; `agent` inválido → 400 (validações, não consomem API paga)
+- [ ] `POST /copilot/chat {"pergunta": "...PETR4...", "agent": "rv"}` → 200 com `resposta`
+  não-vazia e `agent` ecoado — exercita o tool use ponta a ponta (LLM decide a tool,
+  consulta o `/mcp` interno, responde com dado real)
+- [ ] Limite/indisponibilidade do provedor de IA (429/502/503) é informativo, não bloqueia
+  o score (o QA não deve falhar por rate limit transitório da API)
 
 ---
 

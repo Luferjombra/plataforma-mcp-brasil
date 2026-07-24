@@ -7,14 +7,21 @@ Substitui o classificador regex de context_builder.py: em vez de decidir
 automaticamente pelo fastapi-mcp a partir das rotas existentes) e decide
 sozinho qual chamar. Nenhuma logica de query e duplicada aqui.
 """
+import copy
 import os
 
 import anthropic
-from anthropic.lib.tools.mcp import async_mcp_tool
+from anthropic import beta_async_tool
+from anthropic.lib.tools.mcp import async_mcp_tool, _convert_tool_result
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
+
+# Tools de carteira que exigem session_id (rota GET /carteira/*). O session_id
+# nunca vem do LLM -- e do frontend (localStorage), injetado por nos. Sem
+# session_id no request, estas tools nem sao oferecidas ao modelo.
+_TOOLS_CARTEIRA = ("get_posicoes_carteira", "get_analise_carteira")
 
 _PORT = os.getenv("PORT", "8000")
 # Loopback -- o /mcp e os sub-servidores rodam no mesmo processo/container.
@@ -60,11 +67,52 @@ class AgentInvalido(ValueError):
     """Levantado quando o nome do agent nao corresponde a nenhum persona configurado."""
 
 
-async def perguntar(pergunta: str, agent: str = "quant") -> str:
+def _tool_carteira_com_session(mcp_tool, session: ClientSession, session_id: str):
+    """Wrapper que injeta o session_id fixo na chamada da tool de carteira.
+
+    O session_id e removido do input_schema (o LLM nao preenche) e injetado
+    por nos antes de `session.call_tool`. Segue o mesmo padrao interno do
+    `async_mcp_tool` do SDK (call -> converte resultado), mudando so isso.
+    """
+    nome = mcp_tool.name
+    schema = copy.deepcopy(mcp_tool.inputSchema)
+    schema.get("properties", {}).pop("session_id", None)
+    if "required" in schema:
+        schema["required"] = [r for r in schema["required"] if r != "session_id"]
+
+    async def chamar(**kwargs):
+        result = await session.call_tool(name=nome, arguments={**kwargs, "session_id": session_id})
+        return _convert_tool_result(result)
+
+    return beta_async_tool(
+        chamar,
+        name=nome,
+        description=mcp_tool.description,
+        input_schema=schema,
+    )
+
+
+def _montar_tools(mcp_tools, session: ClientSession, session_id: str | None):
+    """Converte as tools MCP em runnables, tratando as de carteira conforme
+    o session_id: injeta se presente, oculta se ausente."""
+    tools = []
+    for t in mcp_tools:
+        eh_carteira = t.name.startswith(_TOOLS_CARTEIRA)
+        if eh_carteira:
+            if session_id is None:
+                continue  # oculta a tool -- sem session_id nao da pra consultar carteira
+            tools.append(_tool_carteira_com_session(t, session, session_id))
+        else:
+            tools.append(async_mcp_tool(t, session))
+    return tools
+
+
+async def perguntar(pergunta: str, agent: str = "quant", session_id: str | None = None) -> str:
     """Responde `pergunta` usando o agent indicado (rv/macro/quant).
 
     O LLM decide sozinho quais tools do sub-servidor MCP correspondente
-    chamar -- nao ha classificacao de intencao previa.
+    chamar -- nao ha classificacao de intencao previa. `session_id` (quando
+    fornecido) e injetado nas tools de carteira; sem ele, elas nao aparecem.
     """
     if agent not in MCP_PATHS:
         raise AgentInvalido(f"agent invalido: {agent!r}. Use um de {sorted(MCP_PATHS)}.")
@@ -76,7 +124,7 @@ async def perguntar(pergunta: str, agent: str = "quant") -> str:
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools_result = await session.list_tools()
-            tools = [async_mcp_tool(t, session) for t in tools_result.tools]
+            tools = _montar_tools(tools_result.tools, session, session_id)
 
             runner = client.beta.messages.tool_runner(
                 model=ANTHROPIC_MODEL,
