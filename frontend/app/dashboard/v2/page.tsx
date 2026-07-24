@@ -92,7 +92,7 @@ function DrawerChart({
         <div className="text-right">
           {ultimo != null && <p className="font-mono font-bold text-xl">{formatter(ultimo)}</p>}
           {variacao != null && (
-            <p className={`text-xs ${variacao >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <p className={`text-xs ${variacao >= 0 ? 'text-[var(--cl-up)]' : 'text-[var(--cl-down)]'}`}>
               {variacao >= 0 ? '+' : ''}{variacao.toFixed(2)}% no período
             </p>
           )}

@@ -211,7 +211,7 @@ export default function CarteiraPage() {
         {erro && (
           <div style={{
             padding: '12px 16px', borderRadius: 'var(--cl-radius-sm)',
-            border: '1px solid rgba(217,56,56,.3)', background: 'var(--cl-down-soft)',
+            border: '1px solid color-mix(in srgb, var(--cl-down) 30%, transparent)', background: 'var(--cl-down-soft)',
             color: 'var(--cl-down)', fontSize: 13,
           }}>
             {erro}

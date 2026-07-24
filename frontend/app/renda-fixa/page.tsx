@@ -114,11 +114,11 @@ function fmtPU(v: number | null): string {
 function ratingColor(r: string | null): { bg: string; text: string } {
   if (!r) return { bg: 'var(--cl-line2)', text: 'var(--cl-ink3)' }
   const upper = r.toUpperCase()
-  if (upper.startsWith('AAA') || upper === 'AA+') return { bg: 'rgba(15,157,88,0.12)', text: 'var(--cl-up)' }
-  if (upper.startsWith('AA')) return { bg: 'rgba(15,157,88,0.08)', text: 'var(--cl-up)' }
-  if (upper.startsWith('A')) return { bg: 'rgba(31,111,235,0.10)', text: 'var(--cl-accent)' }
-  if (upper.startsWith('BBB')) return { bg: 'rgba(185,119,10,0.10)', text: 'var(--cl-amber)' }
-  return { bg: 'rgba(217,56,56,0.10)', text: 'var(--cl-down)' }
+  if (upper.startsWith('AAA') || upper === 'AA+') return { bg: 'color-mix(in srgb, var(--cl-up) 12%, transparent)', text: 'var(--cl-up)' }
+  if (upper.startsWith('AA')) return { bg: 'color-mix(in srgb, var(--cl-up) 8%, transparent)', text: 'var(--cl-up)' }
+  if (upper.startsWith('A')) return { bg: 'color-mix(in srgb, var(--cl-accent) 10%, transparent)', text: 'var(--cl-accent)' }
+  if (upper.startsWith('BBB')) return { bg: 'color-mix(in srgb, var(--cl-amber) 10%, transparent)', text: 'var(--cl-amber)' }
+  return { bg: 'color-mix(in srgb, var(--cl-down) 10%, transparent)', text: 'var(--cl-down)' }
 }
 
 function idxColor(idx: string | null): { bg: string; text: string } {
@@ -192,7 +192,7 @@ function BondDetail({ bond, sparkline }: { bond: Bond; sparkline: number[] }) {
 
       {/* Taxa Hero */}
       <div style={{
-        background: 'var(--cl-accent-soft)', border: '1px solid rgba(31,111,235,.15)',
+        background: 'var(--cl-accent-soft)', border: '1px solid color-mix(in srgb, var(--cl-accent) 15%, transparent)',
         borderRadius: 12, padding: '20px 24px', marginBottom: 20, textAlign: 'center',
       }}>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: accentColor, marginBottom: 8 }}>
@@ -364,7 +364,7 @@ export default function RendaFixaPage() {
 
   if (error) {
     return (
-      <div style={{ padding: 24, borderRadius: 'var(--cl-radius-sm)', border: '1px solid rgba(217,56,56,.3)', background: 'var(--cl-down-soft)', color: 'var(--cl-down)', fontSize: 14 }}>
+      <div style={{ padding: 24, borderRadius: 'var(--cl-radius-sm)', border: '1px solid color-mix(in srgb, var(--cl-down) 30%, transparent)', background: 'var(--cl-down-soft)', color: 'var(--cl-down)', fontSize: 14 }}>
         {error}
         <button onClick={() => window.location.reload()} style={{ marginLeft: 12, fontSize: 12, background: 'none', border: 'none', color: 'var(--cl-down)', cursor: 'pointer', textDecoration: 'underline' }}>
           Tentar novamente
@@ -406,8 +406,8 @@ export default function RendaFixaPage() {
             </div>
             <span style={{
               fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-              color: 'var(--cl-accent)', background: 'rgba(31,111,235,.18)',
-              border: '1px solid rgba(31,111,235,.3)', borderRadius: 4, padding: '2px 8px',
+              color: 'var(--cl-accent)', background: 'color-mix(in srgb, var(--cl-accent) 18%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--cl-accent) 30%, transparent)', borderRadius: 4, padding: '2px 8px',
             }}>
               ANBIMA
             </span>
