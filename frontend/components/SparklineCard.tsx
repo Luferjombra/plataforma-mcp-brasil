@@ -35,8 +35,8 @@ export function SparklineCard({
 
   const varColor =
     variacao == null ? 'text-muted-foreground'
-    : variacao > 0   ? 'text-green-500'
-    : 'text-red-500'
+    : variacao > 0   ? 'text-[var(--cl-up)]'
+    : 'text-[var(--cl-down)]'
 
   return (
     <Card

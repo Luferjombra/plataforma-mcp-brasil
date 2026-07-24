@@ -46,7 +46,7 @@ export function PageHeader({ title, description, sourceBadge, action }: PageHead
             textTransform: 'uppercase' as const,
             color: 'var(--cl-accent)',
             background: 'var(--cl-accent-soft)',
-            border: '1px solid rgba(31,111,235,.18)',
+            border: '1px solid color-mix(in srgb, var(--cl-accent) 18%, transparent)',
             borderRadius: 'var(--cl-radius-xs)',
             padding: '3px 10px',
           }}>

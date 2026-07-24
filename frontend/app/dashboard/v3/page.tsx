@@ -100,7 +100,7 @@ function MetricasPanel({ dados, familia, nome }: MetricasPanelProps) {
   )
 
   const VarIcon = m.varPct == null ? Minus : m.varPct > 0 ? TrendingUp : TrendingDown
-  const varColor = m.varPct == null ? '' : m.varPct > 0 ? 'text-green-500' : 'text-red-500'
+  const varColor = m.varPct == null ? '' : m.varPct > 0 ? 'text-[var(--cl-up)]' : 'text-[var(--cl-down)]'
 
   return (
     <div className="px-4 py-3">
