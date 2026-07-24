@@ -66,6 +66,8 @@ _Atualizado em: 2026-07-24_
 
 ## 🔜 Próximos Passos
 
+0. **v1.1 — usuários reais e monetização** _(2026-07-24, proposto)_ — ver [ADR-002](docs/adr/002-v1.1-usuarios-reais-e-monetizacao.md). Direção definida pelo usuário: foco em monetização/usuários reais, Carteira ganha importação automática + alertas (método de importação ainda em aberto), Copiloto ganha memória entre sessões. Todo esse escopo **depende de uma fundação de identidade** que hoje não existe — a Carteira é escopada por um `session_id` gerado no navegador (`localStorage`), sem login, sem RLS. O ADR propõe Supabase Auth (zero infra nova, RLS nativa) em 4 fases: (0) auth + RLS — bloqueante; (1) memória do Copiloto; (2) cobrança/planos; (3) carteira automática + alertas. **Nenhum código escrito ainda** — aguardando validação do usuário pra iniciar a Fase 0.
+
 1. **ANBIMA — resolver autorização de produto** — contatar suporte ANBIMA (`suporte.developers@anbima.com.br`) para habilitar o app no Feed de Preços e Índices. Token OAuth2 já funciona; falta autorização por produto.
 
    > **Alternativa mapeada (2026-07-24)** enquanto a ANBIMA não libera: para dados de **CRI/CRA/Debêntures** sem custo e com acesso programático —
