@@ -44,7 +44,7 @@ class PosicaoCreate(BaseModel):
     )
 
 
-@router.post("/posicoes", status_code=201)
+@router.post("/posicoes", status_code=201, tags=["Carteira Escrita"])
 def add_posicao(
     body: PosicaoCreate,
     session_id: str = Query(..., description="ID da sessão. Isola carteiras entre usuários."),
@@ -89,7 +89,7 @@ def add_posicao(
 TAMANHO_MAX_UPLOAD = 5 * 1024 * 1024  # 5 MB -- relatório de carteira real não chega perto disso
 
 
-@router.post("/posicoes/importar")
+@router.post("/posicoes/importar", tags=["Carteira Escrita"])
 async def importar_posicoes(
     session_id: str = Query(..., description="ID da sessão. Isola carteiras entre usuários."),
     arquivo: UploadFile = File(
@@ -189,7 +189,7 @@ async def importar_posicoes(
     return {"inseridas": len(posicoes_validas), "total_linhas": len(linhas), "erros": erros}
 
 
-@router.get("/posicoes")
+@router.get("/posicoes", tags=["Carteira Leitura"])
 def get_posicoes(
     session_id: str = Query(..., description="ID da sessão. Isola carteiras entre usuários."),
 ):
@@ -271,7 +271,7 @@ def get_posicoes(
     return {"data": resultado, "total": len(resultado), "valor_total": round(valor_total, 2)}
 
 
-@router.delete("/posicoes/{posicao_id}", status_code=204)
+@router.delete("/posicoes/{posicao_id}", status_code=204, tags=["Carteira Escrita"])
 def delete_posicao(
     posicao_id: str = Path(..., description="UUID da posição retornado pelo POST /carteira/posicoes."),
     session_id: str = Query(..., description="ID da sessão. Confirmação de ownership."),
@@ -303,7 +303,7 @@ def delete_posicao(
         raise HTTPException(status_code=404, detail="Posição não encontrada ou sem permissão.")
 
 
-@router.get("/analise")
+@router.get("/analise", tags=["Carteira Leitura"])
 async def get_analise(
     session_id: str = Query(..., description="ID da sessão."),
     periodo_dias: int = Query(

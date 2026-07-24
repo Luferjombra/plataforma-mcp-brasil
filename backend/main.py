@@ -57,5 +57,37 @@ mcp = FastApiMCP(
     description="Dados financeiros historicos do Brasil.",
     exclude_tags=["Noticias", "Copilot", "Monitoramento ETL"],
 )
-mcp.mount_http()  # Streamable HTTP em /mcp (MCP spec 2024-11-05+)
+mcp.mount_http()  # Streamable HTTP em /mcp (MCP spec 2024-11-05+) -- usado pelo agent Quant do Copilot (todas as tools)
 mcp.mount_sse()   # SSE em /sse (fallback para clientes mais antigos)
+
+# Sub-servidores MCP escopados por persona do Copilot (backend/copilot/native_agent.py).
+# Cada um reaproveita as mesmas rotas via tags -- nao duplica nenhuma logica de tool.
+mcp_rv = FastApiMCP(
+    app,
+    name="Copilot RV",
+    description="Renda variavel e carteira, para o agent RV do Copilot.",
+    # "Carteira Leitura" (nao "Carteira") de proposito -- o Copilot so pode
+    # LER posicoes/analise; inserir/importar/apagar posicao fica de fora
+    # das tools do agent, mesmo que a rota exista no /mcp completo (Quant).
+    include_tags=["Renda Variavel", "Carteira Leitura"],
+)
+mcp_rv.mount_http(mount_path="/mcp/rv")
+
+mcp_macro = FastApiMCP(
+    app,
+    name="Copilot Macro",
+    description="Indicadores, renda fixa e ANBIMA, para o agent Macro do Copilot.",
+    include_tags=["Indicadores", "Renda Fixa", "ANBIMA"],
+)
+mcp_macro.mount_http(mount_path="/mcp/macro")
+
+mcp_quant = FastApiMCP(
+    app,
+    name="Copilot Quant",
+    description="Todos os dados da plataforma, somente leitura, para o agent Quant do Copilot.",
+    # Diferente do /mcp geral (usado por clientes MCP externos com humano no
+    # loop): o agent Quant do chat nunca deve poder escrever/apagar posicao
+    # via pergunta, entao "Carteira Escrita" fica de fora tambem aqui.
+    exclude_tags=["Noticias", "Copilot", "Monitoramento ETL", "Carteira Escrita"],
+)
+mcp_quant.mount_http(mount_path="/mcp/quant")
