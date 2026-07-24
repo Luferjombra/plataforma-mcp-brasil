@@ -6,6 +6,8 @@ _Atualizado em: 2026-07-24_
 
 ## ✅ Atividades Realizadas (mais recentes primeiro)
 
+38. **Copiloto: correção do fallback do widget + higiene de produção** _(2026-07-24)_ — o widget do site (`/copilot/pergunta`, persona quant) devolvia "Não consegui gerar uma resposta agora" em perguntas analíticas ("desempenho do PETR4 no ano"): o `max_tokens=1024` era baixo demais e o modelo estourava o teto antes de emitir o texto final (o runner encerra sem bloco de texto → fallback). Corrigido subindo pra **2048** (env `COPILOT_MAX_TOKENS`) e **instrumentando** o motivo do fallback no log do Render (`stop_reason` + tipos de bloco). QA ganhou o cenário **[9.3]** exercitando o caminho real do widget. Validado em produção (QA main 98%, resposta real de 734 chars). No mesmo ciclo: **fix `color-scheme`** (o "site mudando de cor" era o auto-dark do navegador do usuário reescrevendo o tema — código sempre renderizou navy; declarar `color-scheme` faz o navegador respeitar), **limpeza dos arquivos órfãos do LibreChat** do repo (`librechat/`, workflow `deploy-librechat.yml`), e nova **skill `guardiao-merge`** (protocolo anti-reversão de produção rodado em cada merge desta leva). PRs #24–#27, todos com guardião + QA.
+
 37. **Copiloto: tool use nativo da Anthropic (aposenta o proxy LibreChat)** _(2026-07-24)_ — `/copilot` reescrito pra usar `client.beta.messages.tool_runner`: o LLM decide sozinho qual tool do `/mcp` chamar, cobrindo os 7 domínios de dados (o regex antigo cobria 3). As tools são as próprias rotas FastAPI expostas via `fastapi-mcp`, em sub-servidores escopados por persona (`/mcp/rv`, `/mcp/macro`, `/mcp/quant`). O proxy pro LibreChat + Bright Data (Épico B, PRs #16–21) foi aposentado — sem serviço externo, sem Mongo, sem OAuth. `/pergunta` (contrato do widget) e `/chat` (novo, com persona + `session_id`) rodam ambos no motor nativo. Segurança: separação de tags `Carteira Leitura`/`Carteira Escrita` mantém escrita fora das tools do chat (teste automatizado). QA cenário PESQUISA-01 escrito (`qa_run.py` Seção 9). 23 testes unitários, 2 pair-reviews.
 
 21. **COTAHIST — Fase 2 concluída (corte staging → produção)** _(2026-07-08)_ — ver [ADR-001](docs/adr/001-cotahist-migracao-rv.md). Validação cruzada com brapi feita, ambiguidade `ETF_OU_FUNDO` resolvida, corte por `fonte` em produção.
@@ -65,6 +67,11 @@ _Atualizado em: 2026-07-24_
 ## 🔜 Próximos Passos
 
 1. **ANBIMA — resolver autorização de produto** — contatar suporte ANBIMA (`suporte.developers@anbima.com.br`) para habilitar o app no Feed de Preços e Índices. Token OAuth2 já funciona; falta autorização por produto.
+
+   > **Alternativa mapeada (2026-07-24)** enquanto a ANBIMA não libera: para dados de **CRI/CRA/Debêntures** sem custo e com acesso programático —
+   > **(1) B3 Hub de Dados Públicos** (https://www.b3.com.br/pt_br/dados/hub-de-dados-publicos/) — gratuito, oficial, CSV diário, cobre os três com preço de fechamento/PU e negócios do secundário (substituto mais direto da ANBIMA p/ preços);
+   > **(2) CVM Dados Abertos / CKAN** (`distrpubl`, `securit-doc-inf_mensal_cri`, `securit-doc-inf_mensal_cra`) — gratuito, cadastro + emissões + estoque + eventos (não traz preço, casa com a B3 por ISIN);
+   > **(3) Debêntures.com.br / SND** — histórico longo de PU/negociação de debêntures desde 2005 (scraping de páginas `.asp`, sem API). Acelerador: lib `PythonicCafe/mercados`. A "taxa indicativa" (MtM) segue sendo produto pago ANBIMA — paliativo grátis é o `data.anbima.com.br` (só últimos 5 dias úteis).
 
 2. **(Decisão de negócio)** — avaliar upgrade do Supabase para o plano Pro (~$25/mês, 8GB) caso o backfill do COTAHIST e a eventual expansão do universo de tickers aproximem o banco do limite de 500MB do free tier.
 
